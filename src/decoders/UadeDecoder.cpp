@@ -2,7 +2,6 @@
 
 #include <uade/uade.h>
 
-#include <csignal>
 #include <cstdint>
 #include <cstdlib>
 #include <string>
@@ -33,7 +32,7 @@ StatePtr newState(int sampleRate)
     // uade_new_state copia la configurazione: si può liberare subito dopo.
     StatePtr state(uade_new_state(config.get()));
     if (!state)
-        throw DecoderError("impossibile avviare uadecore (UADE è installato?)");
+        throw DecoderError("impossibile inizializzare UADE (mancano i replayer? vedi scripts/build-deps.sh)");
     return state;
 }
 
@@ -183,13 +182,6 @@ private:
 void UadeStateDeleter::operator()(uade_state* state) const
 {
     uade_cleanup_state(state);
-}
-
-UadeDecoderFactory::UadeDecoderFactory()
-{
-    // Se un processo uadecore muore, la scrittura sulla sua pipe genera
-    // SIGPIPE: va ignorato, l'errore arriva comunque da libuade.
-    std::signal(SIGPIPE, SIG_IGN);
 }
 
 std::string_view UadeDecoderFactory::description() const

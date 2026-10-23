@@ -21,8 +21,6 @@ if(NOT EXISTS "${MP_THIRD_PARTY}/src/ancient" OR NOT EXISTS "${MP_THIRD_PARTY}/s
 endif()
 
 find_package(PkgConfig REQUIRED)
-# libuade.pc sta nel prefisso privato creato da scripts/build-deps.sh.
-set(ENV{PKG_CONFIG_PATH} "${MP_DEPS_PREFIX}/lib/pkgconfig:$ENV{PKG_CONFIG_PATH}")
 
 # --- ancient: decompressori per i packer d'epoca (compilato dai sorgenti) ---
 
@@ -93,18 +91,18 @@ if(MP_WITH_OPENMPT)
     endif()
 endif()
 
+set(MP_UADE_ENABLED OFF)
 if(MP_WITH_UADE)
     if(WIN32)
-        message(WARNING "UADE supporta solo sistemi UNIX: backend uade disattivato")
+        message(WARNING "UADE non è ancora portato su Windows: backend uade disattivato")
+    elseif(NOT EXISTS "${MP_DEPS_PREFIX}/share/uade/eagleplayer.conf")
+        message(WARNING "UADE non preparato (scripts/build-deps.sh): backend uade disattivato")
     else()
-        pkg_check_modules(UADE IMPORTED_TARGET libuade)
-        if(UADE_FOUND)
-            target_sources(megaplayer_core PRIVATE src/decoders/UadeDecoder.cpp)
-            target_compile_definitions(megaplayer_core PRIVATE MP_WITH_UADE)
-            target_link_libraries(megaplayer_core PUBLIC PkgConfig::UADE)
-        else()
-            message(WARNING "libuade non trovata (scripts/build-deps.sh): backend uade disattivato")
-        endif()
+        include(cmake/UadeInProcess.cmake)
+        target_sources(megaplayer_core PRIVATE src/decoders/UadeDecoder.cpp)
+        target_compile_definitions(megaplayer_core PRIVATE MP_WITH_UADE)
+        target_link_libraries(megaplayer_core PUBLIC uade_inprocess)
+        set(MP_UADE_ENABLED ON)
     endif()
 endif()
 
@@ -112,7 +110,19 @@ endif()
 
 add_executable(megaplayer src/cli/main.cpp src/cli/Terminal.cpp)
 target_link_libraries(megaplayer PRIVATE megaplayer_core)
-if(UADE_FOUND)
-    # Su Linux libuade è una libreria condivisa nel prefisso privato.
-    set_target_properties(megaplayer PROPERTIES BUILD_RPATH "${UADE_LIBRARY_DIRS}")
+if(MP_UADE_ENABLED)
+    # Su Linux libzakalwe e bencode-tools sono librerie condivise nel
+    # prefisso privato.
+    set_target_properties(megaplayer PROPERTIES BUILD_RPATH "${MP_DEPS_PREFIX}/lib")
+endif()
+
+# --- Test (ctest --test-dir build) ---
+
+enable_testing()
+if(MP_UADE_ENABLED)
+    add_executable(uade_inprocess_test tests/UadeInProcessTest.cpp)
+    target_link_libraries(uade_inprocess_test PRIVATE megaplayer_core)
+    set_target_properties(uade_inprocess_test PROPERTIES BUILD_RPATH "${MP_DEPS_PREFIX}/lib")
+    add_test(NAME uade_inprocess
+        COMMAND uade_inprocess_test "${MP_THIRD_PARTY}/src/uade/songs/AHX.Cruisin")
 endif()

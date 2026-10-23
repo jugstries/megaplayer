@@ -6,8 +6,9 @@
 #   third_party/src/      sorgenti clonati
 #   third_party/install/  prefisso di installazione di UADE e delle sue librerie
 #
-# ancient e miniaudio vengono solo clonati: li compila direttamente CMake.
-# libopenmpt invece arriva dal sistema (brew, apt, vcpkg...), vedi README.md.
+# ancient e miniaudio vengono solo clonati: li compila direttamente CMake,
+# che compila anche UADE nella versione nello stesso processo. libopenmpt e
+# libarchive invece arrivano dal sistema (brew, apt, vcpkg...), vedi README.md.
 #
 # Uso: scripts/build-deps.sh [--clean]
 
@@ -51,6 +52,17 @@ clone uade         https://gitlab.com/uade-music-player/uade.git       "$UADE_RE
 clone ancient      https://github.com/temisu/ancient.git               "$ANCIENT_REF"
 clone miniaudio    https://github.com/mackron/miniaudio.git            "$MINIAUDIO_REF"
 
+# Patch per far girare uadecore in un thread del player (src/uade/InProcess.cpp).
+# Se viene applicata ora, UADE va riconfigurato: ossupport.c è generato da
+# unixsupport.c.
+UADE_PATCH="$ROOT/patches/uade-in-process.patch"
+UADE_RECONFIGURE=0
+if ! git -C "$SRC/uade" apply --reverse --check "$UADE_PATCH" 2>/dev/null; then
+	echo "==> applico $(basename "$UADE_PATCH")"
+	git -C "$SRC/uade" apply "$UADE_PATCH"
+	UADE_RECONFIGURE=1
+fi
+
 # libzakalwe si chiama libzakalwe.so anche su macOS: UADE la cerca con quel nome.
 if [[ ! -f "$PREFIX/lib/libzakalwe.so" ]]; then
 	echo "==> compilo libzakalwe"
@@ -79,7 +91,10 @@ if [[ ! -f "$PREFIX/lib/libbencodetools.$SHLIB_EXT" ]]; then
 	)
 fi
 
-if [[ ! -f "$PREFIX/lib/libuade.$SHLIB_EXT" ]]; then
+# La build classica genera gli header e ossupport.c che servono alla versione
+# nello stesso processo compilata da CMake, e installa replayer e
+# configurazione in $PREFIX/share/uade.
+if [[ ! -f "$PREFIX/lib/libuade.$SHLIB_EXT" || "$UADE_RECONFIGURE" == 1 ]]; then
 	echo "==> compilo UADE"
 	(
 		cd "$SRC/uade"

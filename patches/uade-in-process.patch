@@ -1,0 +1,111 @@
+diff --git a/src/frontends/common/uadestate.c b/src/frontends/common/uadestate.c
+index 9ba72b0..ee4a0e7 100644
+--- a/src/frontends/common/uadestate.c
++++ b/src/frontends/common/uadestate.c
+@@ -1172,12 +1172,14 @@ struct uade_state *uade_new_state(const struct uade_config *extraconfig)
+ 
+ 	uade_merge_configs(&state->config, &state->extraconfig);
+ 
++#ifndef UADE_IN_PROCESS
+ 	/* TODO: Remove this, but make uadecore respond with a HELLO message. */
+ 	if (access(state->config.uadecore_file.name, X_OK)) {
+ 		uade_warning("Could not execute %s\n",
+ 			     state->config.uadecore_file.name);
+ 		goto error;
+ 	}
++#endif
+ 	if (access(state->config.uae_config_file.name, R_OK)) {
+ 		uade_warning("Could not read uae config file: %s\n",
+ 			     state->config.uae_config_file.name);
+diff --git a/src/frontends/common/unixsupport.c b/src/frontends/common/unixsupport.c
+index b733d4e..1cd5ae2 100644
+--- a/src/frontends/common/unixsupport.c
++++ b/src/frontends/common/unixsupport.c
+@@ -198,6 +198,11 @@ int uade_find_amiga_file(char *realname, size_t maxlen, const char *aname,
+ 	return 0;
+ }
+ 
++#ifndef UADE_IN_PROCESS
++/*
++ * With UADE_IN_PROCESS the embedding application runs uadecore in a thread
++ * and provides these two functions itself.
++ */
+ void uade_arch_kill_and_wait_uadecore(struct uade_ipc *ipc, pid_t *uadepid)
+ {
+ 	if (*uadepid == 0)
+@@ -289,3 +294,4 @@ int uade_arch_spawn(struct uade_ipc *ipc, pid_t *uadepid, const char *uadename,
+ 	uade_set_peer(ipc, 1, fds[0], fds[0]);
+ 	return 0;
+ }
++#endif /* UADE_IN_PROCESS */
+diff --git a/src/memory.c b/src/memory.c
+index 1f76e0a..f9fc83f 100644
+--- a/src/memory.c
++++ b/src/memory.c
+@@ -591,6 +591,15 @@ void memory_init (void)
+ 	mmap (good_address_map + i + 0x1000000 - kickmem_size, 4096, PROT_READ,
+ 	      MAP_FIXED | MAP_PRIVATE, good_address_fd, 0);
+ #else
++#ifdef UADE_IN_PROCESS
++    /* uadecore can be restarted within one process. */
++    free (kickmemory);
++    free (chipmemory);
++    free (bogomemory);
++    bogomemory = NULL;
++    free (a3000memory);
++    a3000memory = NULL;
++#endif
+     kickmemory = (uae_u8 *)xmalloc (kickmem_size);
+     chipmemory = (uae_u8 *) calloc (1, allocated_chipmem);
+ 
+diff --git a/src/readcpu.c b/src/readcpu.c
+index 8b1a7bf..ef4f3db 100644
+--- a/src/readcpu.c
++++ b/src/readcpu.c
+@@ -702,6 +702,10 @@ void read_table68k (void)
+ {
+     int i;
+ 
++#ifdef UADE_IN_PROCESS
++    /* uadecore can be restarted within one process. */
++    free (table68k);
++#endif
+     table68k = (struct instr *)xmalloc (65536 * sizeof (struct instr));
+     for (i = 0; i < 65536; i++) {
+ 	table68k[i].mnemo = i_ILLG;
+diff --git a/src/uade.c b/src/uade.c
+index aa75e73..f04f927 100644
+--- a/src/uade.c
++++ b/src/uade.c
+@@ -802,6 +802,11 @@ void uadecore_option(int argc, char **argv)
+ 
+   memset(&song, 0, sizeof(song));
+ 
++#ifdef UADE_IN_PROCESS
++  /* uadecore can be restarted within one process. */
++  uadecore_has_been_booted = 0;
++#endif
++
+   s_argv = malloc(sizeof(argv[0]) * (argc + 1));
+   if (!s_argv) {
+     fprintf (stderr, "uadecore: Out of memory for command line parsing.\n");
+diff --git a/src/uademain.c b/src/uademain.c
+index a711d55..4dac9f6 100644
+--- a/src/uademain.c
++++ b/src/uademain.c
+@@ -299,7 +299,15 @@ static void uade_signal_initializations(void)
+ 
+ int uadecore_main (int argc, char **argv)
+ {
++#ifdef UADE_IN_PROCESS
++    /*
++     * uadecore is a thread of the host application: leave the host's signal
++     * handlers alone, and reset what a previous run may have left behind.
++     */
++    quit_program = 0;
++#else
+     uade_signal_initializations();
++#endif
+ 
+     default_prefs (&currprefs);
+ 

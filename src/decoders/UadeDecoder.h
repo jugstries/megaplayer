@@ -13,12 +13,10 @@ struct UadeStateDeleter {
 };
 
 // Formati Amiga tramite UADE: emula 68000 e Paula ed esegue i replayer
-// originali di Eagleplayer/DeliTracker. Ogni brano aperto gira in un proprio
-// processo uadecore.
+// originali di Eagleplayer/DeliTracker. L'emulatore gira in un thread del
+// player (src/uade/InProcess.cpp), un brano per volta.
 class UadeDecoderFactory final : public DecoderFactory {
 public:
-    UadeDecoderFactory();
-
     std::string_view name() const override { return "uade"; }
     std::string_view description() const override;
     int probe(const SourceFile& file) override;
@@ -26,7 +24,7 @@ public:
 
 private:
     // Stato usato solo per il riconoscimento, creato al primo probe perché
-    // avvia un processo uadecore.
+    // carica configurazione e database dei formati. Non avvia l'emulatore.
     std::unique_ptr<uade_state, UadeStateDeleter> probeState_;
     bool probeStateFailed_ = false;
 };

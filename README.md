@@ -9,7 +9,7 @@ costruita su un core con un'interfaccia comune per i decoder.
 | Backend   | Libreria              | Cosa suona                                                     |
 |-----------|-----------------------|----------------------------------------------------------------|
 | `openmpt` | libopenmpt            | moduli tracker: MOD, XM, S3M, IT, MED, OKT, ...                |
-| `uade`    | UADE 3.05 (libuade)   | 200+ formati Amiga, con i replayer originali Eagleplayer/DeliTracker in emulazione 68000 + Paula |
+| `uade`    | UADE 3.05             | 200+ formati Amiga, con i replayer originali Eagleplayer/DeliTracker in emulazione 68000 + Paula |
 
 Prima di passare i dati ai backend, il core rimuove gli strati di compressione
 con [ancient](https://github.com/temisu/ancient) (PowerPacker, XPK, Imploder,
@@ -40,12 +40,31 @@ cmake --build build
 ```
 
 `scripts/build-deps.sh` scarica le dipendenze a versioni fissate in
-`third_party/src` e installa UADE in `third_party/install`. I percorsi di
-UADE (replayer, `uadecore`) sono compilati in libuade: se sposti la cartella
-del progetto rilancia `scripts/build-deps.sh --clean`.
+`third_party/src`, applica `patches/uade-in-process.patch` a UADE e installa
+replayer e configurazione di UADE in `third_party/install`. Il percorso dei
+replayer è compilato in libuade: se sposti la cartella del progetto rilancia
+`scripts/build-deps.sh --clean`.
 
-UADE gira solo su sistemi UNIX (macOS, Linux, BSD). Su Windows il backend
-viene disattivato e resta `openmpt`.
+Test: `ctest --test-dir build`.
+
+### UADE nel processo del player
+
+UADE di suo avvia l'emulatore (`uadecore`) come processo separato e ci parla
+tramite pipe: su Windows, iOS e nel browser non si può fare. Qui CMake compila
+libuade ed emulatore in un'unica libreria e `uadecore` gira in un thread
+([src/uade/InProcess.cpp](src/uade/InProcess.cpp)): al posto delle pipe ci
+sono canali in memoria, e gli `exit()` dell'emulatore terminano solo il
+thread. La patch a UADE è piccola: esclude le funzioni che avviano il
+processo e fa sì che l'emulatore possa ripartire più volte nello stesso
+processo senza perdere memoria.
+
+L'audio è identico, bit per bit, a quello della versione con processo
+separato. L'emulatore usa molte variabili globali, quindi suona un solo brano
+UADE per volta: aprirne un secondo mentre il primo suona dà un errore.
+
+Oggi la build è provata su macOS. Restano da fare il porting su Windows
+(thread POSIX e header generati dallo script di configurazione di UADE) e la
+build WebAssembly; libzakalwe e bencode-tools sono ancora librerie esterne.
 
 libuade registra in `~/.uade/contentdb` la durata dei brani suonati fino in
 fondo e la mostra alle riproduzioni successive. È un solo valore per file:
@@ -73,7 +92,11 @@ successivo/precedente, invio file successivo, `q` esci.
 src/core/       interfaccia Decoder, registro dei backend, caricamento e
                 decompressione dei file, archivi, uscita audio, export WAV
 src/decoders/   un file per backend
+src/uade/       UADE nel processo del player
 src/cli/        la riga di comando
+tests/          test automatici
+cmake/          build di UADE dai sorgenti
+patches/        modifiche alle dipendenze
 scripts/        build delle dipendenze
 ```
 

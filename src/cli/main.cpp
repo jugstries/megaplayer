@@ -1,9 +1,9 @@
 #include "Terminal.h"
 
-#include "core/Archive.h"
 #include "core/AudioOutput.h"
 #include "core/DecoderRegistry.h"
 #include "core/SourceFile.h"
+#include "core/TrackList.h"
 #include "core/WavWriter.h"
 
 #include <algorithm>
@@ -142,71 +142,28 @@ bool stdoutIsTerminal()
 #endif
 }
 
-// Un brano da suonare: un file indicato dall'utente o estratto da un archivio.
-struct Track {
-    std::filesystem::path path;
-    std::string name; // come mostrarlo
-    bool fromArchive = false;
-};
-
 struct Playlist {
     std::vector<Track> tracks;
-    std::vector<ExtractedArchive> archives; // tengono in vita i file estratti
     int failures = 0;
+    int skipped = 0; // file non musicali degli archivi
 };
 
-// Divide "giochi/Stormlord.lha/Stormlord/jt.title" nel file che esiste su
-// disco e nel percorso che segue, da cercare dentro l'archivio.
-std::pair<std::filesystem::path, std::string> splitArchivePath(const std::string& input)
-{
-    std::filesystem::path candidate = input;
-    while (!std::filesystem::exists(candidate) && candidate.has_relative_path())
-        candidate = candidate.parent_path();
-    if (candidate.empty() || !std::filesystem::is_regular_file(candidate) || candidate == input)
-        return {input, {}};
-    return {candidate, input.substr(candidate.string().size() + 1)};
-}
-
-Playlist buildPlaylist(const std::vector<std::string>& inputs)
+// `collector` tiene in vita i file estratti dagli archivi: deve vivere quanto
+// la playlist.
+Playlist buildPlaylist(const std::vector<std::string>& inputs, TrackCollector& collector)
 {
     Playlist playlist;
     for (const std::string& input : inputs) {
         try {
-            const auto [path, inner] = splitArchivePath(input);
-            std::optional<ExtractedArchive> archive = openArchive(path);
-            if (!archive) {
-                playlist.tracks.push_back({input, input});
-                continue;
-            }
-
-            size_t added = 0;
-            for (const ExtractedArchive::Entry& entry : archive->entries()) {
-                const bool selected = inner.empty() || entry.name == inner
-                    || entry.name.rfind(inner + "/", 0) == 0;
-                if (selected) {
-                    playlist.tracks.push_back({entry.path, path.string() + " > " + entry.name, true});
-                    ++added;
-                }
-            }
-            if (added == 0)
-                throw std::runtime_error(inner.empty() ? "archivio vuoto" : "nessun file " + inner + " nell'archivio");
-            playlist.archives.push_back(std::move(*archive));
+            std::vector<Track> tracks = collector.collect(input);
+            playlist.tracks.insert(playlist.tracks.end(), tracks.begin(), tracks.end());
+            playlist.skipped += collector.lastSkipped();
         } catch (const std::exception& e) {
             std::cerr << input << ": " << e.what() << "\n";
             ++playlist.failures;
         }
     }
     return playlist;
-}
-
-// Carica il brano; std::nullopt per i file di un archivio che nessun backend
-// riconosce (testi, icone .info, ...), da saltare senza segnalarli.
-std::optional<SourceFile> loadTrack(const Track& track, const DecoderRegistry& registry)
-{
-    SourceFile source = loadSourceFile(track.path);
-    if (track.fromArchive && registry.probe(source).empty())
-        return std::nullopt;
-    return source;
 }
 
 void reportSkipped(int skipped)
@@ -262,54 +219,46 @@ int runBackends(const DecoderRegistry& registry)
 
 int runInfo(const Options& options, const DecoderRegistry& registry)
 {
-    const Playlist playlist = buildPlaylist(options.files);
+    TrackCollector collector(registry);
+    const Playlist playlist = buildPlaylist(options.files, collector);
     int failures = playlist.failures;
-    int skipped = 0;
     for (const Track& track : playlist.tracks) {
         try {
-            const std::optional<SourceFile> source = loadTrack(track, registry);
-            if (!source) {
-                ++skipped;
-                continue;
-            }
+            const SourceFile source = loadSourceFile(track.path);
 
             std::string candidates;
-            for (const ProbeResult& result : registry.probe(*source))
+            for (const ProbeResult& result : registry.probe(source))
                 candidates += (candidates.empty() ? "" : ", ") + std::string(result.factory->name()) + " ("
                     + std::to_string(result.score) + ")";
 
-            const auto decoder = openTrack(*source, options, registry);
-            printTrack(track.name, *source, *decoder);
+            const auto decoder = openTrack(source, options, registry);
+            printTrack(track.name, source, *decoder);
             std::cout << "  Candidati:  " << (candidates.empty() ? "nessuno" : candidates) << "\n";
         } catch (const std::exception& e) {
             std::cerr << track.name << ": " << e.what() << "\n";
             ++failures;
         }
     }
-    reportSkipped(skipped);
+    reportSkipped(playlist.skipped);
     return failures == 0 ? 0 : 1;
 }
 
 int runRender(const Options& options, const DecoderRegistry& registry)
 {
-    const Playlist playlist = buildPlaylist(options.files);
+    TrackCollector collector(registry);
+    const Playlist playlist = buildPlaylist(options.files, collector);
     if (playlist.failures > 0)
         return 1;
-
-    std::vector<std::pair<const Track*, SourceFile>> playable;
-    for (const Track& track : playlist.tracks) {
-        if (std::optional<SourceFile> source = loadTrack(track, registry))
-            playable.emplace_back(&track, std::move(*source));
-    }
-    if (playable.empty())
+    if (playlist.tracks.empty())
         throw std::runtime_error("nessun brano riconosciuto in " + options.files.front());
-    if (playable.size() > 1)
-        throw std::runtime_error(options.files.front() + " contiene " + std::to_string(playable.size())
+    if (playlist.tracks.size() > 1)
+        throw std::runtime_error(options.files.front() + " contiene " + std::to_string(playlist.tracks.size())
                                  + " brani e render ne esporta uno: indica quale, es. ARCHIVIO.lha/percorso/brano");
 
-    const auto& [track, source] = playable.front();
+    const Track& track = playlist.tracks.front();
+    const SourceFile source = loadSourceFile(track.path);
     const auto decoder = openTrack(source, options, registry);
-    printTrack(track->name, source, *decoder);
+    printTrack(track.name, source, *decoder);
 
     WavWriter wav(options.output, options.sampleRate);
     std::vector<float> chunk(kChunkFrames * kChannels);
@@ -423,7 +372,8 @@ AfterTrack playTrack(const Track& track, const SourceFile& source, Decoder& deco
 
 int runPlay(const Options& options, const DecoderRegistry& registry)
 {
-    const Playlist playlist = buildPlaylist(options.files);
+    TrackCollector collector(registry);
+    const Playlist playlist = buildPlaylist(options.files, collector);
     if (playlist.tracks.empty())
         return 1;
 
@@ -433,21 +383,15 @@ int runPlay(const Options& options, const DecoderRegistry& registry)
     output.start();
 
     int failures = playlist.failures;
-    int skipped = 0;
     for (const Track& track : playlist.tracks) {
         try {
-            const std::optional<SourceFile> source = loadTrack(track, registry);
-            if (!source) {
-                ++skipped;
-                continue;
-            }
-            const auto decoder = openTrack(*source, options, registry);
+            const SourceFile source = loadSourceFile(track.path);
+            const auto decoder = openTrack(source, options, registry);
             std::cout << "\n";
-            if (playTrack(track, *source, *decoder, options, output, keys) == AfterTrack::Quit)
+            if (playTrack(track, source, *decoder, options, output, keys) == AfterTrack::Quit)
                 break;
         } catch (const std::exception& e) {
-            // Con Ctrl+C anche i processi uadecore ricevono SIGINT e
-            // muoiono: non è un errore da segnalare.
+            // Dopo Ctrl+C si esce senza segnalare l'errore del brano interrotto.
             if (cli::interrupted())
                 break;
             std::cerr << track.name << ": " << e.what() << "\n";
@@ -455,7 +399,7 @@ int runPlay(const Options& options, const DecoderRegistry& registry)
         }
     }
     output.stop();
-    reportSkipped(skipped);
+    reportSkipped(playlist.skipped);
     return failures == 0 ? 0 : 1;
 }
 

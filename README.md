@@ -1,8 +1,9 @@
 # megaplayer
 
 Prototipo di un player multipiattaforma per formati audio "di ogni tipo",
-a partire dai formati Amiga. Per ora è un'applicazione da riga di comando
-costruita su un core con un'interfaccia comune per i decoder.
+a partire dai formati Amiga. Un core C++ con un'interfaccia comune per i
+decoder, usato da un'applicazione da riga di comando e da un'app desktop in
+Flutter (per ora macOS) con due skin: moderna e retrò.
 
 ## Backend
 
@@ -86,18 +87,62 @@ archivio.
 Durante `play`: spazio pausa, ←/→ seek di 10 s, `n`/`p` sottobrano
 successivo/precedente, invio file successivo, `q` esci.
 
+## App desktop (Flutter)
+
+In `app/` c'è l'app Flutter, per ora solo macOS, con la skin moderna (scura,
+gradienti arancio e viola) e quella retrò (Mac a 1 bit); si passa dall'una
+all'altra dall'interfaccia. Parla con il core attraverso l'API C di
+[src/capi/megaplayer.h](src/capi/megaplayer.h), compilata in
+`libmegaplayer.dylib`: un passo di build di Xcode
+([scripts/embed-core-macos.sh](scripts/embed-core-macos.sh)) la compila con
+CMake e la copia, firmata, dentro l'app. Il core decodifica in un thread suo
+([src/core/Player.cpp](src/core/Player.cpp)); l'app legge lo stato circa 30
+volte al secondo.
+
+Serve Flutter (≥ 3.47) con Xcode, dopo `scripts/build-deps.sh`:
+
+```bash
+cd app
+flutter run -d macos
+```
+
+Per aprire subito dei file, da un'app già compilata:
+
+```bash
+open app/build/macos/Build/Products/Debug/megaplayer.app --args /percorso/Stormlord.lha
+```
+
+Test: `flutter test` in `app/`. `test/skin_screenshots_test.dart` disegna le
+due skin con un core finto e salva le immagini in `app/build/screenshots`;
+`test/ffi_core_test.dart` prova i binding con la libreria vera se
+`MEGAPLAYER_CORE` e `STORMLORD_LHA` indicano libreria e archivio di prova.
+
+Limiti attuali:
+
+- la sandbox di macOS è disattivata, e la libreria punta a libopenmpt e
+  libarchive di Homebrew e ai replayer di UADE in `third_party/install`: l'app
+  gira solo su questa macchina di sviluppo. Per distribuirla vanno messi nel
+  bundle;
+- gli oscilloscopi mostrano i canali sinistro e destro dell'uscita: i quattro
+  canali Paula separati richiedono lavoro nel core;
+- niente trascinamento dei file sulla finestra e la skin scelta non viene
+  ricordata.
+
 ## Struttura
 
 ```
 src/core/       interfaccia Decoder, registro dei backend, caricamento e
-                decompressione dei file, archivi, uscita audio, export WAV
+                decompressione dei file, archivi, motore di riproduzione,
+                uscita audio, export WAV
 src/decoders/   un file per backend
 src/uade/       UADE nel processo del player
+src/capi/       API C per le interfacce grafiche
 src/cli/        la riga di comando
-tests/          test automatici
+app/            app desktop in Flutter
+tests/          test automatici del core
 cmake/          build di UADE dai sorgenti
 patches/        modifiche alle dipendenze
-scripts/        build delle dipendenze
+scripts/        build delle dipendenze e passo di build dell'app macOS
 ```
 
 Per aggiungere un backend: implementare `Decoder` e `DecoderFactory`

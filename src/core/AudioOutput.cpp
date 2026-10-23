@@ -17,6 +17,7 @@ struct AudioOutput::Impl {
     ma_pcm_rb ring{};
     bool running = false;
     std::atomic<bool> paused{false};
+    std::atomic<float> volume{1.0f};
 
     // Contatori assoluti dei frame scritti e letti. Il ring buffer ha un solo
     // lettore, il thread audio, quindi è lui a scartare la coda: flush()
@@ -47,6 +48,12 @@ struct AudioOutput::Impl {
             done += chunk;
         }
         self->read.fetch_add(done, std::memory_order_release);
+
+        const float volume = self->volume.load(std::memory_order_relaxed);
+        if (volume != 1.0f) {
+            for (ma_uint32 i = 0; i < done * kChannels; ++i)
+                out[i] *= volume;
+        }
     }
 
     void discardStale()
@@ -108,6 +115,11 @@ void AudioOutput::stop()
 void AudioOutput::setPaused(bool paused)
 {
     impl_->paused.store(paused, std::memory_order_relaxed);
+}
+
+void AudioOutput::setVolume(float volume)
+{
+    impl_->volume.store(volume, std::memory_order_relaxed);
 }
 
 void AudioOutput::flush()

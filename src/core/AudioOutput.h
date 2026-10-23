@@ -26,6 +26,9 @@ public:
     // In pausa il dispositivo suona silenzio e la coda resta intatta.
     void setPaused(bool paused);
 
+    // Applicato all'uscita, quindi subito udibile anche con la coda piena.
+    void setVolume(float volume);
+
     // Scarta l'audio in coda, per seek e cambi di brano. Si può continuare a
     // scrivere subito dopo.
     void flush();

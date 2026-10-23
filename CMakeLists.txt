@@ -5,6 +5,8 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+# Le librerie statiche finiscono anche nella libreria dinamica per le GUI.
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE RelWithDebInfo)
 endif()
@@ -51,7 +53,9 @@ add_library(megaplayer_core STATIC
     src/core/Archive.cpp
     src/core/AudioOutput.cpp
     src/core/DecoderRegistry.cpp
+    src/core/Player.cpp
     src/core/SourceFile.cpp
+    src/core/TrackList.cpp
     src/core/WavWriter.cpp
     src/decoders/BuiltinDecoders.cpp)
 target_include_directories(megaplayer_core PUBLIC src)
@@ -114,6 +118,19 @@ if(MP_UADE_ENABLED)
     # Su Linux libzakalwe e bencode-tools sono librerie condivise nel
     # prefisso privato.
     set_target_properties(megaplayer PROPERTIES BUILD_RPATH "${MP_DEPS_PREFIX}/lib")
+endif()
+
+# --- Libreria dinamica con l'API C, per l'app Flutter (app/) ---
+
+add_library(megaplayer_capi SHARED src/capi/megaplayer.cpp)
+target_link_libraries(megaplayer_capi PRIVATE megaplayer_core)
+set_target_properties(megaplayer_capi PROPERTIES
+    OUTPUT_NAME megaplayer
+    CXX_VISIBILITY_PRESET hidden
+    INSTALL_NAME_DIR "@rpath"
+    BUILD_WITH_INSTALL_NAME_DIR ON)
+if(MP_UADE_ENABLED)
+    set_target_properties(megaplayer_capi PROPERTIES BUILD_RPATH "${MP_DEPS_PREFIX}/lib")
 endif()
 
 # --- Test (ctest --test-dir build) ---

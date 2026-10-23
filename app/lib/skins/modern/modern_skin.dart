@@ -1,0 +1,1135 @@
+import 'dart:math' as math;
+import 'dart:typed_data';
+
+import 'package:flutter/material.dart';
+
+import '../../core/models.dart';
+import '../../player/player_controller.dart';
+
+// Skin moderna: scura, minimale, angoli arrotondati, accenti a gradiente.
+
+const _background = Color(0xFF0C0B10);
+const _surface = Color(0xFF15131B);
+const _surfaceRaised = Color(0xFF1C1924);
+const _selected = Color(0xFF221F2B);
+const _border = Color(0xFF2A2633);
+const _inset = Color(0xFF0F0E14);
+const _insetBorder = Color(0xFF24212D);
+const _text = Color(0xFFF2EFF7);
+const _textSoft = Color(0xFFCFC9DA);
+const _muted = Color(0xFFA39DB0);
+const _faint = Color(0xFF8C8699);
+const _track = Color(0xFF34303F);
+
+const _orange = Color(0xFFFF8A3D);
+const _pink = Color(0xFFEC4F8F);
+const _violet = Color(0xFF8B5CF6);
+const _accentGradient = LinearGradient(
+  colors: [_orange, _pink, _violet],
+  begin: Alignment.topLeft,
+  end: Alignment.bottomRight,
+);
+
+TextStyle _sora(double size, {double weight = 400, Color color = _text, double? height, double? spacing}) =>
+    TextStyle(
+      fontFamily: 'Sora',
+      fontSize: size,
+      color: color,
+      height: height,
+      letterSpacing: spacing,
+      fontVariations: [FontVariation('wght', weight)],
+    );
+
+TextStyle _mono(double size, {Color color = _muted, double weight = 400}) => TextStyle(
+      fontFamily: 'JetBrainsMono',
+      fontSize: size,
+      color: color,
+      fontVariations: [FontVariation('wght', weight)],
+    );
+
+TextStyle _label() => _sora(11, weight: 600, color: _faint, spacing: 0.9);
+
+class ModernSkin extends StatelessWidget {
+  const ModernSkin({super.key, required this.controller});
+
+  final PlayerController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: _background,
+      body: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _Header(controller: controller),
+            if (controller.error != null) ...[
+              const SizedBox(height: 12),
+              _ErrorBanner(message: controller.error!),
+            ],
+            const SizedBox(height: 20),
+            Expanded(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  if (constraints.maxWidth >= 1180) {
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        SizedBox(width: 232, child: _Sidebar(controller: controller)),
+                        const SizedBox(width: 20),
+                        Expanded(child: _MainColumn(controller: controller, fill: true)),
+                        const SizedBox(width: 20),
+                        SizedBox(width: 320, child: _Aside(controller: controller, fill: true)),
+                      ],
+                    );
+                  }
+                  return ListView(
+                    children: [
+                      _MainColumn(controller: controller, fill: false),
+                      const SizedBox(height: 20),
+                      _Aside(controller: controller, fill: false),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _Header extends StatelessWidget {
+  const _Header({required this.controller});
+
+  final PlayerController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(gradient: _accentGradient, borderRadius: BorderRadius.circular(14)),
+          child: const Icon(Icons.graphic_eq_rounded, color: _background, size: 26),
+        ),
+        const SizedBox(width: 12),
+        Text('megaplayer', style: _sora(20, weight: 700, spacing: -0.4)),
+        const Spacer(),
+        _PillButton(
+          icon: Icons.folder_open_rounded,
+          label: 'Apri file…',
+          onPressed: controller.openFiles,
+        ),
+        const SizedBox(width: 12),
+        _SkinSwitch(controller: controller),
+      ],
+    );
+  }
+}
+
+class _ErrorBanner extends StatelessWidget {
+  const _ErrorBanner({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF2A1720),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFF5A2A3A)),
+      ),
+      child: Text(message, style: _sora(13, color: const Color(0xFFFFC2D2))),
+    );
+  }
+}
+
+class _SkinSwitch extends StatelessWidget {
+  const _SkinSwitch({required this.controller});
+
+  final PlayerController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget option(String label, Skin skin) {
+      final active = controller.skin == skin;
+      return Semantics(
+        selected: active,
+        button: true,
+        child: InkWell(
+          onTap: () => controller.setSkin(skin),
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            height: 44,
+            padding: const EdgeInsets.symmetric(horizontal: 18),
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: active ? _border : Colors.transparent,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(label, style: _sora(14, weight: active ? 600 : 500, color: active ? _text : _muted)),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: _surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _border),
+      ),
+      child: Row(children: [option('Moderna', Skin.modern), const SizedBox(width: 4), option('Retrò', Skin.retro)]),
+    );
+  }
+}
+
+class _PillButton extends StatelessWidget {
+  const _PillButton({required this.icon, required this.label, required this.onPressed});
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: _surface,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: const BorderSide(color: _border)),
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          height: 44,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 18, color: _textSoft),
+              const SizedBox(width: 10),
+              Text(label, style: _sora(14, weight: 500, color: _textSoft)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Riquadro con fondo, bordo e angoli arrotondati.
+class _Panel extends StatelessWidget {
+  const _Panel({required this.child, this.padding = const EdgeInsets.all(20)});
+
+  final Widget child;
+  final EdgeInsets padding;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: padding,
+      decoration: BoxDecoration(
+        color: _surface,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: _border),
+      ),
+      child: child,
+    );
+  }
+}
+
+class _Sidebar extends StatelessWidget {
+  const _Sidebar({required this.controller});
+
+  final PlayerController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    return _Panel(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(padding: const EdgeInsets.only(left: 12, bottom: 8), child: Text('LIBRERIA', style: _label())),
+          const _NavItem(icon: Icons.album_rounded, label: 'In riproduzione', active: true),
+          _NavItem(icon: Icons.folder_open_rounded, label: 'Apri file…', onTap: controller.openFiles),
+          const SizedBox(height: 24),
+          Padding(padding: const EdgeInsets.only(left: 12, bottom: 8), child: Text('FORMATI', style: _label())),
+          const _FormatItem(color: _orange, label: 'Amiga'),
+          const _FormatItem(color: _pink, label: 'Moduli tracker'),
+          const _FormatItem(color: _violet, label: 'C64 SID', soon: true),
+          const _FormatItem(color: Color(0xFF4A4458), label: 'Console', soon: true),
+          const Spacer(),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: _inset,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: _insetBorder),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('BACKEND', style: _label()),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    for (final backend in controller.backends)
+                      Tooltip(
+                        message: backend.description,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(color: _surfaceRaised, borderRadius: BorderRadius.circular(999)),
+                          child: Text(backend.name, style: _mono(12, color: _textSoft)),
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _NavItem extends StatelessWidget {
+  const _NavItem({required this.icon, required this.label, this.active = false, this.onTap});
+
+  final IconData icon;
+  final String label;
+  final bool active;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        height: 44,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: active ? _selected : Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 18, color: active ? _orange : _textSoft),
+            const SizedBox(width: 12),
+            Text(label, style: _sora(14, weight: active ? 600 : 400, color: active ? _text : _textSoft)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FormatItem extends StatelessWidget {
+  const _FormatItem({required this.color, required this.label, this.soon = false});
+
+  final Color color;
+  final String label;
+  final bool soon;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 44,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: Row(
+          children: [
+            Container(
+              width: 10,
+              height: 10,
+              decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(3)),
+            ),
+            const SizedBox(width: 12),
+            Text(label, style: _sora(14, color: soon ? _faint : _textSoft)),
+            if (soon) ...[
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: _border),
+                ),
+                child: Text('presto', style: _sora(11, color: _faint)),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MainColumn extends StatelessWidget {
+  const _MainColumn({required this.controller, required this.fill});
+
+  final PlayerController controller;
+  final bool fill;
+
+  @override
+  Widget build(BuildContext context) {
+    final scope = _ScopePanel(controller: controller);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _NowPlaying(controller: controller),
+        const SizedBox(height: 20),
+        if (fill) Expanded(child: scope) else SizedBox(height: 260, child: scope),
+      ],
+    );
+  }
+}
+
+class _NowPlaying extends StatelessWidget {
+  const _NowPlaying({required this.controller});
+
+  final PlayerController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final track = controller.currentTrack;
+    final details = controller.details;
+    final status = controller.status;
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(24),
+      child: Container(
+        decoration: BoxDecoration(
+          color: _surface,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: _border),
+        ),
+        child: Stack(
+          children: [
+            // Aloni di colore dietro al contenuto.
+            Positioned(top: -200, right: -140, child: _Glow(color: _violet, size: 480, opacity: 0.3)),
+            Positioned(bottom: -240, left: -160, child: _Glow(color: _orange, size: 460, opacity: 0.16)),
+            Padding(
+              padding: const EdgeInsets.all(28),
+              child: track == null
+                  ? _EmptyState(controller: controller)
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _TrackHeading(track: track, details: details),
+                        const SizedBox(height: 24),
+                        _ProgressBar(status: status, onSeek: controller.seekTo),
+                        const SizedBox(height: 20),
+                        _Transport(controller: controller),
+                      ],
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _Glow extends StatelessWidget {
+  const _Glow({required this.color, required this.size, required this.opacity});
+
+  final Color color;
+  final double size;
+  final double opacity;
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: Opacity(
+        opacity: opacity,
+        child: Container(
+          width: size,
+          height: size,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: RadialGradient(colors: [color, color.withValues(alpha: 0)], stops: const [0, 0.65]),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _EmptyState extends StatelessWidget {
+  const _EmptyState({required this.controller});
+
+  final PlayerController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 260,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text('Nessun brano in riproduzione', style: _sora(28, weight: 700, spacing: -0.6)),
+          const SizedBox(height: 10),
+          Text(
+            'Apri un modulo, un brano o un archivio (LHA, ZIP, 7z…)',
+            style: _sora(15, color: _textSoft),
+          ),
+          const SizedBox(height: 24),
+          _PillButton(icon: Icons.folder_open_rounded, label: 'Apri file…', onPressed: controller.openFiles),
+        ],
+      ),
+    );
+  }
+}
+
+class _TrackHeading extends StatelessWidget {
+  const _TrackHeading({required this.track, required this.details});
+
+  final Track track;
+  final TrackDetails? details;
+
+  @override
+  Widget build(BuildContext context) {
+    final info = details;
+    final title = (info?.title.isNotEmpty ?? false) ? info!.title : track.fileName;
+    final subtitle = [
+      if (title != track.fileName) track.fileName,
+      if (info != null && info.formatLabel.isNotEmpty) info.formatLabel,
+      if (info != null && info.author.isNotEmpty) info.author,
+    ].join(' · ');
+    final monogram = (info?.formatLabel.isNotEmpty ?? false) ? info!.formatLabel : track.fileName;
+
+    return Row(
+      children: [
+        Container(
+          width: 128,
+          height: 128,
+          padding: const EdgeInsets.all(14),
+          alignment: Alignment.bottomLeft,
+          decoration: BoxDecoration(
+            gradient: _accentGradient,
+            borderRadius: BorderRadius.circular(22),
+            boxShadow: [BoxShadow(color: _violet.withValues(alpha: 0.45), blurRadius: 40, offset: const Offset(0, 20), spreadRadius: -20)],
+          ),
+          child: Text(
+            _initials(monogram),
+            style: _sora(34, weight: 700, color: _background, spacing: -1.4),
+          ),
+        ),
+        const SizedBox(width: 24),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'IN RIPRODUZIONE${track.location.isEmpty ? '' : ' · ${track.location}'}',
+                style: _sora(12, weight: 600, color: _muted, spacing: 1),
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                title,
+                style: _sora(44, weight: 700, height: 1.05, spacing: -1.3),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              if (subtitle.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(subtitle, style: _sora(16, color: _textSoft), overflow: TextOverflow.ellipsis),
+              ],
+              const SizedBox(height: 14),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  if (info != null) _Chip(info.backend.toUpperCase()),
+                  if (info != null && info.player.isNotEmpty) _Chip('Replayer ${info.player}'),
+                  if (info != null && info.subsongCount > 1) _Chip('${info.subsongCount} sottobrani'),
+                  if (info != null && info.packers.isNotEmpty) _Chip(info.packers.join(' › ')),
+                  const _Chip('48 kHz'),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  static String _initials(String text) {
+    final letters = text.replaceAll(RegExp(r'[^A-Za-z0-9 ]'), ' ').trim().split(RegExp(r'\s+'));
+    if (letters.length >= 2) return (letters[0][0] + letters[1][0]).toUpperCase();
+    final word = letters.first;
+    return word.substring(0, math.min(2, word.length)).toUpperCase();
+  }
+}
+
+class _Chip extends StatelessWidget {
+  const _Chip(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(color: _selected, borderRadius: BorderRadius.circular(999)),
+      child: Text(label, style: _sora(12, color: const Color(0xFFE4DFEC))),
+    );
+  }
+}
+
+/// Barra di avanzamento. Con durata sconosciuta (succede spesso con UADE)
+/// mostra solo che il brano sta andando, e il seek passa dai pulsanti ±10 s.
+class _ProgressBar extends StatelessWidget {
+  const _ProgressBar({required this.status, required this.onSeek});
+
+  final CoreStatus status;
+  final ValueChanged<double> onSeek;
+
+  @override
+  Widget build(BuildContext context) {
+    final duration = status.duration;
+    final fraction = duration == null || duration <= 0 ? null : (status.position / duration).clamp(0.0, 1.0);
+
+    void seekAt(double dx, double width) {
+      if (duration != null) onSeek((dx / width).clamp(0.0, 1.0) * duration);
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        LayoutBuilder(
+          builder: (context, constraints) => GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTapDown: (d) => seekAt(d.localPosition.dx, constraints.maxWidth),
+            onHorizontalDragUpdate: (d) => seekAt(d.localPosition.dx, constraints.maxWidth),
+            child: SizedBox(
+              height: 28,
+              child: CustomPaint(
+                painter: _ProgressPainter(fraction: fraction, position: status.position),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Text(formatTime(status.position), style: _mono(13, color: _text)),
+            const Spacer(),
+            Text(formatTime(duration), style: _mono(13)),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _ProgressPainter extends CustomPainter {
+  _ProgressPainter({required this.fraction, required this.position});
+
+  final double? fraction;
+  final double position;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final y = size.height / 2;
+    final track = RRect.fromLTRBR(0, y - 3, size.width, y + 3, const Radius.circular(3));
+    canvas.drawRRect(track, Paint()..color = _track);
+
+    final gradient = Paint()
+      ..shader = _accentGradient.createShader(Rect.fromLTWH(0, 0, size.width, size.height));
+    final value = fraction;
+    if (value == null) {
+      // Durata sconosciuta: un tratto colorato che scorre.
+      const segment = 0.18;
+      final start = (position / 8) % (1 + segment) - segment;
+      final left = (start.clamp(0.0, 1.0)) * size.width;
+      final right = ((start + segment).clamp(0.0, 1.0)) * size.width;
+      if (right > left) {
+        canvas.drawRRect(RRect.fromLTRBR(left, y - 3, right, y + 3, const Radius.circular(3)), gradient);
+      }
+      return;
+    }
+    final x = value * size.width;
+    canvas.drawRRect(RRect.fromLTRBR(0, y - 3, x, y + 3, const Radius.circular(3)), gradient);
+    canvas.drawCircle(Offset(x, y), 8, Paint()..color = _text);
+  }
+
+  @override
+  bool shouldRepaint(_ProgressPainter old) => old.fraction != fraction || old.position != position;
+}
+
+class _Transport extends StatelessWidget {
+  const _Transport({required this.controller});
+
+  final PlayerController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final status = controller.status;
+    final playing = status.isPlaying;
+
+    return Wrap(
+      alignment: WrapAlignment.spaceBetween,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: 16,
+      runSpacing: 16,
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _RoundIconButton(icon: Icons.skip_previous_rounded, tooltip: 'Brano precedente', onPressed: controller.previous),
+            const SizedBox(width: 10),
+            _RoundIconButton(icon: Icons.replay_10_rounded, tooltip: 'Indietro di 10 secondi', onPressed: () => controller.seekBy(-10)),
+            const SizedBox(width: 10),
+            Tooltip(
+              message: playing ? 'Pausa' : 'Riproduci',
+              child: InkWell(
+                onTap: controller.togglePause,
+                customBorder: const CircleBorder(),
+                child: Container(
+                  width: 68,
+                  height: 68,
+                  decoration: BoxDecoration(
+                    gradient: _accentGradient,
+                    shape: BoxShape.circle,
+                    boxShadow: [BoxShadow(color: _pink.withValues(alpha: 0.5), blurRadius: 34, offset: const Offset(0, 14), spreadRadius: -12)],
+                  ),
+                  child: Icon(playing ? Icons.pause_rounded : Icons.play_arrow_rounded, size: 34, color: _background),
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            _RoundIconButton(icon: Icons.forward_10_rounded, tooltip: 'Avanti di 10 secondi', onPressed: () => controller.seekBy(10)),
+            const SizedBox(width: 10),
+            _RoundIconButton(icon: Icons.skip_next_rounded, tooltip: 'Brano successivo', onPressed: controller.next),
+          ],
+        ),
+        Container(
+          padding: const EdgeInsets.all(3),
+          decoration: BoxDecoration(
+            color: _surfaceRaised,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: _border),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _FlatIconButton(
+                icon: Icons.chevron_left_rounded,
+                tooltip: 'Sottobrano precedente',
+                onPressed: () => controller.selectSubsong(status.subsong - 1),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                child: Text.rich(
+                  TextSpan(
+                    style: _sora(13, color: _textSoft),
+                    children: [
+                      const TextSpan(text: 'Sottobrano '),
+                      TextSpan(text: '${status.subsong + 1}', style: _sora(13, weight: 600)),
+                      TextSpan(text: ' di ${math.max(1, status.subsongCount)}'),
+                    ],
+                  ),
+                ),
+              ),
+              _FlatIconButton(
+                icon: Icons.chevron_right_rounded,
+                tooltip: 'Sottobrano successivo',
+                onPressed: () => controller.selectSubsong(status.subsong + 1),
+              ),
+            ],
+          ),
+        ),
+        SizedBox(
+          width: 220,
+          child: Row(
+            children: [
+              const Icon(Icons.volume_up_rounded, size: 20, color: _muted),
+              Expanded(
+                child: SliderTheme(
+                  data: SliderThemeData(
+                    activeTrackColor: _orange,
+                    inactiveTrackColor: _track,
+                    thumbColor: _text,
+                    overlayColor: _orange.withValues(alpha: 0.12),
+                    trackHeight: 4,
+                  ),
+                  child: Slider(value: controller.volume, onChanged: controller.setVolume, semanticFormatterCallback: (v) => 'Volume ${(v * 100).round()}%'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _RoundIconButton extends StatelessWidget {
+  const _RoundIconButton({required this.icon, required this.tooltip, required this.onPressed});
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: _selected,
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(14),
+          child: SizedBox(width: 48, height: 48, child: Icon(icon, size: 24, color: _text)),
+        ),
+      ),
+    );
+  }
+}
+
+class _FlatIconButton extends StatelessWidget {
+  const _FlatIconButton({required this.icon, required this.tooltip, required this.onPressed});
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(12),
+        child: SizedBox(width: 44, height: 44, child: Icon(icon, size: 22, color: _muted)),
+      ),
+    );
+  }
+}
+
+class _ScopePanel extends StatelessWidget {
+  const _ScopePanel({required this.controller});
+
+  final PlayerController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    return _Panel(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text('Oscilloscopio', style: _sora(18, weight: 600)),
+              const Spacer(),
+              Text('uscita stereo', style: _sora(13, color: _muted)),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Expanded(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(child: _ScopeTile(label: 'Sinistra', samples: controller.scope, channel: 0)),
+                const SizedBox(width: 12),
+                Expanded(child: _ScopeTile(label: 'Destra', samples: controller.scope, channel: 1)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ScopeTile extends StatelessWidget {
+  const _ScopeTile({required this.label, required this.samples, required this.channel});
+
+  final String label;
+  final Float32List samples;
+  final int channel;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: _inset,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: _insetBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: _sora(13, weight: 600)),
+          const SizedBox(height: 8),
+          Expanded(
+            child: CustomPaint(
+              size: Size.infinite,
+              painter: _ScopePainter(samples: samples, channel: channel),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ScopePainter extends CustomPainter {
+  _ScopePainter({required this.samples, required this.channel});
+
+  final Float32List samples;
+  final int channel;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final frames = samples.length ~/ 2;
+    final mid = size.height / 2;
+    final path = Path();
+    if (frames < 2) {
+      path
+        ..moveTo(0, mid)
+        ..lineTo(size.width, mid);
+    } else {
+      for (var i = 0; i < frames; i++) {
+        final x = i / (frames - 1) * size.width;
+        final y = mid - samples[i * 2 + channel].clamp(-1.0, 1.0) * (mid - 4);
+        i == 0 ? path.moveTo(x, y) : path.lineTo(x, y);
+      }
+    }
+    final bounds = Offset.zero & size;
+    canvas.drawPath(
+      path,
+      Paint()
+        ..shader = LinearGradient(colors: [_orange.withValues(alpha: 0.3), _violet.withValues(alpha: 0.3)])
+            .createShader(bounds)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 7
+        ..strokeJoin = StrokeJoin.round
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
+    );
+    canvas.drawPath(
+      path,
+      Paint()
+        ..shader = const LinearGradient(colors: [_orange, _violet]).createShader(bounds)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2
+        ..strokeJoin = StrokeJoin.round,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_ScopePainter old) => !identical(old.samples, samples);
+}
+
+class _Aside extends StatelessWidget {
+  const _Aside({required this.controller, required this.fill});
+
+  final PlayerController controller;
+  final bool fill;
+
+  @override
+  Widget build(BuildContext context) {
+    final queue = _QueuePanel(controller: controller, scrollable: fill);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (fill) Expanded(child: queue) else queue,
+        const SizedBox(height: 20),
+        _DetailsPanel(controller: controller),
+      ],
+    );
+  }
+}
+
+class _QueuePanel extends StatelessWidget {
+  const _QueuePanel({required this.controller, required this.scrollable});
+
+  final PlayerController controller;
+  final bool scrollable;
+
+  @override
+  Widget build(BuildContext context) {
+    final tracks = controller.tracks;
+    final rows = [
+      for (var i = 0; i < tracks.length; i++)
+        _QueueRow(
+          index: i,
+          track: tracks[i],
+          current: i == controller.currentIndex,
+          onTap: () => controller.playIndex(i),
+        ),
+    ];
+
+    return _Panel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Coda', style: _sora(18, weight: 600)),
+                const SizedBox(height: 4),
+                Text(
+                  tracks.isEmpty ? 'Vuota' : '${tracks.length} ${tracks.length == 1 ? 'brano' : 'brani'}',
+                  style: _sora(13, color: _muted),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          if (scrollable)
+            Expanded(child: ListView(children: rows))
+          else
+            ...rows,
+        ],
+      ),
+    );
+  }
+}
+
+class _QueueRow extends StatelessWidget {
+  const _QueueRow({required this.index, required this.track, required this.current, required this.onTap});
+
+  final int index;
+  final Track track;
+  final bool current;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 56),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: current ? _selected : Colors.transparent,
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 28,
+                child: current
+                    ? const _PlayingBars()
+                    : Text((index + 1).toString().padLeft(2, '0'), style: _mono(12, color: _faint)),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      track.fileName,
+                      style: _sora(14, weight: current ? 600 : 500),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    if (track.location.isNotEmpty)
+                      Text(
+                        track.location,
+                        style: _sora(12, color: current ? _textSoft : _muted),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PlayingBars extends StatelessWidget {
+  const _PlayingBars();
+
+  @override
+  Widget build(BuildContext context) {
+    Widget bar(double height, Color color) => Container(
+          width: 4,
+          height: height,
+          margin: const EdgeInsets.only(right: 3),
+          decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(2)),
+        );
+    return SizedBox(
+      height: 16,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [bar(9, _orange), bar(16, _pink), bar(12, _violet)],
+      ),
+    );
+  }
+}
+
+class _DetailsPanel extends StatelessWidget {
+  const _DetailsPanel({required this.controller});
+
+  final PlayerController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final info = controller.details;
+    final rows = info == null
+        ? const <(String, String)>[]
+        : [
+            ('Formato', info.formatLabel.isEmpty ? '—' : info.formatLabel),
+            ('Replayer', info.player.isEmpty ? '—' : info.player),
+            ('Backend', info.backend),
+            ('File', info.file),
+            ('Packer', info.packers.isEmpty ? 'nessuno' : info.packers.join(' › ')),
+            ('Sottobrani', '${info.subsongCount}'),
+            ('Durata', info.duration == null ? 'sconosciuta' : formatTime(info.duration)),
+          ];
+
+    return _Panel(
+      padding: const EdgeInsets.fromLTRB(24, 20, 24, 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text('Dettagli', style: _sora(18, weight: 600)),
+          const SizedBox(height: 14),
+          if (rows.isEmpty) Text('Nessun brano aperto', style: _sora(13, color: _muted)),
+          for (final (label, value) in rows)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(width: 92, child: Text(label, style: _sora(13, color: _muted))),
+                  Expanded(
+                    child: Text(
+                      value,
+                      style: label == 'File' ? _mono(12, color: _text) : _sora(13),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}

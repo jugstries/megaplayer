@@ -1,0 +1,118 @@
+cmake_minimum_required(VERSION 3.21)
+project(megaplayer VERSION 0.1.0 LANGUAGES C CXX)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_BUILD_TYPE RelWithDebInfo)
+endif()
+
+option(MP_WITH_OPENMPT "Backend libopenmpt (moduli tracker)" ON)
+option(MP_WITH_UADE "Backend UADE (formati Amiga, solo UNIX)" ON)
+option(MP_WITH_ARCHIVES "Apertura diretta degli archivi LHA/ZIP/7z/... (libarchive)" ON)
+
+set(MP_THIRD_PARTY "${CMAKE_CURRENT_SOURCE_DIR}/third_party")
+set(MP_DEPS_PREFIX "${MP_THIRD_PARTY}/install")
+
+if(NOT EXISTS "${MP_THIRD_PARTY}/src/ancient" OR NOT EXISTS "${MP_THIRD_PARTY}/src/miniaudio")
+    message(FATAL_ERROR "Dipendenze mancanti: esegui prima scripts/build-deps.sh")
+endif()
+
+find_package(PkgConfig REQUIRED)
+# libuade.pc sta nel prefisso privato creato da scripts/build-deps.sh.
+set(ENV{PKG_CONFIG_PATH} "${MP_DEPS_PREFIX}/lib/pkgconfig:$ENV{PKG_CONFIG_PATH}")
+
+# --- ancient: decompressori per i packer d'epoca (compilato dai sorgenti) ---
+
+file(GLOB MP_ANCIENT_SOURCES
+    "${MP_THIRD_PARTY}/src/ancient/src/*.cpp"
+    "${MP_THIRD_PARTY}/src/ancient/src/common/*.cpp")
+add_library(ancient STATIC ${MP_ANCIENT_SOURCES})
+target_include_directories(ancient
+    PUBLIC "${MP_THIRD_PARTY}/src/ancient/api"
+    PRIVATE "${MP_THIRD_PARTY}/src/ancient/src" "${MP_THIRD_PARTY}/src/ancient/api/ancient")
+target_compile_features(ancient PUBLIC cxx_std_17)
+set_target_properties(ancient PROPERTIES CXX_VISIBILITY_PRESET hidden)
+
+# --- miniaudio: uscita audio ed encoder WAV ---
+
+add_library(miniaudio STATIC "${MP_THIRD_PARTY}/src/miniaudio/miniaudio.c")
+target_include_directories(miniaudio PUBLIC "${MP_THIRD_PARTY}/src/miniaudio")
+# I decoder di miniaudio (WAV/FLAC/MP3) per ora non servono.
+target_compile_definitions(miniaudio PUBLIC MA_NO_DECODING MA_NO_RESOURCE_MANAGER MA_NO_NODE_GRAPH MA_NO_ENGINE MA_NO_GENERATION)
+if(UNIX AND NOT APPLE)
+    find_package(Threads REQUIRED)
+    target_link_libraries(miniaudio PUBLIC Threads::Threads m ${CMAKE_DL_LIBS})
+endif()
+
+# --- core ---
+
+add_library(megaplayer_core STATIC
+    src/core/Archive.cpp
+    src/core/AudioOutput.cpp
+    src/core/DecoderRegistry.cpp
+    src/core/SourceFile.cpp
+    src/core/WavWriter.cpp
+    src/decoders/BuiltinDecoders.cpp)
+target_include_directories(megaplayer_core PUBLIC src)
+target_link_libraries(megaplayer_core PUBLIC ancient miniaudio)
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(megaplayer_core PRIVATE -Wall -Wextra)
+endif()
+
+if(MP_WITH_ARCHIVES)
+    if(APPLE)
+        # Homebrew installa libarchive come keg-only, fuori dal percorso di
+        # pkg-config.
+        find_program(MP_BREW brew)
+        if(MP_BREW)
+            execute_process(COMMAND "${MP_BREW}" --prefix libarchive
+                OUTPUT_VARIABLE MP_BREW_LIBARCHIVE OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+            set(ENV{PKG_CONFIG_PATH} "${MP_BREW_LIBARCHIVE}/lib/pkgconfig:$ENV{PKG_CONFIG_PATH}")
+        endif()
+    endif()
+    pkg_check_modules(LIBARCHIVE IMPORTED_TARGET libarchive)
+    if(LIBARCHIVE_FOUND)
+        target_compile_definitions(megaplayer_core PRIVATE MP_WITH_ARCHIVES)
+        target_link_libraries(megaplayer_core PUBLIC PkgConfig::LIBARCHIVE)
+    else()
+        message(WARNING "libarchive non trovata: gli archivi vanno estratti a mano")
+    endif()
+endif()
+
+if(MP_WITH_OPENMPT)
+    pkg_check_modules(OPENMPT IMPORTED_TARGET libopenmpt)
+    if(OPENMPT_FOUND)
+        target_sources(megaplayer_core PRIVATE src/decoders/OpenMptDecoder.cpp)
+        target_compile_definitions(megaplayer_core PRIVATE MP_WITH_OPENMPT)
+        target_link_libraries(megaplayer_core PUBLIC PkgConfig::OPENMPT)
+    else()
+        message(WARNING "libopenmpt non trovata: backend openmpt disattivato")
+    endif()
+endif()
+
+if(MP_WITH_UADE)
+    if(WIN32)
+        message(WARNING "UADE supporta solo sistemi UNIX: backend uade disattivato")
+    else()
+        pkg_check_modules(UADE IMPORTED_TARGET libuade)
+        if(UADE_FOUND)
+            target_sources(megaplayer_core PRIVATE src/decoders/UadeDecoder.cpp)
+            target_compile_definitions(megaplayer_core PRIVATE MP_WITH_UADE)
+            target_link_libraries(megaplayer_core PUBLIC PkgConfig::UADE)
+        else()
+            message(WARNING "libuade non trovata (scripts/build-deps.sh): backend uade disattivato")
+        endif()
+    endif()
+endif()
+
+# --- CLI ---
+
+add_executable(megaplayer src/cli/main.cpp src/cli/Terminal.cpp)
+target_link_libraries(megaplayer PRIVATE megaplayer_core)
+if(UADE_FOUND)
+    # Su Linux libuade è una libreria condivisa nel prefisso privato.
+    set_target_properties(megaplayer PROPERTIES BUILD_RPATH "${UADE_LIBRARY_DIRS}")
+endif()

@@ -23,6 +23,7 @@ endif()
 option(MP_WITH_OPENMPT "Backend libopenmpt (moduli tracker)" ON)
 option(MP_WITH_UADE "Backend UADE (formati Amiga)" ON)
 option(MP_WITH_GME "Backend game-music-emu (console a 8 e 16 bit)" ON)
+option(MP_WITH_SID "Backend libsidplayfp (Commodore 64)" ON)
 option(MP_WITH_ARCHIVES "Apertura diretta degli archivi LHA/ZIP/7z/... (libarchive)" ON)
 
 set(MP_THIRD_PARTY "${CMAKE_CURRENT_SOURCE_DIR}/third_party")
@@ -133,6 +134,19 @@ if(MP_WITH_GME)
         target_compile_definitions(megaplayer_core PRIVATE MP_WITH_GME)
         target_link_libraries(megaplayer_core PUBLIC gme::gme)
         set(MP_GME_ENABLED ON)
+    endif()
+endif()
+
+set(MP_SID_ENABLED OFF)
+if(MP_WITH_SID)
+    if(NOT EXISTS "${MP_THIRD_PARTY}/src/libsidplayfp/configure.ac" OR NOT EXISTS "${MP_THIRD_PARTY}/src/libresidfp/configure.ac")
+        message(WARNING "libsidplayfp non scaricata (scripts/build-deps.sh): backend sid disattivato")
+    else()
+        include(cmake/Sidplayfp.cmake)
+        target_sources(megaplayer_core PRIVATE src/decoders/SidDecoder.cpp)
+        target_compile_definitions(megaplayer_core PRIVATE MP_WITH_SID)
+        target_link_libraries(megaplayer_core PUBLIC sidplayfp)
+        set(MP_SID_ENABLED ON)
     endif()
 endif()
 
@@ -267,6 +281,21 @@ if(MP_GME_ENABLED)
                 "${MP_THIRD_PARTY}/src/game-music-emu/test.vgz")
     set_tests_properties(cli_render_vgz PROPERTIES
         PASS_REGULAR_EXPRESSION "Packer: +gzip.*Backend: +gme.*Durata: +1:37.*Scritti 1:37")
+endif()
+
+# Un PSID costruito dal test stesso, poi esportato dalla CLI.
+if(MP_SID_ENABLED)
+    add_executable(sid_decoder_test tests/SidDecoderTest.cpp)
+    target_link_libraries(sid_decoder_test PRIVATE megaplayer_core)
+    if(EMSCRIPTEN)
+        target_link_options(sid_decoder_test PRIVATE ${MP_NODE_LINK_OPTIONS})
+    endif()
+    add_test(NAME sid_decoder COMMAND sid_decoder_test "${CMAKE_BINARY_DIR}/test.sid")
+    set_tests_properties(sid_decoder PROPERTIES FIXTURES_SETUP test_sid)
+    add_test(NAME cli_render_sid
+        COMMAND megaplayer render -t 5 -o "${CMAKE_BINARY_DIR}/test-sid.wav" "${CMAKE_BINARY_DIR}/test.sid")
+    set_tests_properties(cli_render_sid PROPERTIES
+        FIXTURES_REQUIRED test_sid PASS_REGULAR_EXPRESSION "Backend: +sid.*Sottobrano: 1 di 2.*Scritti 0:05")
 endif()
 
 # Un MOD generato da tests/make_test_mod.py, suonato da entrambi i backend.

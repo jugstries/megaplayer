@@ -265,9 +265,9 @@ class _Sidebar extends StatelessWidget {
           Padding(padding: const EdgeInsets.only(left: 12, bottom: 8), child: Text('FORMATI', style: _label())),
           const _FormatItem(color: _orange, label: 'Amiga'),
           const _FormatItem(color: _pink, label: 'Moduli tracker'),
-          const _FormatItem(color: _violet, label: 'Console'),
-          const _FormatItem(color: Color(0xFFB58CFF), label: 'File audio'),
-          const _FormatItem(color: Color(0xFF4A4458), label: 'C64 SID', soon: true),
+          const _FormatItem(color: _violet, label: 'C64 SID'),
+          const _FormatItem(color: Color(0xFFB58CFF), label: 'Console'),
+          const _FormatItem(color: Color(0xFFD9C2FF), label: 'File audio'),
           const Spacer(),
           Container(
             padding: const EdgeInsets.all(14),
@@ -338,11 +338,10 @@ class _NavItem extends StatelessWidget {
 }
 
 class _FormatItem extends StatelessWidget {
-  const _FormatItem({required this.color, required this.label, this.soon = false});
+  const _FormatItem({required this.color, required this.label});
 
   final Color color;
   final String label;
-  final bool soon;
 
   @override
   Widget build(BuildContext context) {
@@ -358,18 +357,7 @@ class _FormatItem extends StatelessWidget {
               decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(3)),
             ),
             const SizedBox(width: 12),
-            Text(label, style: _sora(14, color: soon ? _faint : _textSoft)),
-            if (soon) ...[
-              const Spacer(),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(color: _border),
-                ),
-                child: Text('presto', style: _sora(11, color: _faint)),
-              ),
-            ],
+            Text(label, style: _sora(14, color: _textSoft)),
           ],
         ),
       ),

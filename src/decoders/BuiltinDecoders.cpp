@@ -8,6 +8,9 @@
 #ifdef MP_WITH_OPENMPT
 #include "OpenMptDecoder.h"
 #endif
+#ifdef MP_WITH_SID
+#include "SidDecoder.h"
+#endif
 #ifdef MP_WITH_UADE
 #include "UadeDecoder.h"
 #endif
@@ -19,6 +22,9 @@ void registerBuiltinDecoders(DecoderRegistry& registry)
     registry.add(std::make_unique<MiniaudioDecoderFactory>());
 #ifdef MP_WITH_GME
     registry.add(std::make_unique<GmeDecoderFactory>());
+#endif
+#ifdef MP_WITH_SID
+    registry.add(std::make_unique<SidDecoderFactory>());
 #endif
 #ifdef MP_WITH_OPENMPT
     registry.add(std::make_unique<OpenMptDecoderFactory>());

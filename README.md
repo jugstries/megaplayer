@@ -10,6 +10,7 @@ Flutter (per ora macOS) con due skin: moderna e retrò.
 | Backend   | Libreria              | Cosa suona                                                     |
 |-----------|-----------------------|----------------------------------------------------------------|
 | `miniaudio` | miniaudio, stb_vorbis | file audio: MP3 (e MP1/MP2), FLAC, WAV, Ogg Vorbis, con titolo e autore dai tag |
+| `sid`     | libsidplayfp 3.1.1, libresidfp 1.2.3 | Commodore 64: PSID e RSID, con l'emulazione reSIDfp del chip SID (6581 e 8580) |
 | `gme`     | game-music-emu 0.6.5  | console: NES (NSF, NSFE), SNES (SPC), Game Boy (GBS), Master System e Mega Drive (VGM, VGZ, GYM), PC Engine (HES), MSX (KSS), ZX Spectrum (AY), Atari (SAP) |
 | `openmpt` | libopenmpt            | moduli tracker: MOD, XM, S3M, IT, MED, OKT, ...                |
 | `uade`    | UADE 3.05             | 200+ formati Amiga, con i replayer originali Eagleplayer/DeliTracker in emulazione 68000 + Paula |
@@ -33,6 +34,13 @@ in un file solo (TFMX-MOD `.tfm`, con titolo, autore e sottobrano, e
 TFMXPAK): megaplayer li presenta a UADE come la coppia originale e gli passa
 i campioni quando li chiede ([src/decoders/TfmxFiles.cpp](src/decoders/TfmxFiles.cpp)).
 La metà con i campioni, scelta da sola, viene saltata.
+
+I brani da console e del C64 spesso girano per sempre. gme li chiude alla
+durata indicata nel file, o dopo due giri del ritornello, o dopo due minuti e
+mezzo; i SID, che non dicono mai quanto durano, dopo tre minuti. Sempre con
+una dissolvenza. Per i SID non servono le ROM del C64: libsidplayfp ha un
+kernal sostitutivo, che basta quasi sempre (le ROM originali sono protette da
+copyright).
 
 Quando più backend riconoscono un file vince quello col punteggio più alto
 (`openmpt` per i formati che conosce, perché è più veloce, conosce la durata
@@ -63,9 +71,10 @@ ctest --test-dir build
 ```
 
 `scripts/build-deps.sh` scarica a versioni fissate i sorgenti di UADE,
-libzakalwe, bencode-tools, ancient, miniaudio e game-music-emu in
-`third_party/src` e applica `patches/uade-in-process.patch` a UADE. Tutto il
-resto lo fa CMake: compila
+libzakalwe, bencode-tools, ancient, miniaudio, game-music-emu, libsidplayfp e
+libresidfp in `third_party/src` (di questi ultimi due gli archivi di rilascio,
+con la verifica dello SHA-256) e applica `patches/uade-in-process.patch` a
+UADE. Tutto il resto lo fa CMake: compila
 UADE senza il suo script di configurazione (che funziona solo su UNIX, vedi
 [cmake/UadeInProcess.cmake](cmake/UadeInProcess.cmake)) e copia replayer e
 configurazione in `build/uade-data`. La CLI e i test li cercano lì; le app li
@@ -281,7 +290,8 @@ app/            app desktop in Flutter
 web/            pagina di prova della build WebAssembly
 tests/          test automatici del core; in tests/data file audio di prova
                 (toni generati, rigenerabili con make_audio_fixtures.sh)
-cmake/          build di UADE dai sorgenti, toolchain di cross-compilazione
+cmake/          build di UADE e libsidplayfp dai sorgenti, toolchain di
+                cross-compilazione
 patches/        modifiche alle dipendenze
 scripts/        download delle dipendenze, build WebAssembly, server di prova,
                 passo di build dell'app macOS
@@ -297,6 +307,7 @@ aggiungere un'opzione `MP_WITH_*` in `CMakeLists.txt`.
 UADE è GPL-2.0 (il motore UAE) con parti LGPL; i replayer in
 `share/uade/players` hanno licenze e autori diversi. libopenmpt è BSD-3,
 ancient e libarchive BSD-2, miniaudio e stb_vorbis public domain / MIT-0,
-game-music-emu LGPL-2.1 (con l'emulatore Nuked del YM2612, anche lui LGPL).
+game-music-emu LGPL-2.1 (con l'emulatore Nuked del YM2612, anche lui LGPL),
+libsidplayfp e libresidfp GPL-2.0.
 Finché il backend UADE è incluso, il binario risultante va distribuito sotto
 GPL.

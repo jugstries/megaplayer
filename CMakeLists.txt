@@ -10,10 +10,6 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE RelWithDebInfo)
 endif()
-if(MINGW)
-    # Eseguibili e DLL senza le DLL del runtime C++ di MinGW.
-    add_link_options(-static-libgcc -static-libstdc++)
-endif()
 
 option(MP_WITH_OPENMPT "Backend libopenmpt (moduli tracker)" ON)
 option(MP_WITH_UADE "Backend UADE (formati Amiga)" ON)

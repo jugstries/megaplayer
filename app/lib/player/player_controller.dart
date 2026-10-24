@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -47,11 +48,23 @@ class PlayerController extends ChangeNotifier {
   /// Legge lo stato dal core; a fine brano passa al successivo.
   void refresh() {
     status = core.status();
-    scope = core.scope(scopeFrames);
+    scope = status.isPlaying ? core.scope(scopeFrames) : _flatten(scope);
     if (status.state == PlaybackState.ended) {
       _advance();
     }
     notifyListeners();
+  }
+
+  /// In pausa o da fermo l'oscilloscopio non resta congelato: si appiattisce
+  /// in circa un terzo di secondo, a ogni aggiornamento un po' di più.
+  static Float32List _flatten(Float32List samples) {
+    var peak = 0.0;
+    for (final value in samples) {
+      peak = math.max(peak, value.abs());
+    }
+    if (peak == 0) return samples; // già piatto: niente da ridisegnare
+    if (peak < 0.003) return Float32List(samples.length);
+    return Float32List.fromList([for (final value in samples) value * 0.72]);
   }
 
   void _advance() {

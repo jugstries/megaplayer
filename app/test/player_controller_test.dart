@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:megaplayer/core/models.dart';
 import 'package:megaplayer/player/player_controller.dart';
@@ -62,6 +64,30 @@ void main() {
     controller.selectSubsong(5);
     controller.selectSubsong(-1);
     expect(core.calls.where((c) => c.startsWith('subsong')), ['subsong 4']);
+  });
+
+  test("in pausa l'oscilloscopio si appiattisce piano piano, poi riparte", () {
+    controller.addPaths([FakeCore.archive]);
+    controller.refresh();
+    double peak() => controller.scope.fold(0.0, (top, v) => math.max(top, v.abs()));
+    final playing = peak();
+    expect(playing, greaterThan(0.3));
+
+    core.state = PlaybackState.paused;
+    controller.refresh();
+    expect(peak(), lessThan(playing)); // scende, ma non di colpo
+    expect(peak(), greaterThan(playing * 0.5));
+    for (var i = 0; i < 20; i++) {
+      controller.refresh();
+    }
+    expect(peak(), 0);
+    final flat = controller.scope;
+    controller.refresh();
+    expect(identical(controller.scope, flat), isTrue); // piatto: niente da ridisegnare
+
+    core.state = PlaybackState.playing;
+    controller.refresh();
+    expect(peak(), playing);
   });
 
   test('la manopola MegaSound arriva al core, il confronto A/B manda 0', () {

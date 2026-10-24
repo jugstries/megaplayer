@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>megaplayer — WebAssembly</title>
+<style>
+  :root {
+    --bg: #0c0b10; --surface: #15131b; --raised: #221f2b; --border: #2a2633;
+    --text: #f2eff7; --soft: #cfc9da; --muted: #a39db0; --track: #34303f;
+    --orange: #ff8a3d; --pink: #ec4f8f; --violet: #8b5cf6;
+    --gradient: linear-gradient(135deg, var(--orange), var(--pink), var(--violet));
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.4 system-ui, sans-serif; }
+  main { max-width: 980px; margin: 0 auto; padding: 24px 16px; display: grid; gap: 20px; }
+  header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; }
+  h1 { margin: 0; font-size: 22px; letter-spacing: -0.02em; }
+  h1 span { color: var(--muted); font-weight: 400; font-size: 15px; margin-left: 8px; }
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 20px; padding: 20px; }
+  button, label.button {
+    min-height: 44px; padding: 0 18px; border-radius: 12px; border: 1px solid var(--border);
+    background: var(--raised); color: var(--text); font: inherit; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 8px;
+  }
+  button.primary { border: 0; background: var(--gradient); color: var(--bg); font-weight: 600; }
+  button:disabled { opacity: 0.4; cursor: default; }
+  .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  #title { font-size: 32px; font-weight: 700; letter-spacing: -0.03em; margin: 0; overflow-wrap: anywhere; }
+  #meta, #time, .muted { color: var(--muted); }
+  #time { font-family: ui-monospace, monospace; }
+  progress { width: 100%; height: 6px; appearance: none; border: 0; border-radius: 3px; background: var(--track); }
+  progress::-webkit-progress-bar { background: var(--track); border-radius: 3px; }
+  progress::-webkit-progress-value { background: var(--gradient); border-radius: 3px; }
+  progress::-moz-progress-bar { background: var(--orange); }
+  canvas { width: 100%; height: 160px; display: block; background: #0f0e14; border-radius: 14px; }
+  ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+  ol button { width: 100%; justify-content: flex-start; border: 0; background: transparent; text-align: left; }
+  ol button[aria-current="true"] { background: var(--raised); font-weight: 600; }
+  #error { color: #ffc2d2; white-space: pre-line; }
+  input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>megaplayer <span>core C++ e UADE in WebAssembly</span></h1>
+    <div class="row">
+      <button id="start" class="primary">Avvia l'audio</button>
+      <label class="button" for="files">Apri file…</label>
+      <input id="files" type="file" multiple disabled>
+      <button id="demo" disabled>Suona AHX.Cruisin</button>
+    </div>
+  </header>
+
+  <section class="panel" aria-labelledby="title">
+    <p class="muted" id="state">Premi “Avvia l'audio”: il browser lo permette solo dopo un clic.</p>
+    <h2 id="title">—</h2>
+    <p id="meta"></p>
+    <progress id="progress" max="1" value="0" aria-label="Avanzamento"></progress>
+    <p id="time">0:00 / --:--</p>
+    <div class="row">
+      <button id="prev" disabled aria-label="Brano precedente">⏮</button>
+      <button id="back" disabled>−10 s</button>
+      <button id="pause" class="primary" disabled>Pausa</button>
+      <button id="forward" disabled>+10 s</button>
+      <button id="next" disabled aria-label="Brano successivo">⏭</button>
+      <button id="subPrev" disabled>Sottobrano −</button>
+      <span id="subsong" class="muted"></span>
+      <button id="subNext" disabled>Sottobrano +</button>
+    </div>
+    <p id="error" role="alert"></p>
+  </section>
+
+  <section class="panel" aria-label="Oscilloscopio">
+    <canvas id="scope" width="900" height="160" aria-hidden="true"></canvas>
+  </section>
+
+  <section class="panel" aria-labelledby="queueTitle">
+    <h2 id="queueTitle" style="margin: 0 0 12px; font-size: 18px">Coda</h2>
+    <ol id="queue"></ol>
+  </section>
+</main>
+
+<script src="megaplayer_web.js"></script>
+<script src="megaplayer-web.js"></script>
+<script>
+  const $ = (id) => document.getElementById(id);
+  const controls = ['files', 'demo', 'prev', 'back', 'pause', 'forward', 'next', 'subPrev', 'subNext'];
+  let player = null;
+  let tracks = [];
+  let current = -1;
+
+  const formatTime = (s) => (s == null ? '--:--' : `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`);
+
+  function showError(message) {
+    $('error').textContent = message || '';
+  }
+
+  function renderQueue() {
+    $('queue').replaceChildren(...tracks.map((track, i) => {
+      const item = document.createElement('li');
+      const button = document.createElement('button');
+      button.textContent = track.name.split(' > ').pop().split('/').pop();
+      if (i === current) button.setAttribute('aria-current', 'true');
+      button.onclick = () => playIndex(i);
+      item.append(button);
+      return item;
+    }));
+  }
+
+  function playIndex(i) {
+    if (i < 0 || i >= tracks.length) return;
+    current = i;
+    try {
+      player.play(tracks[i].path);
+      const info = player.trackInfo();
+      $('title').textContent = info.title || info.file;
+      $('meta').textContent = [info.format || info.player, info.backend.toUpperCase()].filter(Boolean).join(' · ');
+      showError('');
+    } catch (e) {
+      showError(`${tracks[i].name}: ${e.message}`);
+    }
+    renderQueue();
+  }
+
+  function addPaths(paths) {
+    const first = tracks.length;
+    for (const path of paths) {
+      try {
+        tracks.push(...player.collect(path));
+      } catch (e) {
+        showError(`${path}: ${e.message}`);
+      }
+    }
+    renderQueue();
+    if (current < 0 && tracks.length > first) playIndex(first);
+  }
+
+  function drawScope() {
+    const canvas = $('scope');
+    const context = canvas.getContext('2d');
+    const samples = player.scope(900);
+    const frames = samples.length / 2;
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    const gradient = context.createLinearGradient(0, 0, canvas.width, 0);
+    gradient.addColorStop(0, '#ff8a3d');
+    gradient.addColorStop(1, '#8b5cf6');
+    context.strokeStyle = gradient;
+    context.lineWidth = 2;
+    for (const [channel, middle] of [[0, 45], [1, 115]]) {
+      context.beginPath();
+      for (let i = 0; i < frames; i++) {
+        const x = (i / Math.max(1, frames - 1)) * canvas.width;
+        const y = middle - samples[i * 2 + channel] * 38;
+        i === 0 ? context.moveTo(x, y) : context.lineTo(x, y);
+      }
+      if (frames === 0) { context.moveTo(0, middle); context.lineTo(canvas.width, middle); }
+      context.stroke();
+    }
+  }
+
+  function tick() {
+    const status = player.status();
+    if (status.state === 'ended') {
+      if (current + 1 < tracks.length) playIndex(current + 1); else player.stop();
+    }
+    $('state').textContent = { idle: 'Fermo', playing: 'In riproduzione', paused: 'In pausa', ended: 'Finito' }[status.state];
+    $('time').textContent = `${formatTime(status.position)} / ${formatTime(status.duration)}`;
+    $('progress').value = status.duration ? Math.min(1, status.position / status.duration) : 0;
+    $('pause').textContent = status.state === 'paused' ? 'Riprendi' : 'Pausa';
+    $('subsong').textContent = status.subsongCount ? `${status.subsong + 1} di ${status.subsongCount}` : '';
+    drawScope();
+    requestAnimationFrame(tick);
+  }
+
+  $('start').onclick = async () => {
+    $('start').disabled = true;
+    $('state').textContent = 'Carico il core…';
+    try {
+      player = await openMegaplayer();
+      controls.forEach((id) => { $(id).disabled = false; });
+      $('state').textContent = `Pronto. Backend: ${player.backends().map((b) => b.name).join(', ')}`;
+      requestAnimationFrame(tick);
+    } catch (e) {
+      $('start').disabled = false;
+      showError(e.message);
+    }
+  };
+  $('files').onchange = async (event) => {
+    const paths = [];
+    for (const file of event.target.files) paths.push(await player.addFile(file));
+    addPaths(paths);
+  };
+  $('demo').onclick = () => addPaths(['/demo/AHX.Cruisin']);
+  $('pause').onclick = () => player.setPaused(player.status().state === 'playing');
+  $('back').onclick = () => player.seek(Math.max(0, player.status().position - 10));
+  $('forward').onclick = () => player.seek(player.status().position + 10);
+  $('prev').onclick = () => playIndex(current - 1);
+  $('next').onclick = () => playIndex(current + 1);
+  $('subPrev').onclick = () => player.selectSubsong(player.status().subsong - 1);
+  $('subNext').onclick = () => player.selectSubsong(player.status().subsong + 1);
+</script>
+</body>
+</html>

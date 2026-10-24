@@ -10,6 +10,15 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE RelWithDebInfo)
 endif()
+if(EMSCRIPTEN)
+    # WebAssembly: uadecore e il motore di riproduzione girano in thread (web
+    # worker), quindi tutto va compilato con le pthread. Le eccezioni del core
+    # e il longjmp con cui uadecore esce dagli errori usano il meccanismo
+    # nativo di WebAssembly; lo stack predefinito (64 KB) non basta a UADE.
+    add_compile_options(-pthread -fwasm-exceptions -sSUPPORT_LONGJMP=wasm)
+    add_link_options(-pthread -fwasm-exceptions -sSUPPORT_LONGJMP=wasm -sPTHREAD_POOL_SIZE=4
+        -sSTACK_SIZE=1048576 -sDEFAULT_PTHREAD_STACK_SIZE=1048576)
+endif()
 
 option(MP_WITH_OPENMPT "Backend libopenmpt (moduli tracker)" ON)
 option(MP_WITH_UADE "Backend UADE (formati Amiga)" ON)
@@ -117,15 +126,51 @@ endif()
 add_executable(megaplayer src/cli/main.cpp src/cli/Terminal.cpp)
 target_link_libraries(megaplayer PRIVATE megaplayer_core)
 
-# --- Libreria dinamica con l'API C, per l'app Flutter (app/) ---
+# In WebAssembly la CLI e i test girano con Node (ctest lo usa da solo): con
+# accesso diretto ai file e main() in un thread, così il thread principale
+# resta libero per le operazioni che i worker gli delegano.
+set(MP_NODE_LINK_OPTIONS -sNODERAWFS=1 -sPROXY_TO_PTHREAD=1 -sEXIT_RUNTIME=1 -sALLOW_MEMORY_GROWTH=1)
+if(EMSCRIPTEN)
+    target_link_options(megaplayer PRIVATE ${MP_NODE_LINK_OPTIONS})
+endif()
 
-add_library(megaplayer_capi SHARED src/capi/megaplayer.cpp)
-target_link_libraries(megaplayer_capi PRIVATE megaplayer_core)
-set_target_properties(megaplayer_capi PROPERTIES
-    OUTPUT_NAME megaplayer
-    CXX_VISIBILITY_PRESET hidden
-    INSTALL_NAME_DIR "@rpath"
-    BUILD_WITH_INSTALL_NAME_DIR ON)
+if(NOT EMSCRIPTEN)
+    # --- Libreria dinamica con l'API C, per l'app Flutter (app/) ---
+
+    add_library(megaplayer_capi SHARED src/capi/megaplayer.cpp)
+    target_link_libraries(megaplayer_capi PRIVATE megaplayer_core)
+    set_target_properties(megaplayer_capi PROPERTIES
+        OUTPUT_NAME megaplayer
+        CXX_VISIBILITY_PRESET hidden
+        INSTALL_NAME_DIR "@rpath"
+        BUILD_WITH_INSTALL_NAME_DIR ON)
+else()
+    # --- Modulo WebAssembly con l'API C, per il browser (web/) ---
+
+    set(MP_WEB_EXPORTS
+        _mp_set_uade_data_dir _mp_engine_create _mp_engine_destroy _mp_engine_last_error
+        _mp_engine_backends _mp_engine_collect _mp_engine_play _mp_engine_stop _mp_engine_set_paused
+        _mp_engine_seek _mp_engine_select_subsong _mp_engine_set_volume _mp_engine_status
+        _mp_engine_track_info _mp_engine_scope _malloc _free)
+    list(JOIN MP_WEB_EXPORTS "," MP_WEB_EXPORTS)
+    add_executable(megaplayer_web src/capi/megaplayer.cpp)
+    target_link_libraries(megaplayer_web PRIVATE megaplayer_core)
+    target_link_options(megaplayer_web PRIVATE
+        --no-entry
+        -sMODULARIZE=1 -sEXPORT_NAME=createMegaplayer
+        # Memoria fissa: le viste JavaScript sulla memoria restano valide.
+        -sINITIAL_MEMORY=268435456
+        "-sEXPORTED_FUNCTIONS=${MP_WEB_EXPORTS}"
+        "-sEXPORTED_RUNTIME_METHODS=FS,UTF8ToString,stringToNewUTF8,HEAPF32,HEAPF64,HEAP32"
+        # I replayer di UADE nel filesystem virtuale, in /uade, e un brano
+        # di prova che UADE distribuisce con i suoi sorgenti.
+        "--preload-file=${MP_UADE_DATA_DIR}@/uade"
+        "--preload-file=${MP_THIRD_PARTY}/src/uade/songs/AHX.Cruisin@/demo/AHX.Cruisin")
+    add_dependencies(megaplayer_web uade_data)
+    foreach(file index.html megaplayer-web.js)
+        configure_file("web/${file}" "${CMAKE_BINARY_DIR}/${file}" COPYONLY)
+    endforeach()
+endif()
 
 # --- Test (ctest --test-dir build) ---
 
@@ -133,6 +178,9 @@ enable_testing()
 if(MP_UADE_ENABLED)
     add_executable(uade_inprocess_test tests/UadeInProcessTest.cpp)
     target_link_libraries(uade_inprocess_test PRIVATE megaplayer_core)
+    if(EMSCRIPTEN)
+        target_link_options(uade_inprocess_test PRIVATE ${MP_NODE_LINK_OPTIONS})
+    endif()
     if(WIN32)
         target_link_libraries(uade_inprocess_test PRIVATE psapi)
     endif()
@@ -150,7 +198,9 @@ endif()
 find_package(Python3 COMPONENTS Interpreter)
 if(Python3_FOUND)
     add_test(NAME make_test_mod
-        COMMAND Python3::Interpreter "${CMAKE_CURRENT_SOURCE_DIR}/tests/make_test_mod.py" "${CMAKE_BINARY_DIR}/test.mod")
+        # Il percorso e non il target Python3::Interpreter: in cross-compilazione
+        # CTest lancerebbe anche lui con l'emulatore (Node per WebAssembly).
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/make_test_mod.py" "${CMAKE_BINARY_DIR}/test.mod")
     set_tests_properties(make_test_mod PROPERTIES FIXTURES_SETUP test_mod)
     set(MP_MOD_BACKENDS)
     if(OPENMPT_FOUND)

@@ -61,7 +61,8 @@ configurazione in `build/uade-data`. La CLI e i test li cercano lì; le app li
 indicano a runtime con `mp_set_uade_data_dir()`.
 
 La CI di GitHub Actions ([.github/workflows/build.yml](.github/workflows/build.yml))
-compila e prova tutto su Linux e Windows; macOS si prova in locale.
+compila e prova tutto su Linux, Windows e WebAssembly (con Node); macOS si
+prova in locale.
 
 Per controllare la build Windows da macOS senza aspettare la CI c'è la
 cross-compilazione con MinGW-w64 (`brew install mingw-w64`), senza libopenmpt
@@ -71,6 +72,30 @@ e libarchive; i generatori dell'emulatore 68000 vengono dalla build nativa:
 cmake -S . -B build-win -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/mingw-w64-x86_64.cmake \
   -DMP_UADE_HOST_TOOLS=$PWD/build -DMP_WITH_OPENMPT=OFF -DMP_WITH_ARCHIVES=OFF
 ```
+
+### WebAssembly
+
+Con Emscripten (`brew install emscripten`, o emsdk):
+
+```bash
+scripts/build-wasm.sh
+ctest --test-dir build-wasm        # CLI e test con Node
+python3 scripts/serve-web.py       # pagina di prova: http://127.0.0.1:8765/
+```
+
+`build-wasm/megaplayer_web.*` è il modulo per il browser: l'API C di
+[src/capi/megaplayer.h](src/capi/megaplayer.h) con i replayer di UADE nel
+filesystem virtuale. [web/megaplayer-web.js](web/megaplayer-web.js) la avvolge
+in JavaScript, e [web/index.html](web/index.html) è una pagina di prova con
+coda, comandi e oscilloscopio. UADE e il motore di riproduzione girano in web
+worker (pthread di Emscripten); le pthread vogliono `SharedArrayBuffer`, cioè
+una pagina isolata cross-origin: `scripts/serve-web.py` manda le intestazioni
+COOP/COEP, e un hosting vero dovrà fare lo stesso.
+
+Per ora nella build web suona solo UADE: libopenmpt e libarchive vanno ancora
+compilate per WebAssembly. L'audio coincide con quello nativo salvo scarti di
+1-2 unità su 65536 nel 5% dei campioni: su Apple Silicon il compilatore fonde
+moltiplicazioni e somme (FMA), WebAssembly no.
 
 ### UADE nel processo del player
 
@@ -90,7 +115,7 @@ UADE per volta: aprirne un secondo mentre il primo suona dà un errore.
 Su Windows UADE si compila con MinGW-w64: il thread di `uadecore` usa le
 pthread di MinGW, e le poche funzioni POSIX che mancano (`strsep`, `lockf`,
 `realpath`…) stanno in [src/uade/windows](src/uade/windows), incluse solo lì.
-Resta da fare la build WebAssembly.
+In WebAssembly il thread è un web worker (vedi sotto, WebAssembly).
 
 libuade registra in `~/.uade/contentdb` la durata dei brani suonati fino in
 fondo e la mostra alle riproduzioni successive. È un solo valore per file:
@@ -164,11 +189,13 @@ src/uade/       UADE nel processo del player
 src/capi/       API C per le interfacce grafiche
 src/cli/        la riga di comando
 app/            app desktop in Flutter
+web/            pagina di prova della build WebAssembly
 tests/          test automatici del core
 cmake/          build di UADE dai sorgenti, toolchain di cross-compilazione
 patches/        modifiche alle dipendenze
-scripts/        download delle dipendenze e passo di build dell'app macOS
-.github/        CI per Linux e Windows
+scripts/        download delle dipendenze, build WebAssembly, server di prova,
+                passo di build dell'app macOS
+.github/        CI per Linux, Windows e WebAssembly
 ```
 
 Per aggiungere un backend: implementare `Decoder` e `DecoderFactory`

@@ -1,5 +1,5 @@
-# Build e test del core su Linux e Windows. macOS si compila e si prova in
-# locale.
+# Build e test del core su Linux, Windows e WebAssembly (con Node). macOS si
+# compila e si prova in locale.
 name: build
 
 on:
@@ -72,3 +72,37 @@ jobs:
             build/megaplayer.exe
             build/libmegaplayer.dll
           if-no-files-found: ignore
+
+  web:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: latest
+
+      - name: Dipendenze di sistema
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cmake ninja-build python3
+
+      - name: Sorgenti delle dipendenze
+        run: scripts/build-deps.sh
+
+      - name: Build
+        run: scripts/build-wasm.sh
+
+      - name: Test (Node)
+        run: ctest --test-dir build-wasm --output-on-failure
+
+      - name: Pagina di prova
+        uses: actions/upload-artifact@v4
+        with:
+          name: megaplayer-web
+          path: |
+            build-wasm/index.html
+            build-wasm/megaplayer-web.js
+            build-wasm/megaplayer_web.js
+            build-wasm/megaplayer_web.wasm
+            build-wasm/megaplayer_web.data

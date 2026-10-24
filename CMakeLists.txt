@@ -27,6 +27,7 @@ option(MP_WITH_SID "Backend libsidplayfp (Commodore 64)" ON)
 option(MP_WITH_ADLMIDI "Backend libADLMIDI (MIDI su chip FM OPL3)" ON)
 option(MP_WITH_ADPLUG "Backend AdPlug (formati AdLib dei giochi DOS)" ON)
 option(MP_WITH_ARCHIVES "Apertura diretta degli archivi LHA/ZIP/7z/... (libarchive)" ON)
+option(MP_WITH_LIBRARY "Libreria musicale: indice SQLite di una cartella, con ricerca (non per WebAssembly)" ON)
 
 set(MP_THIRD_PARTY "${CMAKE_CURRENT_SOURCE_DIR}/third_party")
 
@@ -208,6 +209,33 @@ if(MP_WITH_UADE)
     endif()
 endif()
 
+# --- Libreria (indice SQLite) ---
+
+set(MP_LIBRARY_ENABLED OFF)
+if(MP_WITH_LIBRARY AND NOT EMSCRIPTEN)
+    if(NOT EXISTS "${MP_THIRD_PARTY}/src/sqlite/sqlite3.c")
+        message(WARNING "SQLite non scaricato (scripts/build-deps.sh): libreria disattivata")
+    else()
+        # L'amalgamation, senza estensioni caricabili (niente dlopen) e senza
+        # le stringhe tra virgolette doppie, un vecchio errore di SQL.
+        add_library(sqlite3 STATIC "${MP_THIRD_PARTY}/src/sqlite/sqlite3.c")
+        # Solo l'header: la cartella dell'archivio ha anche un file VERSION,
+        # che sui dischi senza maiuscole passerebbe per <version> del C++.
+        configure_file("${MP_THIRD_PARTY}/src/sqlite/sqlite3.h" "${CMAKE_BINARY_DIR}/sqlite-include/sqlite3.h" COPYONLY)
+        target_include_directories(sqlite3 SYSTEM PUBLIC "${CMAKE_BINARY_DIR}/sqlite-include")
+        target_compile_definitions(sqlite3 PRIVATE SQLITE_DQS=0 SQLITE_OMIT_LOAD_EXTENSION SQLITE_THREADSAFE=1)
+        if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
+            target_compile_options(sqlite3 PRIVATE -w) # codice di terzi
+        endif()
+        find_package(Threads REQUIRED)
+        target_link_libraries(sqlite3 PUBLIC Threads::Threads)
+        target_sources(megaplayer_core PRIVATE src/library/Library.cpp)
+        target_compile_definitions(megaplayer_core PUBLIC MP_WITH_LIBRARY)
+        target_link_libraries(megaplayer_core PUBLIC sqlite3)
+        set(MP_LIBRARY_ENABLED ON)
+    endif()
+endif()
+
 # --- CLI ---
 
 add_executable(megaplayer src/cli/main.cpp src/cli/Terminal.cpp)
@@ -224,7 +252,10 @@ endif()
 if(NOT EMSCRIPTEN)
     # --- Libreria dinamica con l'API C, per l'app Flutter (app/) ---
 
-    add_library(megaplayer_capi SHARED src/capi/megaplayer.cpp)
+    add_library(megaplayer_capi SHARED src/capi/megaplayer.cpp src/capi/Json.cpp)
+    if(MP_LIBRARY_ENABLED)
+        target_sources(megaplayer_capi PRIVATE src/capi/library.cpp)
+    endif()
     target_link_libraries(megaplayer_capi PRIVATE megaplayer_core)
     set_target_properties(megaplayer_capi PROPERTIES
         OUTPUT_NAME megaplayer
@@ -240,7 +271,7 @@ else()
         _mp_engine_seek _mp_engine_select_subsong _mp_engine_set_volume _mp_engine_set_megasound _mp_engine_status
         _mp_engine_track_info _mp_engine_scope _malloc _free)
     list(JOIN MP_WEB_EXPORTS "," MP_WEB_EXPORTS)
-    add_executable(megaplayer_web src/capi/megaplayer.cpp)
+    add_executable(megaplayer_web src/capi/megaplayer.cpp src/capi/Json.cpp)
     target_link_libraries(megaplayer_web PRIVATE megaplayer_core)
     target_link_options(megaplayer_web PRIVATE
         --no-entry
@@ -341,6 +372,20 @@ if(MP_SID_ENABLED)
         COMMAND megaplayer render -t 5 -o "${CMAKE_BINARY_DIR}/test-sid.wav" "${CMAKE_BINARY_DIR}/test.sid")
     set_tests_properties(cli_render_sid PROPERTIES
         FIXTURES_REQUIRED test_sid PASS_REGULAR_EXPRESSION "Backend: +sid.*Sottobrano: 1 di 2.*Scritti 0:05")
+endif()
+
+# La libreria sui toni di tests/data, e l'API C con la scansione in
+# background (compilata nel test, che non usa la libreria dinamica).
+if(MP_LIBRARY_ENABLED)
+    add_executable(library_test tests/LibraryTest.cpp src/capi/library.cpp src/capi/Json.cpp)
+    target_link_libraries(library_test PRIVATE megaplayer_core)
+    set(MP_LIBRARY_TEST_ARGS "${CMAKE_BINARY_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/data")
+    if(LIBARCHIVE_FOUND)
+        # Lo zip di prova lo crea cmake -E tar.
+        target_compile_definitions(library_test PRIVATE MP_TEST_ARCHIVES)
+        list(APPEND MP_LIBRARY_TEST_ARGS "${CMAKE_COMMAND}")
+    endif()
+    add_test(NAME library COMMAND library_test ${MP_LIBRARY_TEST_ARGS})
 endif()
 
 # Un MIDI e un IMF costruiti dal test stesso, poi esportati dalla CLI.

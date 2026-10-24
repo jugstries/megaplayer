@@ -1,5 +1,6 @@
 #include "megaplayer.h"
 
+#include "Json.h"
 #include "core/DecoderRegistry.h"
 #include "core/Player.h"
 #include "core/SourceFile.h"
@@ -33,49 +34,6 @@ struct mp_engine {
 };
 
 namespace {
-
-// I nomi dei moduli Amiga sono spesso in Latin-1: il JSON vuole UTF-8
-// valido, quindi le sequenze non valide vengono lette come Latin-1.
-std::string toUtf8(const std::string& text)
-{
-    std::string out;
-    out.reserve(text.size());
-    for (size_t i = 0; i < text.size();) {
-        const auto c = static_cast<unsigned char>(text[i]);
-        size_t length = c < 0x80 ? 1 : (c >> 5) == 0x6 ? 2 : (c >> 4) == 0xE ? 3 : (c >> 3) == 0x1E ? 4 : 0;
-        bool valid = length > 0 && i + length <= text.size();
-        for (size_t k = 1; valid && k < length; ++k)
-            valid = (static_cast<unsigned char>(text[i + k]) & 0xC0) == 0x80;
-        if (valid) {
-            out.append(text, i, length);
-            i += length;
-        } else {
-            out += static_cast<char>(0xC0 | (c >> 6));
-            out += static_cast<char>(0x80 | (c & 0x3F));
-            ++i;
-        }
-    }
-    return out;
-}
-
-std::string jsonString(const std::string& text)
-{
-    std::string out = "\"";
-    for (const char ch : toUtf8(text)) {
-        const auto c = static_cast<unsigned char>(ch);
-        if (ch == '"' || ch == '\\') {
-            out += '\\';
-            out += ch;
-        } else if (c < 0x20) {
-            char escaped[8];
-            std::snprintf(escaped, sizeof escaped, "\\u%04x", c);
-            out += escaped;
-        } else {
-            out += ch;
-        }
-    }
-    return out + "\"";
-}
 
 const char* fail(mp_engine* engine, const std::exception& e)
 {
@@ -118,8 +76,8 @@ const char* mp_engine_backends(mp_engine* engine)
     for (const auto& factory : engine->registry.factories()) {
         if (json.size() > 1)
             json += ',';
-        json += "{\"name\":" + jsonString(std::string(factory->name()))
-            + ",\"description\":" + jsonString(std::string(factory->description())) + "}";
+        json += "{\"name\":" + mp::json::string(std::string(factory->name()))
+            + ",\"description\":" + mp::json::string(std::string(factory->description())) + "}";
     }
     engine->backendsJson = json + "]";
     return engine->backendsJson.c_str();
@@ -132,7 +90,7 @@ const char* mp_engine_collect(mp_engine* engine, const char* path)
         for (const mp::Track& track : engine->collector.collect(path)) {
             if (json.size() > 1)
                 json += ',';
-            json += "{\"path\":" + jsonString(track.path.string()) + ",\"name\":" + jsonString(track.name)
+            json += "{\"path\":" + mp::json::string(track.path.string()) + ",\"name\":" + mp::json::string(track.name)
                 + ",\"archive\":" + (track.fromArchive ? "true" : "false") + "}";
         }
         engine->collectJson = json + "]";
@@ -211,18 +169,15 @@ const char* mp_engine_track_info(mp_engine* engine)
     const mp::TrackInfo info = engine->player.info();
     std::string packers = "[";
     for (const std::string& packer : engine->currentPackers)
-        packers += (packers.size() > 1 ? "," : "") + jsonString(packer);
+        packers += (packers.size() > 1 ? "," : "") + mp::json::string(packer);
     packers += "]";
 
-    char duration[32] = "null";
-    if (info.duration)
-        std::snprintf(duration, sizeof duration, "%.3f", *info.duration);
-
-    engine->infoJson = "{\"file\":" + jsonString(engine->currentFile) + ",\"packers\":" + packers
-        + ",\"backend\":" + jsonString(info.backend) + ",\"format\":" + jsonString(info.format)
-        + ",\"player\":" + jsonString(info.player) + ",\"title\":" + jsonString(info.title)
-        + ",\"author\":" + jsonString(info.author) + ",\"subsongCount\":" + std::to_string(info.subsongCount)
-        + ",\"currentSubsong\":" + std::to_string(info.currentSubsong) + ",\"duration\":" + duration + "}";
+    engine->infoJson = "{\"file\":" + mp::json::string(engine->currentFile) + ",\"packers\":" + packers
+        + ",\"backend\":" + mp::json::string(info.backend) + ",\"format\":" + mp::json::string(info.format)
+        + ",\"player\":" + mp::json::string(info.player) + ",\"platform\":" + mp::json::string(info.platform)
+        + ",\"title\":" + mp::json::string(info.title)
+        + ",\"author\":" + mp::json::string(info.author) + ",\"subsongCount\":" + std::to_string(info.subsongCount)
+        + ",\"currentSubsong\":" + std::to_string(info.currentSubsong) + ",\"duration\":" + mp::json::number(info.duration) + "}";
     return engine->infoJson.c_str();
 }
 

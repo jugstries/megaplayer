@@ -35,6 +35,21 @@ private:
     std::unique_ptr<Impl> impl_;
 };
 
+// Finché vive, quello che le librerie scrivono su stderr si perde: libuade
+// avvisa per molti file (formati che riconosce ma non suona, moduli
+// troncati), e durante la scansione della libreria sarebbe solo rumore.
+class QuietStderr {
+public:
+    QuietStderr();
+    ~QuietStderr();
+
+    QuietStderr(const QuietStderr&) = delete;
+    QuietStderr& operator=(const QuietStderr&) = delete;
+
+private:
+    int saved_ = -1;
+};
+
 // Dopo Ctrl+C interrupted() diventa true: il player chiude in modo ordinato
 // e il terminale torna allo stato originale.
 void installInterruptHandler();

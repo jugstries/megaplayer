@@ -2,12 +2,17 @@
 
 #include "core/AudioOutput.h"
 #include "core/DecoderRegistry.h"
+#include "core/Platform.h"
 #include "core/SourceFile.h"
 #include "core/TrackList.h"
 #include "core/WavWriter.h"
 #include "dsp/MegaSound.h"
+#ifdef MP_WITH_LIBRARY
+#include "library/Library.h"
+#endif
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -37,6 +42,10 @@ Uso:
   megaplayer info   [opzioni] FILE...           formato, backend e metadati
   megaplayer render [opzioni] -o OUT.wav FILE   esporta in WAV
   megaplayer backends                           backend disponibili
+  megaplayer library scan [CARTELLA]            indicizza la cartella della libreria
+  megaplayer library search [TESTO...]          cerca nella libreria
+  megaplayer library stats                      brani per piattaforma e formato
+  megaplayer library root                       la cartella della libreria
 
 Opzioni:
   -b, --backend NOME   usa solo questo backend
@@ -46,6 +55,13 @@ Opzioni:
   -o, --output FILE    file WAV di uscita (render)
   -m, --megasound N    manopola MegaSound da 0 a 100 (play e render)
   -h, --help           questo messaggio
+
+Opzioni della libreria:
+  --db FILE            database (default: nella cartella dei dati dell'utente)
+  -p, --platform ID    solo questa piattaforma, es. amiga, pc, c64, nes
+                       (si può ripetere)
+  -f, --format NOME    solo questo formato (si può ripetere)
+  -n, --limit N        quanti risultati mostrare (default 50)
 
 FILE può essere un archivio (LHA, ZIP, 7z, tar, ...): si suonano i brani che
 contiene. ARCHIVIO/percorso/interno sceglie un file o una cartella al suo
@@ -67,6 +83,11 @@ struct Options {
     int sampleRate = 48000;
     std::string output;
     int megaSound = 0; // posizione della manopola, 0..100
+    // Libreria.
+    std::string database;
+    std::vector<std::string> platforms;
+    std::vector<std::string> formats;
+    int limit = 50;
 };
 
 template <typename T>
@@ -110,6 +131,14 @@ Options parseArgs(int argc, char** argv)
             options.output = value(i);
         } else if (arg == "-m" || arg == "--megasound") {
             options.megaSound = parseNumber(arg, value(i), 0, 100);
+        } else if (arg == "--db") {
+            options.database = value(i);
+        } else if (arg == "-p" || arg == "--platform") {
+            options.platforms.push_back(value(i));
+        } else if (arg == "-f" || arg == "--format") {
+            options.formats.push_back(value(i));
+        } else if (arg == "-n" || arg == "--limit") {
+            options.limit = parseNumber(arg, value(i), 1, 100000);
         } else if (arg.size() > 1 && arg[0] == '-') {
             throw std::invalid_argument("opzione sconosciuta: " + arg);
         } else if (options.command.empty()) {
@@ -122,8 +151,14 @@ Options parseArgs(int argc, char** argv)
     if (options.command.empty())
         throw std::invalid_argument("manca il comando");
     if (options.command != "play" && options.command != "info" && options.command != "render"
-        && options.command != "backends")
+        && options.command != "backends" && options.command != "library")
         throw std::invalid_argument("comando sconosciuto: " + options.command);
+    if (options.command == "library") {
+        const std::string what = options.files.empty() ? "" : options.files.front();
+        if (what != "scan" && what != "search" && what != "stats" && what != "root")
+            throw std::invalid_argument("library vuole scan, search, stats o root");
+        return options;
+    }
     if (options.command != "backends" && options.files.empty())
         throw std::invalid_argument("nessun file indicato");
     if (options.command == "render" && (options.files.size() != 1 || options.output.empty()))
@@ -445,6 +480,129 @@ int runPlay(const Options& options, const DecoderRegistry& registry)
     return failures == 0 ? 0 : 1;
 }
 
+#ifdef MP_WITH_LIBRARY
+int runLibraryScan(Library& library, const Options& options)
+{
+    if (options.files.size() > 1)
+        library.setRoot(options.files[1]);
+    const std::filesystem::path root = library.root();
+    if (root.empty())
+        throw std::runtime_error("indica la cartella: megaplayer library scan CARTELLA");
+    std::cout << "Libreria: " << root.string() << "\n";
+
+    // La scansione in un thread; qui l'avanzamento e Ctrl+C.
+    ScanProgress progress;
+    std::atomic<bool> cancel{false};
+    std::atomic<bool> done{false};
+    ScanResult result;
+    std::string error;
+    std::optional<cli::QuietStderr> quiet;
+    quiet.emplace();
+    std::thread worker([&] {
+        try {
+            result = library.scan(progress, cancel);
+        } catch (const std::exception& e) {
+            error = e.what();
+        }
+        done = true;
+    });
+    const bool live = stdoutIsTerminal();
+    while (!done) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        if (cli::interrupted())
+            cancel = true;
+        if (live) {
+            if (progress.walking)
+                std::cout << "\r  conto i file: " << progress.filesFound << "   " << std::flush;
+            else
+                std::cout << "\r  " << progress.filesChecked << " di " << progress.filesFound << " file, "
+                          << progress.filesRead << " letti, " << progress.tracksFound << " brani   " << std::flush;
+        }
+    }
+    worker.join();
+    quiet.reset();
+    if (live)
+        std::cout << "\r" << std::string(70, ' ') << "\r";
+    if (!error.empty())
+        throw std::runtime_error(error);
+
+    std::cout << "File: " << result.filesFound << " (" << result.filesRead << " letti, " << result.filesRemoved
+              << " tolti)\n";
+    std::cout << "Brani nei file letti: " << result.tracksFound << "\n";
+    std::cout << "Brani nella libreria: " << library.search({}).total << "\n";
+    if (result.cancelled)
+        std::cout << "Scansione interrotta: il resto alla prossima.\n";
+    return 0;
+}
+
+int runLibrarySearch(const Library& library, const Options& options)
+{
+    LibraryQuery query;
+    for (size_t i = 1; i < options.files.size(); ++i)
+        query.text += (i > 1 ? " " : "") + options.files[i];
+    query.platforms = options.platforms;
+    query.formats = options.formats;
+    query.limit = options.limit;
+    const LibraryPage page = library.search(query);
+    for (const LibraryTrack& track : page.tracks) {
+        const std::string path = track.folder.empty() ? track.name : track.folder + "/" + track.name;
+        std::cout << path << "\n    " << platformName(track.platform);
+        if (!track.format.empty())
+            std::cout << " · " << track.format;
+        if (!track.title.empty())
+            std::cout << " · " << track.title;
+        if (!track.author.empty())
+            std::cout << " · " << track.author;
+        if (track.subsongCount > 1)
+            std::cout << " · " << track.subsongCount << " sottobrani";
+        if (track.duration)
+            std::cout << " · " << formatTime(*track.duration);
+        std::cout << "\n";
+    }
+    std::cout << page.total << (page.total == 1 ? " brano" : " brani");
+    if (page.total > static_cast<int>(page.tracks.size()))
+        std::cout << ", mostrati i primi " << page.tracks.size() << " (-n per altri)";
+    std::cout << "\n";
+    return 0;
+}
+
+int runLibraryStats(const Library& library, const Options& options)
+{
+    LibraryQuery query;
+    query.platforms = options.platforms;
+    query.formats = options.formats;
+    const LibraryFacets facets = library.facets(query);
+    std::cout << "Piattaforme:\n";
+    for (const LibraryFacet& facet : facets.platforms)
+        std::cout << "  " << facet.count << "\t" << platformName(facet.value) << " (" << facet.value << ")\n";
+    std::cout << "Formati:\n";
+    for (const LibraryFacet& facet : facets.formats)
+        std::cout << "  " << facet.count << "\t" << (facet.value.empty() ? "(sconosciuto)" : facet.value) << "\n";
+    return 0;
+}
+#endif
+
+int runLibrary(const Options& options)
+{
+#ifdef MP_WITH_LIBRARY
+    Library library(options.database.empty() ? Library::defaultPath() : std::filesystem::path(options.database));
+    const std::string& what = options.files.front();
+    if (what == "scan")
+        return runLibraryScan(library, options);
+    if (what == "search")
+        return runLibrarySearch(library, options);
+    if (what == "stats")
+        return runLibraryStats(library, options);
+    const std::filesystem::path root = library.root();
+    std::cout << (root.empty() ? "(nessuna cartella)" : root.string()) << "\n";
+    std::cout << "Database: " << library.database().string() << "\n";
+    return 0;
+#else
+    (void)options;
+    throw std::runtime_error("libreria non compilata in questa build");
+#endif
+}
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -468,6 +626,8 @@ int main(int argc, char** argv)
     try {
         if (options.command == "backends")
             return runBackends(registry);
+        if (options.command == "library")
+            return runLibrary(options);
         if (options.command == "info")
             return runInfo(options, registry);
         if (options.command == "render")

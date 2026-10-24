@@ -1,6 +1,11 @@
 #include "Terminal.h"
 
 #include <csignal>
+#include <cstdio>
+#include <fcntl.h>
+#ifdef _WIN32
+#include <io.h>
+#endif
 
 #ifndef _WIN32
 #include <string>
@@ -121,6 +126,48 @@ Key TerminalInput::poll()
     return Key::None;
 }
 
+#endif
+
+#ifdef _WIN32
+QuietStderr::QuietStderr()
+{
+    std::fflush(stderr);
+    saved_ = _dup(2);
+    const int null = _open("NUL", _O_WRONLY);
+    if (null >= 0) {
+        _dup2(null, 2);
+        _close(null);
+    }
+}
+
+QuietStderr::~QuietStderr()
+{
+    std::fflush(stderr);
+    if (saved_ >= 0) {
+        _dup2(saved_, 2);
+        _close(saved_);
+    }
+}
+#else
+QuietStderr::QuietStderr()
+{
+    std::fflush(stderr);
+    saved_ = dup(STDERR_FILENO);
+    const int null = open("/dev/null", O_WRONLY);
+    if (null >= 0) {
+        dup2(null, STDERR_FILENO);
+        close(null);
+    }
+}
+
+QuietStderr::~QuietStderr()
+{
+    std::fflush(stderr);
+    if (saved_ >= 0) {
+        dup2(saved_, STDERR_FILENO);
+        close(saved_);
+    }
+}
 #endif
 
 } // namespace mp::cli

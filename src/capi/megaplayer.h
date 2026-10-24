@@ -89,6 +89,71 @@ MP_API const char* mp_engine_track_info(mp_engine* engine);
  */
 MP_API int32_t mp_engine_scope(mp_engine* engine, float* out, int32_t frames);
 
+/*
+ * La libreria: l'indice di una cartella radice, in un database SQLite, con
+ * ricerca e filtri per piattaforma e formato. Non c'è nella build
+ * WebAssembly. Come per l'engine, le funzioni vanno chiamate da un solo
+ * thread; la scansione gira in un thread suo.
+ *
+ * I brani si identificano con "ref": il percorso del file, o
+ * "ARCHIVIO/percorso/interno" per un brano dentro un archivio, che
+ * mp_engine_collect accetta così com'è.
+ */
+typedef struct mp_library mp_library;
+
+typedef struct mp_scan_status {
+    int32_t running;       /* 1 mentre la scansione è in corso */
+    int32_t walking;       /* 1 mentre conta ancora i file della cartella */
+    int32_t files_found;   /* file nella cartella */
+    int32_t files_checked; /* file controllati, già noti o letti */
+    int32_t files_read;    /* file nuovi o cambiati, aperti */
+    int32_t tracks_found;  /* brani nei file letti */
+    int32_t files_removed; /* file spariti tolti dall'indice, a scansione finita */
+    int32_t failed;        /* 1 se l'ultima scansione è fallita: mp_library_last_error */
+} mp_scan_status;
+
+/* Apre o crea l'indice; path NULL o "" per quello nella cartella dei dati dell'utente. */
+MP_API mp_library* mp_library_open(const char* path);
+/* Ferma la scansione in corso e chiude. */
+MP_API void mp_library_close(mp_library* library);
+MP_API const char* mp_library_last_error(mp_library* library);
+/* Il percorso del database. */
+MP_API const char* mp_library_database(mp_library* library);
+
+/* La cartella radice, "" se non è stata scelta. */
+MP_API const char* mp_library_root(mp_library* library);
+/* Cambiarla svuota l'indice. -1 durante una scansione o in caso di errore. */
+MP_API int32_t mp_library_set_root(mp_library* library, const char* path);
+
+/*
+ * Avvia la scansione in background: legge solo i file nuovi o cambiati e
+ * toglie quelli spariti. -1 se ne è già in corso una o manca la radice.
+ */
+MP_API int32_t mp_library_scan(mp_library* library);
+MP_API void mp_library_cancel_scan(mp_library* library);
+MP_API void mp_library_scan_status(mp_library* library, mp_scan_status* out);
+
+/*
+ * Ricerca: le parole di `text` in titolo, autore, nome e cartella;
+ * `platforms` e `formats` separati da '\n', vuoti per non filtrare.
+ * {"total": 120, "tracks": [{"ref": "...", "name": "...", "folder": "...",
+ *   "backend": "...", "format": "...", "player": "...", "platform": "amiga",
+ *   "platformName": "Amiga", "title": "...", "author": "...", "subsongs": 1,
+ *   "startSubsong": 0, "duration": 61.2 | null, ...}]}
+ */
+MP_API const char* mp_library_search(mp_library* library, const char* text, const char* platforms,
+                                     const char* formats, int32_t offset, int32_t limit);
+/*
+ * Quanti brani per piattaforma e per formato, contati con il testo e con il
+ * filtro dell'altro gruppo:
+ * {"platforms": [{"id": "amiga", "name": "Amiga", "count": 12}],
+ *  "formats": [{"name": "ProTracker", "count": 3}]}
+ */
+MP_API const char* mp_library_facets(mp_library* library, const char* text, const char* platforms,
+                                     const char* formats);
+/* Un brano, con "durations": la durata di ogni sottobrano (null se non si sa). "" se non c'è. */
+MP_API const char* mp_library_track(mp_library* library, const char* ref);
+
 #ifdef __cplusplus
 }
 #endif

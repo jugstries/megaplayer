@@ -2,7 +2,8 @@
 #
 # Scarica, a versioni fissate, i sorgenti delle dipendenze che compila
 # direttamente CMake (UADE con libzakalwe e bencode-tools, ancient, miniaudio,
-# game-music-emu, libsidplayfp con libresidfp, libADLMIDI, AdPlug con libbinio)
+# game-music-emu, libsidplayfp con libresidfp, libADLMIDI, AdPlug con libbinio,
+# SQLite)
 # e applica a UADE la patch per farlo girare nel processo del player.
 # libopenmpt e libarchive invece arrivano dal sistema (brew, apt, MSYS2...),
 # vedi README.md.
@@ -29,6 +30,10 @@ LIBRESIDFP_VERSION=1.2.3
 LIBRESIDFP_SHA256=e9b53a984ca708c3e8d9139eb6aad6141f73ffc22d70a020f7966803f4e2f76d
 LIBSIDPLAYFP_VERSION=3.1.1
 LIBSIDPLAYFP_SHA256=12b79190593bf480b2d11481b5c2de62bac07f344437a66cd8d887329875c626
+# SQLite 3.53.4: l'amalgamation (un solo sqlite3.c) dall'archivio autoconf.
+SQLITE_VERSION=3530400
+SQLITE_YEAR=2026
+SQLITE_SHA256=0e9483900e92cd5de8fd48d16bf9200145a61f7fd5be542a5ac81d8a9516eb9c
 
 if [[ "${1:-}" == "--clean" ]]; then
 	# third_party/install è il prefisso delle versioni precedenti dello script.
@@ -48,7 +53,8 @@ clone() {
 
 # fetch <nome> <url> <sha256>: scarica ed estrae un archivio di rilascio, una
 # volta sola. Per libsidplayfp e libresidfp servono gli archivi e non i tag di
-# git: contengono già i file che altrimenti genererebbero autotools e xa65.
+# git: contengono già i file che altrimenti genererebbero autotools e xa65;
+# quello di SQLite contiene l'amalgamation.
 fetch() {
 	local name="$1" url="$2" sha256="$3"
 	if [[ ! -d "$SRC/$name" ]]; then
@@ -83,6 +89,7 @@ clone libbinio     https://github.com/adplug/libbinio.git             "$LIBBINIO
 clone adplug       https://github.com/adplug/adplug.git               "$ADPLUG_REF"
 fetch libresidfp   "https://github.com/libsidplayfp/libresidfp/releases/download/v$LIBRESIDFP_VERSION/libresidfp-$LIBRESIDFP_VERSION.tar.gz" "$LIBRESIDFP_SHA256"
 fetch libsidplayfp "https://github.com/libsidplayfp/libsidplayfp/releases/download/v$LIBSIDPLAYFP_VERSION/libsidplayfp-$LIBSIDPLAYFP_VERSION.tar.gz" "$LIBSIDPLAYFP_SHA256"
+fetch sqlite       "https://sqlite.org/$SQLITE_YEAR/sqlite-autoconf-$SQLITE_VERSION.tar.gz" "$SQLITE_SHA256"
 
 # Patch per far girare uadecore in un thread del player (src/uade/InProcess.cpp).
 UADE_PATCH="$ROOT/patches/uade-in-process.patch"

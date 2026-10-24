@@ -87,9 +87,9 @@ ctest --test-dir build
 
 `scripts/build-deps.sh` scarica a versioni fissate i sorgenti di UADE,
 libzakalwe, bencode-tools, ancient, miniaudio, game-music-emu, libsidplayfp,
-libresidfp, libADLMIDI, AdPlug e libbinio in `third_party/src` (di
-libsidplayfp e libresidfp gli archivi di rilascio, con la verifica dello
-SHA-256) e applica `patches/uade-in-process.patch` a
+libresidfp, libADLMIDI, AdPlug, libbinio e SQLite in `third_party/src` (di
+libsidplayfp, libresidfp e SQLite gli archivi di rilascio, con la verifica
+dello SHA-256) e applica `patches/uade-in-process.patch` a
 UADE. Tutto il resto lo fa CMake: compila
 UADE senza il suo script di configurazione (che funziona solo su UNIX, vedi
 [cmake/UadeInProcess.cmake](cmake/UadeInProcess.cmake)) e copia replayer e
@@ -174,6 +174,44 @@ archivio.
 Durante `play`: spazio pausa, ←/→ seek di 10 s, `n`/`p` sottobrano
 successivo/precedente, invio file successivo, `+`/`-` MegaSound ±10%, `m`
 confronto A/B con l'originale, `q` esci.
+
+## Libreria
+
+Una cartella radice con tutta la musica, indicizzata in un database SQLite
+([src/library/Library.cpp](src/library/Library.cpp)): per ogni brano, anche
+dentro gli archivi, formato, piattaforma, titolo, autore e sottobrani con le
+durate. Si cerca per parole (in titolo, autore, nome del file e cartella) e si
+filtra per piattaforma e formato; i conteggi di ogni filtro tengono conto
+dell'altro.
+
+```bash
+build/megaplayer library scan ~/Musica/Moduli    # sceglie la cartella e la indicizza
+build/megaplayer library scan                    # aggiorna: legge solo i file nuovi o cambiati
+build/megaplayer library search jeroen tel       # cerca
+build/megaplayer library search -p amiga -f TFMX-Pro
+build/megaplayer library stats                   # brani per piattaforma e formato
+```
+
+La scansione apre solo i file nuovi o cambiati (per data e dimensione) e
+toglie quelli spariti: la prima su una raccolta grande richiede un po'
+(3700 brani, compresa un'immagine ISO da 550 MB, in 12 s), le successive
+pochi decimi di secondo. Se cambiano i backend compilati, o come si leggono
+i file, la scansione successiva rilegge tutto: così i file che prima non si
+riconoscevano entrano quando arriva il formato giusto. Per i formati Amiga
+basta il riconoscimento di UADE, senza avviare l'emulatore (che ha una sola
+istanza, e serve alla riproduzione): formato e replayer sì, titolo e
+sottobrani si sanno solo suonando il brano.
+
+Le piattaforme le dichiarano i backend ([src/core/Platform.h](src/core/Platform.h)):
+Amiga, PC / DOS, Commodore 64, NES, SNES, Game Boy, Sega, PC Engine, MSX, ZX
+Spectrum, Atari 8 bit, Atari ST e file audio. Tra i moduli tracker, MOD, MED,
+OKT e gli altri nati sull'Amiga vanno all'Amiga, S3M, XM e IT al PC.
+
+Il database sta nella cartella dei dati dell'utente (`~/Library/Application
+Support/megaplayer/library.db` su macOS, `%APPDATA%\megaplayer` su Windows,
+`~/.local/share/megaplayer` altrove), o dove dice `--db`. L'app lo userà
+attraverso l'API C (`mp_library_*` in [src/capi/megaplayer.h](src/capi/megaplayer.h)),
+con la scansione in un thread suo. Non c'è nella build WebAssembly.
 
 ## MegaSound
 
@@ -308,6 +346,7 @@ src/core/       interfaccia Decoder, registro dei backend, caricamento e
                 uscita audio, export WAV
 src/decoders/   un file per backend, più tag dei file audio e coppie TFMX
 src/dsp/        effetti sull'audio (MegaSound)
+src/library/    la libreria: indice SQLite di una cartella, con ricerca
 src/uade/       UADE nel processo del player
 src/capi/       API C per le interfacce grafiche
 src/cli/        la riga di comando
@@ -335,6 +374,6 @@ ancient e libarchive BSD-2, miniaudio e stb_vorbis public domain / MIT-0,
 game-music-emu LGPL-2.1 (con l'emulatore Nuked del YM2612, anche lui LGPL),
 libsidplayfp e libresidfp GPL-2.0, AdPlug e libbinio LGPL-2.1; libADLMIDI ha
 parti LGPL, MIT e BSD, ma nel complesso è GPL-3.0 o successiva, e i suoi
-banchi di timbri hanno ciascuno le sue note.
+banchi di timbri hanno ciascuno le sue note. SQLite è di pubblico dominio.
 Finché il backend UADE è incluso, il binario risultante va distribuito sotto
 GPL.

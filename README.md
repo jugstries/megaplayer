@@ -9,6 +9,7 @@ Flutter (per ora macOS) con due skin: moderna e retrò.
 
 | Backend   | Libreria              | Cosa suona                                                     |
 |-----------|-----------------------|----------------------------------------------------------------|
+| `miniaudio` | miniaudio, stb_vorbis | file audio: MP3 (e MP1/MP2), FLAC, WAV, Ogg Vorbis, con titolo e autore dai tag |
 | `openmpt` | libopenmpt            | moduli tracker: MOD, XM, S3M, IT, MED, OKT, ...                |
 | `uade`    | UADE 3.05             | 200+ formati Amiga, con i replayer originali Eagleplayer/DeliTracker in emulazione 68000 + Paula |
 
@@ -92,10 +93,10 @@ worker (pthread di Emscripten); le pthread vogliono `SharedArrayBuffer`, cioè
 una pagina isolata cross-origin: `scripts/serve-web.py` manda le intestazioni
 COOP/COEP, e un hosting vero dovrà fare lo stesso.
 
-Per ora nella build web suona solo UADE: libopenmpt e libarchive vanno ancora
-compilate per WebAssembly. L'audio coincide con quello nativo salvo scarti di
-1-2 unità su 65536 nel 5% dei campioni: su Apple Silicon il compilatore fonde
-moltiplicazioni e somme (FMA), WebAssembly no.
+Per ora nella build web suonano UADE e i file audio di miniaudio: libopenmpt e
+libarchive vanno ancora compilate per WebAssembly. L'audio coincide con quello
+nativo salvo scarti di 1-2 unità su 65536 nel 5% dei campioni: su Apple Silicon
+il compilatore fonde moltiplicazioni e somme (FMA), WebAssembly no.
 
 ### UADE nel processo del player
 
@@ -261,14 +262,15 @@ Limiti attuali:
 src/core/       interfaccia Decoder, registro dei backend, caricamento e
                 decompressione dei file, archivi, motore di riproduzione,
                 uscita audio, export WAV
-src/decoders/   un file per backend
+src/decoders/   un file per backend, più i tag dei file audio
 src/dsp/        effetti sull'audio (MegaSound)
 src/uade/       UADE nel processo del player
 src/capi/       API C per le interfacce grafiche
 src/cli/        la riga di comando
 app/            app desktop in Flutter
 web/            pagina di prova della build WebAssembly
-tests/          test automatici del core
+tests/          test automatici del core; in tests/data file audio di prova
+                (toni generati, rigenerabili con make_audio_fixtures.sh)
 cmake/          build di UADE dai sorgenti, toolchain di cross-compilazione
 patches/        modifiche alle dipendenze
 scripts/        download delle dipendenze, build WebAssembly, server di prova,
@@ -284,5 +286,6 @@ aggiungere un'opzione `MP_WITH_*` in `CMakeLists.txt`.
 
 UADE è GPL-2.0 (il motore UAE) con parti LGPL; i replayer in
 `share/uade/players` hanno licenze e autori diversi. libopenmpt è BSD-3,
-ancient e libarchive BSD-2, miniaudio public domain / MIT-0. Finché il backend UADE è
-incluso, il binario risultante va distribuito sotto GPL.
+ancient e libarchive BSD-2, miniaudio e stb_vorbis public domain / MIT-0.
+Finché il backend UADE è incluso, il binario risultante va distribuito sotto
+GPL.

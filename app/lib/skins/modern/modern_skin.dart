@@ -265,7 +265,8 @@ class _Sidebar extends StatelessWidget {
           Padding(padding: const EdgeInsets.only(left: 12, bottom: 8), child: Text('FORMATI', style: _label())),
           const _FormatItem(color: _orange, label: 'Amiga'),
           const _FormatItem(color: _pink, label: 'Moduli tracker'),
-          const _FormatItem(color: _violet, label: 'C64 SID', soon: true),
+          const _FormatItem(color: _violet, label: 'File audio'),
+          const _FormatItem(color: Color(0xFF4A4458), label: 'C64 SID', soon: true),
           const _FormatItem(color: Color(0xFF4A4458), label: 'Console', soon: true),
           const Spacer(),
           Container(

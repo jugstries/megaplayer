@@ -1,5 +1,7 @@
 #include "core/DecoderRegistry.h"
 
+#include "MiniaudioDecoder.h"
+
 #ifdef MP_WITH_OPENMPT
 #include "OpenMptDecoder.h"
 #endif
@@ -11,13 +13,13 @@ namespace mp {
 
 void registerBuiltinDecoders(DecoderRegistry& registry)
 {
+    registry.add(std::make_unique<MiniaudioDecoderFactory>());
 #ifdef MP_WITH_OPENMPT
     registry.add(std::make_unique<OpenMptDecoderFactory>());
 #endif
 #ifdef MP_WITH_UADE
     registry.add(std::make_unique<UadeDecoderFactory>());
 #endif
-    (void)registry;
 }
 
 void setUadeDataDirectory(const std::string& path)

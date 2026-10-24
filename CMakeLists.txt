@@ -45,12 +45,14 @@ target_include_directories(ancient
 target_compile_features(ancient PUBLIC cxx_std_17)
 set_target_properties(ancient PROPERTIES CXX_VISIBILITY_PRESET hidden)
 
-# --- miniaudio: uscita audio ed encoder WAV ---
+# --- miniaudio: uscita audio, encoder WAV e decoder MP3/FLAC/WAV/Ogg Vorbis ---
 
-add_library(miniaudio STATIC "${MP_THIRD_PARTY}/src/miniaudio/miniaudio.c")
+add_library(miniaudio STATIC src/core/Miniaudio.c)
 target_include_directories(miniaudio PUBLIC "${MP_THIRD_PARTY}/src/miniaudio")
-# I decoder di miniaudio (WAV/FLAC/MP3) per ora non servono.
-target_compile_definitions(miniaudio PUBLIC MA_NO_DECODING MA_NO_RESOURCE_MANAGER MA_NO_NODE_GRAPH MA_NO_ENGINE MA_NO_GENERATION)
+target_compile_definitions(miniaudio PUBLIC MA_NO_RESOURCE_MANAGER MA_NO_NODE_GRAPH MA_NO_ENGINE MA_NO_GENERATION)
+if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(miniaudio PRIVATE -w) # codice di terzi (stb_vorbis)
+endif()
 if(UNIX AND NOT APPLE)
     find_package(Threads REQUIRED)
     target_link_libraries(miniaudio PUBLIC Threads::Threads m ${CMAKE_DL_LIBS})
@@ -66,7 +68,9 @@ add_library(megaplayer_core STATIC
     src/core/SourceFile.cpp
     src/core/TrackList.cpp
     src/core/WavWriter.cpp
+    src/decoders/AudioTags.cpp
     src/decoders/BuiltinDecoders.cpp
+    src/decoders/MiniaudioDecoder.cpp
     src/dsp/MegaSound.cpp)
 target_include_directories(megaplayer_core PUBLIC src)
 target_link_libraries(megaplayer_core PUBLIC ancient miniaudio)
@@ -183,6 +187,18 @@ if(EMSCRIPTEN)
     target_link_options(megasound_test PRIVATE ${MP_NODE_LINK_OPTIONS})
 endif()
 add_test(NAME megasound COMMAND megasound_test)
+
+add_executable(audio_decoder_test tests/AudioDecoderTest.cpp)
+target_link_libraries(audio_decoder_test PRIVATE megaplayer_core)
+if(EMSCRIPTEN)
+    target_link_options(audio_decoder_test PRIVATE ${MP_NODE_LINK_OPTIONS})
+endif()
+add_test(NAME audio_decoders COMMAND audio_decoder_test "${CMAKE_CURRENT_SOURCE_DIR}/tests/data")
+
+# La CLI su un FLAC: deve esportarne il secondo che dura.
+add_test(NAME cli_render_flac
+    COMMAND megaplayer render -o "${CMAKE_BINARY_DIR}/test-flac.wav" "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/tono.flac")
+set_tests_properties(cli_render_flac PROPERTIES PASS_REGULAR_EXPRESSION "Backend: +miniaudio.*Scritti 0:01")
 if(MP_UADE_ENABLED)
     add_executable(uade_inprocess_test tests/UadeInProcessTest.cpp)
     target_link_libraries(uade_inprocess_test PRIVATE megaplayer_core)

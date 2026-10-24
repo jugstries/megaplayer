@@ -5,6 +5,7 @@
 #include "core/SourceFile.h"
 #include "core/TrackList.h"
 #include "core/WavWriter.h"
+#include "dsp/MegaSound.h"
 
 #include <algorithm>
 #include <chrono>
@@ -43,6 +44,7 @@ Opzioni:
   -t, --seconds N      durata massima in secondi
   -r, --rate HZ        frequenza di campionamento (default 48000)
   -o, --output FILE    file WAV di uscita (render)
+  -m, --megasound N    manopola MegaSound da 0 a 100 (play e render)
   -h, --help           questo messaggio
 
 FILE può essere un archivio (LHA, ZIP, 7z, tar, ...): si suonano i brani che
@@ -52,6 +54,7 @@ interno, es. Stormlord.lha/Stormlord/jt.title
 Tasti durante play:
   spazio  pausa              ←/→  indietro/avanti di 10 s
   n/p     sottobrano successivo/precedente
+  +/-     MegaSound ±10%      m    confronto A/B con l'originale
   invio   file successivo    q    esci
 )";
 
@@ -63,6 +66,7 @@ struct Options {
     std::optional<double> seconds;
     int sampleRate = 48000;
     std::string output;
+    int megaSound = 0; // posizione della manopola, 0..100
 };
 
 template <typename T>
@@ -104,6 +108,8 @@ Options parseArgs(int argc, char** argv)
             options.sampleRate = parseNumber(arg, value(i), 8000, 192000);
         } else if (arg == "-o" || arg == "--output") {
             options.output = value(i);
+        } else if (arg == "-m" || arg == "--megasound") {
+            options.megaSound = parseNumber(arg, value(i), 0, 100);
         } else if (arg.size() > 1 && arg[0] == '-') {
             throw std::invalid_argument("opzione sconosciuta: " + arg);
         } else if (options.command.empty()) {
@@ -259,7 +265,14 @@ int runRender(const Options& options, const DecoderRegistry& registry)
     const SourceFile source = loadSourceFile(track.path);
     const auto decoder = openTrack(source, options, registry);
     printTrack(track.name, source, *decoder);
+    if (options.megaSound > 0)
+        std::cout << "  MegaSound:  " << options.megaSound << "%\n";
 
+    // Qui non serve un ritardo costante: spenta, la catena si salta e il WAV
+    // resta identico al bit.
+    MegaSound megaSound(options.sampleRate);
+    megaSound.setAmount(options.megaSound / 100.0f);
+    megaSound.reset();
     WavWriter wav(options.output, options.sampleRate);
     std::vector<float> chunk(kChunkFrames * kChannels);
     const size_t maxFrames = options.seconds
@@ -271,6 +284,8 @@ int runRender(const Options& options, const DecoderRegistry& registry)
         const size_t got = decoder->render(chunk.data(), std::min(kChunkFrames, maxFrames - total));
         if (got == 0)
             break;
+        if (megaSound.engaged())
+            megaSound.process(chunk.data(), got);
         wav.write(chunk.data(), got);
         total += got;
     }
@@ -282,13 +297,24 @@ int runRender(const Options& options, const DecoderRegistry& registry)
 
 enum class AfterTrack { NextFile, Quit };
 
+// La manopola resta com'è da un brano all'altro.
+struct MegaSoundKnob {
+    int amount = 0; // 0..100
+    bool compare = false; // confronto A/B: si sente l'originale
+};
+
 AfterTrack playTrack(const Track& track, const SourceFile& source, Decoder& decoder, const Options& options,
-                     AudioOutput& output, cli::TerminalInput& keys)
+                     AudioOutput& output, cli::TerminalInput& keys, MegaSoundKnob& knob)
 {
     const bool showStatus = stdoutIsTerminal();
     std::vector<float> chunk(kChunkFrames * kChannels);
     bool decoding = true;
     bool paused = false;
+
+    MegaSound megaSound(options.sampleRate);
+    auto applyKnob = [&] { megaSound.setAmount(knob.compare ? 0.0f : knob.amount / 100.0f); };
+    applyKnob();
+    megaSound.reset();
 
     auto playbackPosition = [&] {
         return decoder.position() - static_cast<double>(output.queuedFrames()) / options.sampleRate;
@@ -296,6 +322,7 @@ AfterTrack playTrack(const Track& track, const SourceFile& source, Decoder& deco
     // Dopo seek e cambi di sottobrano l'audio già in coda va scartato.
     auto restart = [&] {
         output.flush();
+        megaSound.reset();
         decoding = true;
     };
     auto endStatusLine = [&] {
@@ -338,6 +365,16 @@ AfterTrack playTrack(const Track& track, const SourceFile& source, Decoder& deco
             }
             break;
         }
+        case cli::Key::MegaSoundUp:
+        case cli::Key::MegaSoundDown:
+            knob.amount = std::clamp(knob.amount + (key == cli::Key::MegaSoundUp ? 10 : -10), 0, 100);
+            knob.compare = false;
+            applyKnob();
+            break;
+        case cli::Key::MegaSoundCompare:
+            knob.compare = !knob.compare;
+            applyKnob();
+            break;
         case cli::Key::None:
             break;
         }
@@ -345,6 +382,8 @@ AfterTrack playTrack(const Track& track, const SourceFile& source, Decoder& deco
         if (decoding) {
             while (output.writableFrames() >= kChunkFrames) {
                 const size_t got = decoder.render(chunk.data(), kChunkFrames);
+                // Sempre, anche spenta: così accenderla non fa saltare l'audio.
+                megaSound.process(chunk.data(), got);
                 output.write(chunk.data(), got);
                 if (got == 0 || (options.seconds && decoder.position() >= *options.seconds)) {
                     decoding = false;
@@ -360,8 +399,10 @@ AfterTrack playTrack(const Track& track, const SourceFile& source, Decoder& deco
             std::cout << "\r  " << (paused ? "pausa " : "      ") << formatTime(playbackPosition());
             if (info.duration)
                 std::cout << " / " << formatTime(*info.duration);
-            std::cout << "   sottobrano " << info.currentSubsong + 1 << "/" << info.subsongCount << "\x1b[K"
-                      << std::flush;
+            std::cout << "   sottobrano " << info.currentSubsong + 1 << "/" << info.subsongCount;
+            if (knob.amount > 0)
+                std::cout << "   MegaSound " << knob.amount << "%" << (knob.compare ? " (A/B: originale)" : "");
+            std::cout << "\x1b[K" << std::flush;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
@@ -383,12 +424,13 @@ int runPlay(const Options& options, const DecoderRegistry& registry)
     output.start();
 
     int failures = playlist.failures;
+    MegaSoundKnob knob{options.megaSound};
     for (const Track& track : playlist.tracks) {
         try {
             const SourceFile source = loadSourceFile(track.path);
             const auto decoder = openTrack(source, options, registry);
             std::cout << "\n";
-            if (playTrack(track, source, *decoder, options, output, keys) == AfterTrack::Quit)
+            if (playTrack(track, source, *decoder, options, output, keys, knob) == AfterTrack::Quit)
                 break;
         } catch (const std::exception& e) {
             // Dopo Ctrl+C si esce senza segnalare l'errore del brano interrotto.

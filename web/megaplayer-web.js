@@ -49,6 +49,8 @@ async function openMegaplayer({ sampleRate = 48000 } = {}) {
     seek: (seconds) => M._mp_engine_seek(engine, seconds),
     selectSubsong: (index) => M._mp_engine_select_subsong(engine, index),
     setVolume: (volume) => M._mp_engine_set_volume(engine, volume),
+    // La manopola MegaSound, da 0 (spenta) a 1 (tutti gli effetti).
+    setMegaSound: (amount) => M._mp_engine_set_megasound(engine, amount),
     status() {
       M._mp_engine_status(engine, statusBuffer);
       const ints = statusBuffer >> 2;

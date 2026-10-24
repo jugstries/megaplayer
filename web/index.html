@@ -39,6 +39,9 @@
   ol button[aria-current="true"] { background: var(--raised); font-weight: 600; }
   #error { color: #ffc2d2; white-space: pre-line; }
   input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; }
+  #megaSound { flex: 1 1 220px; min-height: 44px; accent-color: var(--pink); }
+  #megaValue { font-family: ui-monospace, monospace; min-width: 9ch; }
+  button[aria-pressed="true"] { background: var(--border); font-weight: 600; }
 </style>
 </head>
 <body>
@@ -72,6 +75,15 @@
     <p id="error" role="alert"></p>
   </section>
 
+  <section class="panel" aria-labelledby="megaTitle">
+    <h2 id="megaTitle" style="margin: 0 0 12px; font-size: 18px">MegaSound</h2>
+    <div class="row">
+      <input id="megaSound" type="range" min="0" max="100" step="1" value="0" disabled aria-labelledby="megaTitle">
+      <span id="megaValue" aria-live="polite">0% · spenta</span>
+      <button id="megaCompare" disabled aria-pressed="false">A/B: ascolta l'originale</button>
+    </div>
+  </section>
+
   <section class="panel" aria-label="Oscilloscopio">
     <canvas id="scope" width="900" height="160" aria-hidden="true"></canvas>
   </section>
@@ -86,7 +98,7 @@
 <script src="megaplayer-web.js"></script>
 <script>
   const $ = (id) => document.getElementById(id);
-  const controls = ['files', 'demo', 'prev', 'back', 'pause', 'forward', 'next', 'subPrev', 'subNext'];
+  const controls = ['files', 'demo', 'prev', 'back', 'pause', 'forward', 'next', 'subPrev', 'subNext', 'megaSound', 'megaCompare'];
   let player = null;
   let tracks = [];
   let current = -1;
@@ -135,6 +147,18 @@
     }
     renderQueue();
     if (current < 0 && tracks.length > first) playIndex(first);
+  }
+
+  // Come nell'app: girare la manopola esce dal confronto A/B, che fa
+  // sentire l'originale.
+  let megaBypassed = false;
+  const megaCharacter = (a) => (a <= 0 ? 'spenta' : a < 25 ? 'leggera' : a < 50 ? 'calda' : a < 75 ? 'grintosa' : 'mega');
+
+  function applyMegaSound() {
+    const amount = Number($('megaSound').value);
+    player.setMegaSound(megaBypassed ? 0 : amount / 100);
+    $('megaValue').textContent = `${amount}% · ${megaBypassed ? 'originale' : megaCharacter(amount)}`;
+    $('megaCompare').setAttribute('aria-pressed', String(megaBypassed));
   }
 
   function drawScope() {
@@ -200,6 +224,8 @@
   $('next').onclick = () => playIndex(current + 1);
   $('subPrev').onclick = () => player.selectSubsong(player.status().subsong - 1);
   $('subNext').onclick = () => player.selectSubsong(player.status().subsong + 1);
+  $('megaSound').oninput = () => { megaBypassed = false; applyMegaSound(); };
+  $('megaCompare').onclick = () => { megaBypassed = !megaBypassed; applyMegaSound(); };
 </script>
 </body>
 </html>

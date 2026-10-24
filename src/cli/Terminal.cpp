@@ -100,6 +100,10 @@ Key TerminalInput::poll()
     case 'p': return Key::PrevSubsong;
     case '\n':
     case '\r': return Key::NextFile;
+    case '+':
+    case '=': return Key::MegaSoundUp;
+    case '-': return Key::MegaSoundDown;
+    case 'm': return Key::MegaSoundCompare;
     case 'q': return Key::Quit;
     default: return Key::None;
     }

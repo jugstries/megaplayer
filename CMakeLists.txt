@@ -151,7 +151,7 @@ else()
     set(MP_WEB_EXPORTS
         _mp_set_uade_data_dir _mp_engine_create _mp_engine_destroy _mp_engine_last_error
         _mp_engine_backends _mp_engine_collect _mp_engine_play _mp_engine_stop _mp_engine_set_paused
-        _mp_engine_seek _mp_engine_select_subsong _mp_engine_set_volume _mp_engine_status
+        _mp_engine_seek _mp_engine_select_subsong _mp_engine_set_volume _mp_engine_set_megasound _mp_engine_status
         _mp_engine_track_info _mp_engine_scope _malloc _free)
     list(JOIN MP_WEB_EXPORTS "," MP_WEB_EXPORTS)
     add_executable(megaplayer_web src/capi/megaplayer.cpp)
@@ -200,6 +200,12 @@ if(MP_UADE_ENABLED)
         COMMAND megaplayer render -t 5 -o "${CMAKE_BINARY_DIR}/test-ahx.wav"
                 "${MP_THIRD_PARTY}/src/uade/songs/AHX.Cruisin")
     set_tests_properties(cli_render_ahx PROPERTIES PASS_REGULAR_EXPRESSION "Scritti 0:05")
+
+    add_test(NAME cli_render_megasound
+        COMMAND megaplayer render -m 70 -t 5 -o "${CMAKE_BINARY_DIR}/test-megasound.wav"
+                "${MP_THIRD_PARTY}/src/uade/songs/AHX.Cruisin")
+    set_tests_properties(cli_render_megasound PROPERTIES
+        PASS_REGULAR_EXPRESSION "MegaSound: +70%.*Scritti 0:05")
 endif()
 
 # Un MOD generato da tests/make_test_mod.py, suonato da entrambi i backend.

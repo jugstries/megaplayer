@@ -12,6 +12,9 @@ enum class Key {
     NextSubsong,
     PrevSubsong,
     NextFile,
+    MegaSoundUp,
+    MegaSoundDown,
+    MegaSoundCompare,
     Quit,
 };
 

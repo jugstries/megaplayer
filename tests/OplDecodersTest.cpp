@@ -4,9 +4,10 @@
 // - per adplug un IMF che programma direttamente i registri del chip, con
 //   una sinusoide quasi pura sul primo canale.
 // Controlla backend, titolo, autore, durata, la frequenza che esce dal chip
-// emulato, la fine del brano e il seek. Scrive i file in DIR/test.mid e DIR/test.imf, per i
-// test della CLI.
-// Uso: opl_decoders_test DIR
+// emulato, la fine del brano e il seek. Scrive i file in DIR/test.mid e
+// DIR/test.imf, per i test della CLI. Con ADL, un Westwood ADL dei sorgenti
+// di AdPlug (DUNE19.ADL), controlla che i sottobrani vuoti restino fuori.
+// Uso: opl_decoders_test DIR [ADL]
 
 #include "core/DecoderRegistry.h"
 #include "core/SourceFile.h"
@@ -201,6 +202,26 @@ void testFile(mp::DecoderRegistry& registry, const std::filesystem::path& path, 
     check(rms(after, 0.1, 0.5) > 0.01, "muto dopo il seek indietro");
 }
 
+// In DUNE19.ADL 30 sottobrani su 74 sono vuoti e uno non accende note: chi
+// passava da un sottobrano all'altro finiva su uno vuoto e la riproduzione
+// si fermava. Ogni sottobrano offerto deve suonare, e si parte dalla prima
+// musica (il terzo sottobrano del file, 28 secondi).
+void testWestwoodSubsongs(mp::DecoderRegistry& registry, const std::filesystem::path& path)
+{
+    auto decoder = registry.open(mp::loadSourceFile(path), mp::OutputSpec{kRate});
+    const mp::TrackInfo& info = decoder->info();
+    std::printf("%s: %d sottobrani, si parte dal %d\n", path.filename().string().c_str(), info.subsongCount,
+                info.currentSubsong + 1);
+    check(info.subsongCount == 43, "sottobrani di DUNE19.ADL: " + std::to_string(info.subsongCount));
+    check(info.currentSubsong == 0 && info.duration && std::fabs(*info.duration - 28.4) < 0.5,
+          "DUNE19.ADL non parte dalla prima musica");
+    for (int i = 0; i < info.subsongCount; ++i) {
+        decoder->selectSubsong(i);
+        const std::vector<float> frames = renderSeconds(*decoder, 0.05);
+        check(!frames.empty(), "il sottobrano " + std::to_string(i + 1) + " finisce subito");
+    }
+}
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -222,6 +243,8 @@ int main(int argc, char** argv)
 #ifdef MP_TEST_ADPLUG
     // Due secondi di nota e un decimo dopo lo spegnimento.
     testFile(registry, directory / "test.imf", "adplug", "Prova IMF", "Megaplayer", 2.1);
+    if (argc > 2)
+        testWestwoodSubsongs(registry, argv[2]);
 #endif
 
     std::printf(failures == 0 ? "ok\n" : "FALLITO\n");

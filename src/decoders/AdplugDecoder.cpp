@@ -27,7 +27,7 @@ constexpr int kProbeScore = 60;
 // chip OPL, che gme non suona, e gli MDI sono file MIDI con dentro i timbri
 // AdLib, che libADLMIDI ignorerebbe.
 constexpr int kPreferredScore = 85;
-// AdPlug misura la durata suonando il brano a vuoto, fino a dieci minuti:
+// La durata si misura suonando il brano a vuoto, fino a dieci minuti:
 // oltre, il brano gira su sé stesso e si chiude lì.
 constexpr unsigned long kLengthLimitMs = 600000;
 
@@ -93,6 +93,59 @@ std::unique_ptr<CPlayer> loadPlayer(const SourceFile& file, Copl* opl, const CFi
     return nullptr;
 }
 
+// Il chip che vede il lettore. Di solito le scritture vanno al chip vero;
+// mentre si misurano i sottobrani vanno perse, e si contano le note accese.
+class RoutedOpl final : public Copl {
+public:
+    explicit RoutedOpl(Copl& chip)
+        : chip_(chip)
+    {
+        currType = chip.gettype();
+    }
+
+    void measure(bool on)
+    {
+        measuring_ = on;
+        notes_ = 0;
+    }
+
+    int notes() const { return notes_; }
+
+    void write(int reg, int value) override
+    {
+        if (!measuring_) {
+            chip_.write(reg, value);
+            return;
+        }
+        // Key-on (bit 5 di B0-B8), o un colpo di batteria in modo ritmico.
+        const bool keyOn = (reg & 0xf0) == 0xb0 && (reg & 0x0f) <= 8 && (value & 0x20);
+        const bool drum = reg == 0xbd && (value & 0x20) && (value & 0x1f);
+        if (keyOn || drum)
+            ++notes_;
+    }
+
+    // Il banco di registri si segue sempre, anche mentre si misura.
+    void setchip(int n) override
+    {
+        Copl::setchip(n);
+        chip_.setchip(n);
+    }
+
+    void init() override
+    {
+        currChip = 0;
+        if (!measuring_)
+            chip_.init();
+    }
+
+    void update(short* buffer, int frames) override { chip_.update(buffer, frames); }
+
+private:
+    Copl& chip_;
+    bool measuring_ = false;
+    int notes_ = 0;
+};
+
 std::string trimmed(const std::string& text)
 {
     const size_t first = text.find_first_not_of(" \t\r\n");
@@ -106,7 +159,8 @@ public:
     AdplugDecoder(const SourceFile& file, const OutputSpec& spec)
         : sampleRate_(spec.sampleRate)
         , file_(file)
-        , opl_(spec.sampleRate)
+        , chip_(spec.sampleRate)
+        , opl_(chip_)
     {
         const MemoryProvider provider(file_);
         player_ = loadPlayer(file_, &opl_, provider);
@@ -116,10 +170,19 @@ public:
         info_.format = trimmed(player_->gettype());
         info_.title = trimmed(player_->gettitle());
         info_.author = trimmed(player_->getauthor());
-        info_.subsongCount = static_cast<int>(std::max(1u, player_->getsubsongs()));
-        // Alcuni formati non partono dal primo: nei Westwood ADL i primi
-        // sono effetti sonori.
-        selectSubsong(static_cast<int>(std::min<unsigned int>(player_->getsubsong(), info_.subsongCount - 1)));
+        // Alcuni formati non partono dal primo sottobrano: nei Westwood ADL
+        // i primi sono effetti sonori.
+        const unsigned int start = player_->getsubsong();
+        measureSubsongs();
+        info_.subsongCount = static_cast<int>(subsongs_.size());
+        int first = 0;
+        for (size_t i = 0; i < subsongs_.size(); ++i) {
+            if (subsongs_[i].index >= start) {
+                first = static_cast<int>(i);
+                break;
+            }
+        }
+        selectSubsong(first);
     }
 
     AdplugDecoder(const AdplugDecoder&) = delete;
@@ -129,16 +192,14 @@ public:
 
     void selectSubsong(int index) override
     {
-        // songlength() suona a vuoto su un chip muto e riavvolge: il brano
-        // si riavvolge di nuovo dopo, sul chip vero.
-        const unsigned long length = player_->songlength(index);
-        player_->rewind(index);
+        const Subsong& subsong = subsongs_.at(static_cast<size_t>(index));
+        player_->rewind(static_cast<int>(subsong.index));
         info_.currentSubsong = index;
-        if (length > 0)
-            info_.duration = length / 1000.0;
+        if (subsong.lengthMs > 0)
+            info_.duration = subsong.lengthMs / 1000.0;
         else
             info_.duration.reset();
-        const unsigned long limit = length > 0 ? std::min(length, kLengthLimitMs) : kLengthLimitMs;
+        const unsigned long limit = subsong.lengthMs > 0 ? subsong.lengthMs : kLengthLimitMs;
         limit_ = static_cast<size_t>(limit / 1000.0 * sampleRate_);
         restart(0);
     }
@@ -157,7 +218,7 @@ public:
             }
             const size_t count = std::min(frames - done, static_cast<size_t>(std::ceil(untilTick_)));
             samples_.resize(count * kChannels);
-            opl_.update(samples_.data(), static_cast<int>(count));
+            chip_.update(samples_.data(), static_cast<int>(count));
             for (size_t i = 0; i < count * kChannels; ++i)
                 out[done * kChannels + i] = samples_[i] / 32768.0f;
             untilTick_ -= static_cast<double>(count);
@@ -169,17 +230,52 @@ public:
 
     bool canSeek() const override { return true; }
 
-    // AdPlug riavvolge ed esegue il brano a vuoto fino al punto richiesto.
+    // Si riavvolge e si esegue il brano senza generare audio fino al punto
+    // richiesto, come CPlayer::seek(), ma nel sottobrano corrente.
     void seek(double seconds) override
     {
-        const auto ms = static_cast<unsigned long>(std::max(0.0, seconds) * 1000);
-        player_->seek(ms);
-        restart(static_cast<size_t>(ms / 1000.0 * sampleRate_));
+        const double target = std::max(0.0, seconds) * 1000;
+        player_->rewind(static_cast<int>(subsongs_[static_cast<size_t>(info_.currentSubsong)].index));
+        double ms = 0;
+        while (ms < target && player_->update())
+            ms += 1000.0 / player_->getrefresh();
+        restart(static_cast<size_t>(target / 1000 * sampleRate_));
     }
 
     double position() const override { return static_cast<double>(rendered_) / sampleRate_; }
 
 private:
+    struct Subsong {
+        unsigned int index; // per AdPlug
+        unsigned long lengthMs;
+    };
+
+    // Ogni sottobrano suonato a vuoto, sul chip muto che conta le note: la
+    // durata e se suona qualcosa. I sottobrani senza note restano fuori:
+    // nei Westwood ADL quasi metà sono vuoti, e passarci sopra
+    // fermerebbe la riproduzione.
+    void measureSubsongs()
+    {
+        const unsigned int count = std::max(1u, player_->getsubsongs());
+        std::vector<Subsong> all;
+        for (unsigned int index = 0; index < count; ++index) {
+            opl_.measure(true);
+            player_->rewind(static_cast<int>(index));
+            double ms = 0;
+            while (ms < kLengthLimitMs && player_->update())
+                ms += 1000.0 / player_->getrefresh();
+            const Subsong subsong{index, static_cast<unsigned long>(ms)};
+            all.push_back(subsong);
+            if (opl_.notes() > 0)
+                subsongs_.push_back(subsong);
+        }
+        opl_.measure(false);
+        // Se nessuno accende note (un formato che le suona in altro modo),
+        // si tengono tutti.
+        if (subsongs_.empty())
+            subsongs_ = all;
+    }
+
     void restart(size_t frame)
     {
         rendered_ = frame;
@@ -189,8 +285,10 @@ private:
 
     int sampleRate_;
     SourceFile file_;
-    CNemuopl opl_;
+    CNemuopl chip_;
+    RoutedOpl opl_;
     std::unique_ptr<CPlayer> player_;
+    std::vector<Subsong> subsongs_;
     std::vector<short> samples_;
     double untilTick_ = 0; // frame da generare prima del prossimo tick del brano
     bool ended_ = false;

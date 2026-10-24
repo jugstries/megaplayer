@@ -151,7 +151,7 @@ bool stdoutIsTerminal()
 struct Playlist {
     std::vector<Track> tracks;
     int failures = 0;
-    int skipped = 0; // file non musicali degli archivi
+    int skipped = 0; // file non musicali, o campioni di un brano in due file
 };
 
 // `collector` tiene in vita i file estratti dagli archivi: deve vivere quanto
@@ -175,7 +175,7 @@ Playlist buildPlaylist(const std::vector<std::string>& inputs, TrackCollector& c
 void reportSkipped(int skipped)
 {
     if (skipped > 0)
-        std::cout << "(" << skipped << " file non musicali degli archivi saltati)\n";
+        std::cout << "(" << skipped << " file saltati: non musicali, o campioni di un brano)\n";
 }
 
 void printTrack(const std::string& name, const SourceFile& source, const Decoder& decoder)

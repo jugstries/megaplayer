@@ -71,6 +71,7 @@ add_library(megaplayer_core STATIC
     src/decoders/AudioTags.cpp
     src/decoders/BuiltinDecoders.cpp
     src/decoders/MiniaudioDecoder.cpp
+    src/decoders/TfmxFiles.cpp
     src/dsp/MegaSound.cpp)
 target_include_directories(megaplayer_core PUBLIC src)
 target_link_libraries(megaplayer_core PUBLIC ancient miniaudio)
@@ -194,6 +195,13 @@ if(EMSCRIPTEN)
     target_link_options(audio_decoder_test PRIVATE ${MP_NODE_LINK_OPTIONS})
 endif()
 add_test(NAME audio_decoders COMMAND audio_decoder_test "${CMAKE_CURRENT_SOURCE_DIR}/tests/data")
+
+add_executable(tfmx_files_test tests/TfmxFilesTest.cpp)
+target_link_libraries(tfmx_files_test PRIVATE megaplayer_core)
+if(EMSCRIPTEN)
+    target_link_options(tfmx_files_test PRIVATE ${MP_NODE_LINK_OPTIONS})
+endif()
+add_test(NAME tfmx_files COMMAND tfmx_files_test)
 
 # La CLI su un FLAC: deve esportarne il secondo che dura.
 add_test(NAME cli_render_flac

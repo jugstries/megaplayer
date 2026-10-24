@@ -19,7 +19,8 @@ struct Track {
 
 // Trasforma i percorsi indicati dall'utente in brani. Gli archivi vengono
 // estratti e restano su disco finché il collector vive; i loro file che
-// nessun backend riconosce (testi, icone .info, ...) vengono scartati.
+// nessun backend riconosce (testi, icone .info, ...) vengono scartati, come
+// la metà con i campioni di un brano in due file, che da sola non si suona.
 class TrackCollector {
 public:
     explicit TrackCollector(const DecoderRegistry& registry)
@@ -33,7 +34,7 @@ public:
     // std::runtime_error se l'archivio è danneggiato o la selezione vuota.
     std::vector<Track> collect(const std::string& input);
 
-    // File di archivio scartati dall'ultima collect().
+    // File scartati dall'ultima collect().
     int lastSkipped() const { return lastSkipped_; }
 
     // Rimuove i file estratti finora.

@@ -25,6 +25,14 @@ restano su disco e non solo in memoria perché alcuni formati Amiga sono divisi
 in più file, che UADE cerca uno accanto all'altro. libarchive non legge gli
 archivi LZX dell'Amiga.
 
+I replayer di questi formati in due file ricavano il nome del secondo dal
+primo, con la convenzione dell'Amiga: `mdat.Brano` cerca `smpl.Brano`. Le
+collezioni moderne conservano i TFMX anche come `Brano.tfx` + `Brano.sam`, o
+in un file solo (TFMX-MOD `.tfm`, con titolo, autore e sottobrano, e
+TFMXPAK): megaplayer li presenta a UADE come la coppia originale e gli passa
+i campioni quando li chiede ([src/decoders/TfmxFiles.cpp](src/decoders/TfmxFiles.cpp)).
+La metà con i campioni, scelta da sola, viene saltata.
+
 Quando più backend riconoscono un file vince quello col punteggio più alto
 (`openmpt` per i formati che conosce, perché è più veloce, conosce la durata
 dei brani e fa seek immediato). Se l'apertura fallisce si prova il successivo.
@@ -262,7 +270,7 @@ Limiti attuali:
 src/core/       interfaccia Decoder, registro dei backend, caricamento e
                 decompressione dei file, archivi, motore di riproduzione,
                 uscita audio, export WAV
-src/decoders/   un file per backend, più i tag dei file audio
+src/decoders/   un file per backend, più tag dei file audio e coppie TFMX
 src/dsp/        effetti sull'audio (MegaSound)
 src/uade/       UADE nel processo del player
 src/capi/       API C per le interfacce grafiche

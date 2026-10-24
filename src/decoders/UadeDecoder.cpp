@@ -1,10 +1,16 @@
 #include "UadeDecoder.h"
 
+#include "TfmxFiles.h"
+
 #include <uade/uade.h>
 
+#include <algorithm>
+#include <cctype>
 #include <cstdint>
 #include <cstdlib>
+#include <filesystem>
 #include <string>
+#include <system_error>
 #include <vector>
 
 namespace mp {
@@ -41,32 +47,82 @@ StatePtr newState(int sampleRate)
     return state;
 }
 
-// Il nome con cui presentare il file a UADE. UADE riconosce alcuni formati
-// dal nome (prefisso "mod.", estensione) e, se il nome esiste su disco, ne
-// usa la dimensione al posto di quella dei dati passati. Per i dati
-// decompressi serve quindi un nome che non esista: altrimenti varrebbe la
-// dimensione del file compresso.
-std::string uadeName(const SourceFile& file)
+// Cartella che non esiste: i file passati a UADE dalla memoria hanno un nome
+// qui dentro. UADE riconosce alcuni formati dal nome (prefisso "mod.",
+// estensione) e, se il nome esiste su disco, ne usa la dimensione al posto di
+// quella dei dati passati.
+constexpr const char* kMemoryDirectory = "/megaplayer-memory/";
+
+std::string lowercase(std::string text)
 {
-    if (!file.wasUnpacked())
-        return file.path.string();
-    return "/megaplayer-unpacked/" + file.fileName();
+    std::transform(text.begin(), text.end(), text.begin(), [](unsigned char c) { return std::tolower(c); });
+    return text;
+}
+
+// Cosa passare a UADE per un file. I replayer dei formati in due file
+// ricavano il nome del secondo dal primo, secondo la convenzione dell'Amiga:
+// "mdat.Brano" vuole "smpl.Brano". Un TFMX salvato come "Brano.tfx" +
+// "Brano.sam", o in un file solo (TFMX-MOD, TFMXPAK), si presenta quindi come
+// "mdat.Brano", e loadCompanion() dà poi i campioni. Per i dati decompressi
+// serve un nome che non esista, altrimenti varrebbe la dimensione del file
+// compresso.
+struct UadeInput {
+    std::string name;
+    std::vector<uint8_t> data;    // vuoto: UADE legge `name` dal disco
+    std::vector<uint8_t> samples; // i campioni, se erano nello stesso file
+    int subsong = -1;
+    std::string title;
+    std::string author;
+};
+
+UadeInput prepareInput(const SourceFile& file)
+{
+    UadeInput input;
+    const std::string mdatName = kMemoryDirectory + std::string("mdat.") + file.path.stem().string();
+    if (auto pair = unpackTfmxContainer(file.data)) {
+        input.name = mdatName;
+        input.data = std::move(pair->song);
+        input.samples = std::move(pair->samples);
+        input.subsong = pair->subsong;
+        input.title = std::move(pair->title);
+        input.author = std::move(pair->author);
+    } else if (isTfmxSong(file.data) && lowercase(file.fileName()).rfind("mdat.", 0) != 0) {
+        input.name = mdatName;
+        input.data = file.data;
+    } else if (file.wasUnpacked()) {
+        input.name = kMemoryDirectory + file.fileName();
+        input.data = file.data;
+    } else {
+        input.name = file.path.string();
+    }
+    return input;
+}
+
+// `name` dentro `directory`, anche con maiuscole e minuscole diverse (sui
+// dischi che le distinguono). Vuoto se non c'è.
+std::filesystem::path findIgnoringCase(const std::filesystem::path& directory, const std::string& name)
+{
+    std::error_code error;
+    if (std::filesystem::is_regular_file(directory / name, error))
+        return directory / name;
+    const std::string wanted = lowercase(name);
+    for (const auto& entry : std::filesystem::directory_iterator(directory, error)) {
+        if (entry.is_regular_file(error) && lowercase(entry.path().filename().string()) == wanted)
+            return entry.path();
+    }
+    return {};
 }
 
 class UadeDecoder final : public Decoder {
 public:
     UadeDecoder(const SourceFile& file, const OutputSpec& spec)
         : sampleRate_(spec.sampleRate)
-        , name_(uadeName(file))
-        , state_(newState(spec.sampleRate))
+        , directory_(file.path.parent_path())
+        , input_(prepareInput(file))
     {
-        // Da file su disco UADE carica da solo i file accessori dei formati
-        // in più parti (es. TFMX mdat+smpl). I dati decompressi invece
-        // esistono solo in memoria.
-        if (file.wasUnpacked())
-            unpackedData_ = file.data;
+        resetState();
 
-        play(-1);
+        play(input_.subsong);
 
         const struct uade_song_info* song = uade_get_song_info(state_.get());
         subsongMin_ = song->subsongs.min;
@@ -76,7 +132,8 @@ public:
         if (info_.format.rfind("type: ", 0) == 0)
             info_.format.erase(0, 6);
         info_.player = song->playername;
-        info_.title = song->modulename;
+        info_.title = input_.title.empty() ? song->modulename : input_.title;
+        info_.author = input_.author;
         info_.subsongCount = song->subsongs.max - song->subsongs.min + 1;
         info_.currentSubsong = song->subsongs.cur - subsongMin_;
         updateDuration();
@@ -86,6 +143,10 @@ public:
                 info_.format = known->format;
         }
     }
+
+    // UADE ha l'indirizzo del decoder, per loadAmigaFile().
+    UadeDecoder(const UadeDecoder&) = delete;
+    UadeDecoder& operator=(const UadeDecoder&) = delete;
 
     const TrackInfo& info() const override { return info_; }
 
@@ -135,20 +196,56 @@ public:
     }
 
 private:
+    void resetState()
+    {
+        state_ = newState(sampleRate_);
+        uade_set_amiga_loader(&UadeDecoder::loadAmigaFile, this, state_.get());
+    }
+
+    // Ogni file che il replayer chiede (il secondo file di una coppia, ma
+    // anche librerie e configurazione): prima la ricerca di UADE, poi la
+    // cartella del brano con i nomi alternativi della coppia.
+    static struct uade_file* loadAmigaFile(const char* name, const char* playerdir, void* context, uade_state* state)
+    {
+        if (struct uade_file* found = uade_load_amiga_file(name, playerdir, state))
+            return found;
+        return static_cast<UadeDecoder*>(context)->loadCompanion(name);
+    }
+
+    struct uade_file* loadCompanion(const std::string& request) const
+    {
+        const size_t slash = request.find_last_of("/:");
+        const std::string name = slash == std::string::npos ? request : request.substr(slash + 1);
+        if (!input_.samples.empty() && lowercase(name).rfind("smpl.", 0) == 0)
+            return uade_file(request.c_str(), input_.samples.data(), input_.samples.size());
+        for (const std::string& candidate : pairedFileNames(name)) {
+            const std::filesystem::path path = findIgnoringCase(directory_, candidate);
+            if (path.empty())
+                continue;
+            try {
+                // Anche il secondo file può essere impacchettato.
+                const SourceFile companion = loadSourceFile(path);
+                return uade_file(request.c_str(), companion.data.data(), companion.data.size());
+            } catch (const std::exception&) {
+            }
+        }
+        return nullptr;
+    }
+
     void play(int subsong)
     {
         if (playing_) {
             playing_ = false;
             if (uade_stop(state_.get()) != 0)
-                state_ = newState(sampleRate_);
+                resetState();
         }
 
-        const int result = unpackedData_.empty()
-            ? uade_play(name_.c_str(), subsong, state_.get())
-            : uade_play_from_buffer(name_.c_str(), unpackedData_.data(), unpackedData_.size(), subsong, state_.get());
+        const int result = input_.data.empty()
+            ? uade_play(input_.name.c_str(), subsong, state_.get())
+            : uade_play_from_buffer(input_.name.c_str(), input_.data.data(), input_.data.size(), subsong, state_.get());
 
         if (result < 0) {
-            state_ = newState(sampleRate_);
+            resetState();
             throw DecoderError("errore fatale di uadecore");
         }
         if (result == 0)
@@ -172,8 +269,8 @@ private:
     }
 
     int sampleRate_;
-    std::string name_;
-    std::vector<uint8_t> unpackedData_;
+    std::filesystem::path directory_;
+    UadeInput input_;
     StatePtr state_;
     std::vector<int16_t> samples_;
     TrackInfo info_;
@@ -212,9 +309,9 @@ int UadeDecoderFactory::probe(const SourceFile& file)
     if (!probeState_)
         return 0;
 
-    const std::string name = uadeName(file);
-    const int ours = uade_is_our_file_from_buffer(name.c_str(), file.data.data(), file.data.size(),
-                                                  probeState_.get());
+    const UadeInput input = prepareInput(file);
+    const std::vector<uint8_t>& data = input.data.empty() ? file.data : input.data;
+    const int ours = uade_is_our_file_from_buffer(input.name.c_str(), data.data(), data.size(), probeState_.get());
     return ours ? kProbeScore : 0;
 }
 

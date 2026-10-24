@@ -1,6 +1,7 @@
 #include "TrackList.h"
 
 #include "SourceFile.h"
+#include "decoders/TfmxFiles.h"
 
 #include <stdexcept>
 
@@ -21,8 +22,13 @@ std::vector<Track> TrackCollector::collect(const std::string& input)
     lastSkipped_ = 0;
     const auto [path, inner] = splitArchivePath(input);
     std::optional<ExtractedArchive> archive = openArchive(path);
-    if (!archive)
+    if (!archive) {
+        if (isSampleHalf(path)) {
+            lastSkipped_ = 1;
+            return {};
+        }
         return {{input, input, false}};
+    }
 
     std::vector<Track> tracks;
     bool selected = false;

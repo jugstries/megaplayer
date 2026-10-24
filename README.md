@@ -246,6 +246,12 @@ CMake e la copia, firmata, dentro l'app. Il core decodifica in un thread suo
 ([src/core/Player.cpp](src/core/Player.cpp)); l'app legge lo stato circa 30
 volte al secondo.
 
+Ogni skin ha la sua icona: la manopola MegaSound per la moderna, la mascotte
+floppy per la retrò. L'icona dell'app è la moderna; con la skin retrò l'app
+cambia l'icona nel Dock finché resta aperta. Le disegna
+[app/tool/make_icons.py](app/tool/make_icons.py) (serve `resvg`), che le
+scrive in `app/macos/Runner/Assets.xcassets`.
+
 Serve Flutter (≥ 3.47) con Xcode, dopo `scripts/build-deps.sh`:
 
 ```bash

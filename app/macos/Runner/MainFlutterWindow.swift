@@ -11,8 +11,27 @@ class MainFlutterWindow: NSWindow {
 
     RegisterGeneratedPlugins(registry: flutterViewController)
     FilesChannel.register(with: flutterViewController.engine.binaryMessenger, window: self)
+    IconChannel.register(with: flutterViewController.engine.binaryMessenger)
 
     super.awakeFromNib()
+  }
+}
+
+// Canale "megaplayer/icon": l'icona nel Dock segue la skin finché l'app è
+// aperta. Il bundle porta la moderna; la retrò è RetroIcon in Assets.xcassets
+// (tutte e due da tool/make_icons.py).
+private enum IconChannel {
+  static func register(with messenger: FlutterBinaryMessenger) {
+    let channel = FlutterMethodChannel(name: "megaplayer/icon", binaryMessenger: messenger)
+    channel.setMethodCallHandler { call, result in
+      guard call.method == "setSkin", let skin = call.arguments as? String else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      // nil rimette l'icona del bundle.
+      NSApp.applicationIconImage = skin == "retro" ? NSImage(named: "RetroIcon") : nil
+      result(nil)
+    }
   }
 }
 

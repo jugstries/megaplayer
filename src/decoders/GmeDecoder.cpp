@@ -1,9 +1,13 @@
 #include "GmeDecoder.h"
 
+#include "core/Platform.h"
+
 #include <gme/gme.h>
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
+#include <string_view>
 #include <vector>
 
 namespace mp {
@@ -16,6 +20,28 @@ constexpr int kProbeScore = 80;
 constexpr int kExtensionScore = 30;
 // Dissolvenza in chiusura quando il file non ne indica una.
 constexpr int kFadeMs = 8000;
+
+// La piattaforma dal tipo di file. I KSS sono quasi tutti MSX: quelli del
+// Master System lo scrivono nelle informazioni del brano (vedi
+// selectSubsong()).
+const char* platformOf(std::string_view extension)
+{
+    if (extension == "NSF" || extension == "NSFE")
+        return platform::kNes;
+    if (extension == "SPC")
+        return platform::kSnes;
+    if (extension == "GBS")
+        return platform::kGameBoy;
+    if (extension == "VGM" || extension == "VGZ" || extension == "GYM")
+        return platform::kSega;
+    if (extension == "HES")
+        return platform::kPcEngine;
+    if (extension == "AY")
+        return platform::kZxSpectrum;
+    if (extension == "SAP")
+        return platform::kAtari8;
+    return platform::kMsx;
+}
 
 struct InfoDeleter {
     void operator()(gme_info_t* info) const { gme_free_info(info); }
@@ -36,6 +62,7 @@ public:
         info_.backend = "gme";
         info_.format = gme_type_extension(type);
         info_.player = gme_type_system(type);
+        info_.platform = platformOf(info_.format);
         info_.subsongCount = std::max(1, gme_track_count(emu_));
         selectSubsong(0);
     }
@@ -58,6 +85,10 @@ public:
             const std::unique_ptr<gme_info_t, InfoDeleter> track(raw);
             info_.title = track->song[0] ? track->song : track->game;
             info_.author = track->author;
+            if (track->system[0] && std::strstr(track->system, "Sega") != nullptr) {
+                info_.player = track->system;
+                info_.platform = platform::kSega;
+            }
             // La durata del file, oppure intro più due giri del ritornello,
             // oppure due minuti e mezzo; poi la dissolvenza. Così ogni brano
             // finisce, anche quelli che girerebbero per sempre.

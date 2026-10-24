@@ -1,6 +1,7 @@
 #include "AdlMidiDecoder.h"
 
 #include "AudioTags.h"
+#include "core/Platform.h"
 
 #include <adlmidi.h>
 
@@ -81,6 +82,7 @@ public:
         adl_setLoopEnabled(player_.get(), 0);
 
         info_.backend = "adlmidi";
+        info_.platform = platform::kPc;
         info_.format = family.format;
         info_.player = std::string("OPL3, banco ") + adl_getBankNames()[bank];
         selectSubsong(0);

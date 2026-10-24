@@ -1,6 +1,7 @@
 #include "SidDecoder.h"
 
 #include "AudioTags.h"
+#include "core/Platform.h"
 
 #include <builders/residfp-builder/residfp.h>
 #include <sidplayfp/SidConfig.h>
@@ -51,6 +52,7 @@ public:
 
         const SidTuneInfo* tune = tune_.getInfo();
         info_.backend = "sid";
+        info_.platform = platform::kC64;
         info_.format = std::string(reinterpret_cast<const char*>(file.data.data()), hasSidMagic(file.data) ? 4 : 0);
         switch (tune->sidModel(0)) {
         case SidTuneInfo::SIDMODEL_6581: info_.player = "MOS 6581"; break;

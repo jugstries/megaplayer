@@ -24,8 +24,13 @@ public:
     std::string_view description() const override;
     int probe(const SourceFile& file) override;
     std::unique_ptr<Decoder> open(const SourceFile& file, const OutputSpec& spec) override;
+    // Formato e replayer dal riconoscimento, senza avviare l'emulatore: il
+    // titolo e i sottobrani li conosce solo il replayer in esecuzione.
+    std::optional<TrackInfo> describe(const SourceFile& file) override;
 
 private:
+    uade_state* detectionState();
+
     // Stato usato solo per il riconoscimento, creato al primo probe perché
     // carica configurazione e database dei formati. Non avvia l'emulatore.
     std::unique_ptr<uade_state, UadeStateDeleter> probeState_;

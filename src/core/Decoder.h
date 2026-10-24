@@ -22,6 +22,7 @@ struct TrackInfo {
     std::string backend;            // nome del backend, es. "uade"
     std::string format;             // formato leggibile, es. "ProTracker"
     std::string player;             // replayer usato, se il backend lo dice
+    std::string platform;           // identificativo da Platform.h, es. "amiga"
     std::string title;
     std::string author;
     int subsongCount = 1;
@@ -68,6 +69,12 @@ public:
 
     // Lancia DecoderError se il file non si apre.
     virtual std::unique_ptr<Decoder> open(const SourceFile& file, const OutputSpec& spec) = 0;
+
+    // Le informazioni sul file senza aprirlo, per la libreria: nullopt se
+    // per averle bisogna aprire il decoder (il caso normale). UADE invece
+    // riconosce solo il formato, perché l'emulatore ha una sola istanza e
+    // servirebbe alla riproduzione; subsongCount 0 vuol dire sconosciuti.
+    virtual std::optional<TrackInfo> describe(const SourceFile& /*file*/) { return std::nullopt; }
 };
 
 } // namespace mp

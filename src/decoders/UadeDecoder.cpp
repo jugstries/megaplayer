@@ -1,8 +1,13 @@
 #include "UadeDecoder.h"
 
 #include "TfmxFiles.h"
+#include "core/Platform.h"
 
 #include <uade/uade.h>
+// A differenza di uade.h, non dichiara le sue funzioni extern "C".
+extern "C" {
+#include <uade/eagleplayer.h>
+}
 
 #include <algorithm>
 #include <cctype>
@@ -112,6 +117,7 @@ public:
         const struct uade_song_info* song = uade_get_song_info(state_.get());
         subsongMin_ = song->subsongs.min;
         info_.backend = "uade";
+        info_.platform = platform::kAmiga;
         info_.format = song->formatname;
         // Alcuni replayer scrivono il formato come "type: Noisetracker 1.x".
         if (info_.format.rfind("type: ", 0) == 0)
@@ -281,7 +287,7 @@ std::string_view UadeDecoderFactory::description() const
     return "UADE: formati Amiga tramite i replayer originali in emulazione";
 }
 
-int UadeDecoderFactory::probe(const SourceFile& file)
+uade_state* UadeDecoderFactory::detectionState()
 {
     if (!probeState_ && !probeStateFailed_) {
         try {
@@ -291,13 +297,45 @@ int UadeDecoderFactory::probe(const SourceFile& file)
             probeStateFailed_ = true;
         }
     }
-    if (!probeState_)
-        return 0;
+    return probeState_.get();
+}
 
+int UadeDecoderFactory::probe(const SourceFile& file)
+{
+    uade_state* state = detectionState();
+    if (!state)
+        return 0;
     const UadeInput input = prepareInput(file);
     const std::vector<uint8_t>& data = input.data.empty() ? file.data : input.data;
-    const int ours = uade_is_our_file_from_buffer(input.name.c_str(), data.data(), data.size(), probeState_.get());
+    const int ours = uade_is_our_file_from_buffer(input.name.c_str(), data.data(), data.size(), state);
     return ours ? kProbeScore : 0;
+}
+
+std::optional<TrackInfo> UadeDecoderFactory::describe(const SourceFile& file)
+{
+    TrackInfo info;
+    info.backend = "uade";
+    info.platform = platform::kAmiga;
+    info.subsongCount = 0;
+    const UadeInput input = prepareInput(file);
+    info.title = input.title;
+    info.author = input.author;
+    uade_state* state = detectionState();
+    if (!state)
+        return info;
+    const std::vector<uint8_t>& data = input.data.empty() ? file.data : input.data;
+    struct uade_detection_info detection = {};
+    uade_analyze_eagleplayer(&detection, data.data(), data.size(), input.name.c_str(), data.size(), state);
+    if (detection.ep) {
+        info.player = detection.ep->playername;
+        info.format = info.player;
+        if (const auto* known = uade_file_ext_to_format_version(&detection)) {
+            info.format = known->format;
+            if (known->version)
+                info.format += std::string(" ") + known->version;
+        }
+    }
+    return info;
 }
 
 std::unique_ptr<Decoder> UadeDecoderFactory::open(const SourceFile& file, const OutputSpec& spec)

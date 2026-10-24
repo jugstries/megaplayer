@@ -1,6 +1,7 @@
 #include "MiniaudioDecoder.h"
 
 #include "AudioTags.h"
+#include "core/Platform.h"
 
 #include <miniaudio.h>
 
@@ -152,6 +153,7 @@ public:
             throw DecoderError("file " + info_.format + " non valido");
 
         info_.backend = "miniaudio";
+        info_.platform = platform::kAudio;
         info_.title = tags.title;
         info_.author = tags.artist;
         ma_uint64 length = 0;

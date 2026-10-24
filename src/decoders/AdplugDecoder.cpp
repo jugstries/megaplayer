@@ -1,6 +1,7 @@
 #include "AdplugDecoder.h"
 
 #include "AudioTags.h"
+#include "core/Platform.h"
 
 #include <adplug.h>
 #include <binstr.h>
@@ -167,6 +168,7 @@ public:
         if (!player_)
             throw DecoderError("formato AdLib non riconosciuto");
         info_.backend = "adplug";
+        info_.platform = platform::kPc;
         info_.format = trimmed(player_->gettype());
         info_.title = trimmed(player_->gettitle());
         info_.author = trimmed(player_->getauthor());

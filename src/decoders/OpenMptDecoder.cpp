@@ -1,9 +1,12 @@
 #include "OpenMptDecoder.h"
 
+#include "core/Platform.h"
+
 #include <libopenmpt/libopenmpt.hpp>
 
 #include <algorithm>
 #include <ostream>
+#include <string_view>
 
 namespace mp {
 
@@ -13,6 +16,24 @@ namespace {
 // conosce la durata dei brani e permette il seek immediato.
 constexpr int kProbeScore = 60;
 
+// La piattaforma dal tipo di modulo: i formati nati sull'Amiga, i due
+// dell'Atari (TCB Tracker sull'ST, Digital Tracker sul Falcon); gli altri
+// tracker sono del PC.
+const char* platformOf(std::string_view type)
+{
+    static constexpr std::string_view amiga[] = {
+        "mod", "m15", "stk", "st26", "nst", "pt36", "stp", "ice", "med", "okt", "dbm", "digi", "sfx",
+        "sfx2", "mms", "symmod", "ftm", "gmc", "puma", "unic", "kris",
+    };
+    if (type == "tcb" || type == "dtm")
+        return platform::kAtariSt;
+    for (std::string_view candidate : amiga) {
+        if (candidate == type)
+            return platform::kAmiga;
+    }
+    return platform::kPc;
+}
+
 class OpenMptDecoder final : public Decoder {
 public:
     OpenMptDecoder(const SourceFile& file, const OutputSpec& spec)
@@ -21,6 +42,7 @@ public:
     {
         info_.backend = "openmpt";
         info_.format = module_.get_metadata("type_long");
+        info_.platform = platformOf(module_.get_metadata("type"));
         info_.player = module_.get_metadata("tracker");
         info_.title = module_.get_metadata("title");
         info_.author = module_.get_metadata("artist");

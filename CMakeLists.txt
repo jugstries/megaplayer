@@ -68,6 +68,7 @@ add_library(megaplayer_core STATIC
     src/core/Archive.cpp
     src/core/AudioOutput.cpp
     src/core/DecoderRegistry.cpp
+    src/core/Platform.cpp
     src/core/Player.cpp
     src/core/SourceFile.cpp
     src/core/TrackList.cpp

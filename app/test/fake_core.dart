@@ -74,6 +74,11 @@ class FakeCore implements PlayerCore {
   void setVolume(double volume) {}
 
   @override
+  void setMegaSound(double amount) => calls.add('megasound ${(amount * 100).round()}');
+
+  @override
+
+  @override
   CoreStatus status() => CoreStatus(
         state: state,
         position: position,

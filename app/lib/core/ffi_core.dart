@@ -45,6 +45,8 @@ class FfiPlayerCore implements PlayerCore {
             'mp_engine_select_subsong'),
         _setVolume =
             lib.lookupFunction<Void Function(_Engine, Float), void Function(_Engine, double)>('mp_engine_set_volume'),
+        _setMegaSound = lib.lookupFunction<Void Function(_Engine, Float), void Function(_Engine, double)>(
+            'mp_engine_set_megasound'),
         _status = lib.lookupFunction<Void Function(_Engine, Pointer<_MpStatus>),
             void Function(_Engine, Pointer<_MpStatus>)>('mp_engine_status'),
         _trackInfo = lib.lookupFunction<Pointer<Utf8> Function(_Engine), Pointer<Utf8> Function(_Engine)>(
@@ -88,6 +90,7 @@ class FfiPlayerCore implements PlayerCore {
   final void Function(_Engine, double) _seek;
   final void Function(_Engine, int) _selectSubsong;
   final void Function(_Engine, double) _setVolume;
+  final void Function(_Engine, double) _setMegaSound;
   final void Function(_Engine, Pointer<_MpStatus>) _status;
   final Pointer<Utf8> Function(_Engine) _trackInfo;
   final int Function(_Engine, Pointer<Float>, int) _scope;
@@ -136,6 +139,11 @@ class FfiPlayerCore implements PlayerCore {
 
   @override
   void setVolume(double volume) => _setVolume(_engine, volume);
+
+  @override
+  void setMegaSound(double amount) => _setMegaSound(_engine, amount);
+
+  @override
 
   @override
   CoreStatus status() {

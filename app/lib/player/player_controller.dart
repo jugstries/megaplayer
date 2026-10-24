@@ -22,6 +22,12 @@ class PlayerController extends ChangeNotifier {
   TrackDetails? details;
   Float32List scope = Float32List(0);
   double volume = 0.8;
+
+  /// La manopola MegaSound, 0..1. Resta dov'è da un brano all'altro.
+  double megaSound = 0;
+
+  /// Confronto A/B: la manopola resta dov'è ma si sente l'originale.
+  bool megaSoundBypassed = false;
   Skin skin = Skin.modern;
   String? error;
 
@@ -147,6 +153,22 @@ class PlayerController extends ChangeNotifier {
     core.setVolume(volume);
     notifyListeners();
   }
+
+  void setMegaSound(double value) {
+    megaSound = value.clamp(0.0, 1.0);
+    // Chi gira la manopola vuole sentire l'effetto, non l'originale.
+    megaSoundBypassed = false;
+    _applyMegaSound();
+    notifyListeners();
+  }
+
+  void toggleMegaSoundCompare() {
+    megaSoundBypassed = !megaSoundBypassed;
+    _applyMegaSound();
+    notifyListeners();
+  }
+
+  void _applyMegaSound() => core.setMegaSound(megaSoundBypassed ? 0 : megaSound);
 
   void setSkin(Skin value) {
     skin = value;

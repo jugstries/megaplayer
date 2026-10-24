@@ -128,6 +128,7 @@ build/megaplayer play mod.enigma AHX.Cruisin   # riproduce
 build/megaplayer play Stormlord.lha            # tutti i brani dell'archivio
 build/megaplayer info -b uade mod.enigma       # formato, backend, metadati
 build/megaplayer render -s 2 -o out.wav Stormlord.lha/Stormlord/jt.ingame   # esporta in WAV
+build/megaplayer play -m 60 Stormlord.lha      # con MegaSound al 60%
 build/megaplayer backends
 ```
 
@@ -135,7 +136,83 @@ build/megaplayer backends
 archivio.
 
 Durante `play`: spazio pausa, ←/→ seek di 10 s, `n`/`p` sottobrano
-successivo/precedente, invio file successivo, `q` esci.
+successivo/precedente, invio file successivo, `+`/`-` MegaSound ±10%, `m`
+confronto A/B con l'originale, `q` esci.
+
+## MegaSound
+
+Una sola manopola, da 0 a 100%, che aggiunge effetti a mano a mano che gira,
+come un plugin a manopola singola
+([src/dsp/MegaSound.cpp](src/dsp/MegaSound.cpp)). La catena:
+
+1. passa-alto a 25 Hz;
+2. compressore stereo con ginocchio morbido: soglia da −6 a −24 dB, rapporto
+   fino a 5:1;
+3. in sovracampionamento 2× (contro l'aliasing): brillantezza (armoniche
+   sopra i 3 kHz), saturazione asimmetrica (piena dal 50%), corpo (dal 50%:
+   una saturazione in più solo sotto i 300 Hz, riportata poi al suo volume
+   medio, che rende il basso più denso e caldo senza sporcare gli alti) e
+   clipper morbido (dal 70%), tarato sul tetto finale: il margine di volume
+   lo spinge in saturazione invece di lasciare tutto al limiter;
+4. riverbero avvolgente senza bassi (la mandata parte da 350 Hz): entra dal
+   10%, sale in fretta nella prima metà ed è pieno al 90%, con stanza sempre
+   più grande (coda da 1.3 a 3 s), 20 ms di pre-delay che lo staccano dal
+   suono diretto e alti smorzati nella coda. Rispetto al suono sta a circa
+   −17 dB al 50% e −11 dB al 100%;
+5. volume: una compensazione restituisce subito quello che toglie il
+   compressore (calcolata, alle impostazioni di quel momento, sull'energia
+   del segnale nell'ultimo secondo e mezzo), il guadagno automatico corregge
+   il resto su una media di ~1,5 s, e poi si aggiungono fino a +3.5 dB alla
+   fine della corsa (`kLoudnessBonusDb`), perché un po' più forte suona
+   meglio. Così girando la manopola il volume sale e basta, senza buchi
+   mentre il guadagno automatico si adegua. Il volume dell'originale si
+   misura dopo il passa-alto: certi brani (Turrican 2, AHX.Cruisin) hanno
+   molta corrente continua, che non si sente;
+6. miscela con il segnale originale, ritardato quanto il sovracampionamento;
+7. lo Spazio (sotto), fin dal primo tratto di manopola;
+8. limiter con 3 ms di lookahead, tetto a −0.5 dBFS. Latenza totale: 31 + 144
+   frame a 48 kHz.
+
+Lo **Spazio** entra con la manopola e a circa il 12% è già pieno: un ramo
+parallelo che parte dall'originale, tiene solo le frequenze sopra gli 800 Hz
+(24 dB/ottava), le comprime molto (soglia −30 dBFS, rapporto 10:1: tira su
+dettagli e code) e le allarga in mid/side: il lato stereo esistente si
+rinforza e un lato nuovo nasce dal centro passato in quattro allpass, così si
+aprono anche i brani mono. Il ramo si riporta da solo al volume
+dell'originale ed entra nella somma 9 dB sotto (`kSpaceLevelDb`): l'effetto è
+simile sui brani piani e su quelli già molto forti. In mono la parte larga si
+annulla e resta solo un po' di centro compresso.
+
+Le soglie e le quantità sono costanti all'inizio del file. Spenta (manopola a
+zero) la catena passa solo dai ritardi, senza effetti: l'uscita
+è l'originale ritardato, identico al bit, e accendere non fa saltare l'audio.
+L'export in WAV, dove il ritardo non serve, la salta del tutto.
+
+Misure su 40 s di brani Amiga (larghezza: energia del lato stereo rispetto al
+centro):
+
+| | originale | 25% | 50% | 100% |
+|---|---|---|---|---|
+| Stormlord `jt.title` | −10.2 dB | −7.5 dB | −7.3 dB | −6.3 dB |
+| Unreal `jt.title_and_game_end` | −10.8 dB | −7.5 dB | −7.1 dB | −5.9 dB |
+| Turrican 2 Load | −14.4 dB | −7.5 dB | −7.2 dB | −6.5 dB |
+| AHX.Cruisin | −12.4 dB | −7.1 dB | −6.8 dB | −5.9 dB |
+
+Loudness percepita (LUFS, BS.1770) rispetto all'originale:
+
+| | 25% | 50% | 75% | 100% |
+|---|---|---|---|---|
+| Stormlord `jt.title` | +1.5 dB | +2.6 dB | +3.7 dB | +4.8 dB |
+| Unreal `jt.title_and_game_end` | +0.9 dB | +1.8 dB | +2.7 dB | +3.6 dB |
+| Turrican 2 Load | +1.6 dB | +2.4 dB | +3.2 dB | +4.1 dB |
+| AHX.Cruisin (già molto forte) | +1.3 dB | +2.1 dB | +2.5 dB | +2.9 dB |
+
+Tutta la catena costa circa l'1.5% di un core.
+
+La manopola c'è nella CLI (`-m`, tasti `+`/`-` e `m`), nelle due skin
+dell'app (si gira trascinando, con la rotella o con le frecce; doppio clic
+per azzerarla; A/B per sentire l'originale; le spie mostrano quali effetti
+stanno lavorando) e nella pagina WebAssembly.
 
 ## App desktop (Flutter)
 
@@ -185,6 +262,7 @@ src/core/       interfaccia Decoder, registro dei backend, caricamento e
                 decompressione dei file, archivi, motore di riproduzione,
                 uscita audio, export WAV
 src/decoders/   un file per backend
+src/dsp/        effetti sull'audio (MegaSound)
 src/uade/       UADE nel processo del player
 src/capi/       API C per le interfacce grafiche
 src/cli/        la riga di comando

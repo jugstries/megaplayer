@@ -36,6 +36,14 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 600));
     expect(core.status().position, greaterThan(29.0));
 
+    // MegaSound al massimo: il limiter tiene i picchi sotto −0.5 dBFS.
+    core.setMegaSound(1);
+    await Future<void>.delayed(const Duration(seconds: 1));
+    final samples = core.scope(4096);
+    expect(samples, isNotEmpty);
+    expect(samples.map((v) => v.abs()).reduce((a, b) => a > b ? a : b), lessThanOrEqualTo(0.945));
+    core.setMegaSound(0);
+
     expect(() => core.play('/non/esiste.mod'), throwsA(isA<CoreException>()));
   }, skip: skip);
 }

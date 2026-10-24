@@ -4,7 +4,9 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
 import '../../core/models.dart';
+import '../../player/megasound.dart';
 import '../../player/player_controller.dart';
+import '../knob_control.dart';
 
 // Skin retrò: il Mac a 1 bit degli anni '80, con pochi accenti pastello.
 
@@ -82,6 +84,8 @@ class RetroSkin extends StatelessWidget {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
+                              _MegaSoundWindow(controller: controller),
+                              const SizedBox(height: 24),
                               _OutputWindow(controller: controller),
                               const SizedBox(height: 24),
                               Expanded(child: _HelloWindow(controller: controller)),
@@ -100,6 +104,8 @@ class RetroSkin extends StatelessWidget {
                       SizedBox(height: 260, child: _ScopeWindow(controller: controller)),
                       const SizedBox(height: 24),
                       _InfoWindow(controller: controller),
+                      const SizedBox(height: 24),
+                      _MegaSoundWindow(controller: controller),
                       const SizedBox(height: 24),
                       _OutputWindow(controller: controller),
                     ],
@@ -876,6 +882,238 @@ class _DotsPainter extends CustomPainter {
   bool shouldRepaint(_DotsPainter old) => false;
 }
 
+/// La manopola MegaSound in versione 1 bit: le tacche si colorano a mano a
+/// mano che gira, le spie dicono quali effetti stanno lavorando.
+class _MegaSoundWindow extends StatelessWidget {
+  const _MegaSoundWindow({required this.controller});
+
+  final PlayerController controller;
+
+  static const _stageColors = [_teal, _teal, _lilac, _lilac, _pink, _pink];
+
+  @override
+  Widget build(BuildContext context) {
+    final amount = controller.megaSound;
+    final bypassed = controller.megaSoundBypassed;
+    final percent = (amount * 100).round();
+
+    return _Window(
+      title: 'MegaSound',
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                SizedBox.square(
+                  dimension: 100,
+                  child: KnobControl(
+                    value: amount,
+                    onChanged: controller.setMegaSound,
+                    label: 'Manopola MegaSound',
+                    builder: (context, focused) => CustomPaint(
+                      painter: _PixelKnobPainter(amount: amount, bypassed: bypassed, focused: focused),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${percent.toString().padLeft(3, '0')}%',
+                        style: _vt(44, height: 0.9, color: bypassed ? _midGray : _ink),
+                      ),
+                      Text((bypassed ? 'originale' : megaSoundCharacter(amount)).toUpperCase(), style: _silk(11)),
+                      const SizedBox(height: 10),
+                      Container(
+                        decoration: const BoxDecoration(
+                          border: Border.fromBorderSide(BorderSide(color: _ink, width: 2)),
+                          boxShadow: [BoxShadow(color: _ink, offset: Offset(3, 3))],
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _RetroButton(
+                              label: 'Ascolta l\'originale',
+                              width: 50,
+                              inverted: bypassed,
+                              onPressed: () {
+                                if (!bypassed) controller.toggleMegaSoundCompare();
+                              },
+                              child: (c) => Text('A', style: _vt(26, color: c)),
+                            ),
+                            const _Divider(),
+                            _RetroButton(
+                              label: 'Ascolta con MegaSound',
+                              width: 50,
+                              inverted: !bypassed,
+                              onPressed: () {
+                                if (bypassed) controller.toggleMegaSoundCompare();
+                              },
+                              child: (c) => Text('B', style: _vt(26, color: c)),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                const gap = 6.0;
+                final width = (constraints.maxWidth - gap * 2) / 3;
+                return Wrap(
+                  spacing: gap,
+                  runSpacing: gap,
+                  children: [
+                    for (var i = 0; i < megaSoundStages.length; i++)
+                      Tooltip(
+                        message: megaSoundStages[i].name,
+                        child: _StageLamp(
+                          label: megaSoundStages[i].short,
+                          color: _stageColors[i],
+                          level: bypassed ? 0 : megaSoundStages[i].level(amount),
+                          width: width,
+                        ),
+                      ),
+                  ],
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Una spia: si riempie da sinistra quanto l'effetto sta lavorando.
+class _StageLamp extends StatelessWidget {
+  const _StageLamp({required this.label, required this.color, required this.level, required this.width});
+
+  final String label;
+  final Color color;
+  final double level;
+  final double width;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: width,
+      height: 22,
+      decoration: const BoxDecoration(
+        color: _paper,
+        border: Border.fromBorderSide(BorderSide(color: _ink, width: 2)),
+      ),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          FractionallySizedBox(
+            alignment: Alignment.centerLeft,
+            widthFactor: level,
+            child: Container(color: color),
+          ),
+          Center(child: Text(label, style: _silk(10, color: level > 0 ? _ink : _midGray))),
+        ],
+      ),
+    );
+  }
+}
+
+/// Manopola su una griglia di 25×25 pixel grossi: corpo con ombra, lancetta
+/// e undici tacche che si colorano come il VU meter.
+class _PixelKnobPainter extends CustomPainter {
+  _PixelKnobPainter({required this.amount, required this.bypassed, required this.focused});
+
+  final double amount;
+  final bool bypassed;
+  final bool focused;
+
+  static const _grid = 25;
+  static const _center = 12.5;
+  static const _start = math.pi * 3 / 4;
+  static const _sweep = math.pi * 3 / 2;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final unit = size.width / _grid;
+    Paint fill(Color color) => Paint()
+      ..color = color
+      ..isAntiAlias = false;
+    void cell(int x, int y, Color color) =>
+        canvas.drawRect(Rect.fromLTWH(x * unit, y * unit, unit, unit), fill(color));
+
+    // Le tacche: blocchi 2×2 con il bordo, come i led del VU meter.
+    for (var tick = 0; tick <= 10; tick++) {
+      final t = tick / 10;
+      final angle = _start + _sweep * t;
+      final x = (_center + math.cos(angle) * 11 - 1).round().clamp(0, _grid - 2);
+      final y = (_center + math.sin(angle) * 11 - 1).round().clamp(0, _grid - 2);
+      final lit = !bypassed && amount > 0 && t <= amount + 1e-6;
+      final color = !lit ? _paper : (tick >= 9 ? _pink : (tick >= 6 ? _lilac : _teal));
+      final block = Rect.fromLTWH(x * unit, y * unit, unit * 2, unit * 2);
+      canvas.drawRect(block, fill(_ink));
+      canvas.drawRect(block.deflate(unit / 2), fill(color));
+    }
+
+    // Ombra, bordo e corpo. Con raggio 7.7 il cerchio non ha i pixel
+    // sporgenti sugli assi che darebbe un raggio intero.
+    const outer = 7.7;
+    const inner = 6.6;
+    for (var y = 0; y < _grid; y++) {
+      for (var x = 0; x < _grid; x++) {
+        final dx = x + 0.5 - _center;
+        final dy = y + 0.5 - _center;
+        final shadow = math.sqrt((dx - 1) * (dx - 1) + (dy - 1) * (dy - 1));
+        if (shadow <= outer) cell(x, y, _ink);
+      }
+    }
+    for (var y = 0; y < _grid; y++) {
+      for (var x = 0; x < _grid; x++) {
+        final dx = x + 0.5 - _center;
+        final dy = y + 0.5 - _center;
+        final d = math.sqrt(dx * dx + dy * dy);
+        if (d <= inner) {
+          cell(x, y, _paper);
+        } else if (d <= outer) {
+          cell(x, y, _ink);
+        }
+      }
+    }
+
+    // La lancetta, con il perno al centro.
+    final pointerColor = bypassed ? _midGray : _ink;
+    final angle = _start + _sweep * amount;
+    final pointer = <(int, int)>{(11, 11), (12, 11), (11, 12), (12, 12)};
+    for (var r = 0.0; r <= 5.6; r += 0.25) {
+      pointer.add(((_center + math.cos(angle) * r).floor(), (_center + math.sin(angle) * r).floor()));
+    }
+    for (final (x, y) in pointer) {
+      cell(x, y, pointerColor);
+    }
+
+    // Il fuoco da tastiera: una cornice a puntini, come le selezioni del Mac.
+    if (focused) {
+      for (var i = 0; i < _grid; i += 2) {
+        cell(i, 0, _ink);
+        cell(i, _grid - 1, _ink);
+        cell(0, i, _ink);
+        cell(_grid - 1, i, _ink);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(_PixelKnobPainter old) =>
+      old.amount != amount || old.bypassed != bypassed || old.focused != focused;
+}
+
 class _OutputWindow extends StatelessWidget {
   const _OutputWindow({required this.controller});
 
@@ -1037,27 +1275,41 @@ class _HelloWindow extends StatelessWidget {
       expand: true,
       child: CustomPaint(
         painter: _DitherPainter(),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                decoration: const BoxDecoration(
-                  color: _paper,
-                  border: Border.fromBorderSide(BorderSide(color: _ink, width: 2)),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            // Con poco spazio resta solo la mascotte, più piccola.
+            final roomy = constraints.maxHeight >= 220;
+            final mascot = constraints.maxHeight >= 130 ? 96.0 : 64.0;
+            return ClipRect(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    if (roomy) ...[
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        decoration: const BoxDecoration(
+                          color: _paper,
+                          border: Border.fromBorderSide(BorderSide(color: _ink, width: 2)),
+                        ),
+                        child: Text(message, style: _pixel(16, height: 1.35), textAlign: TextAlign.center),
+                      ),
+                      Transform.translate(
+                        offset: const Offset(0, -2),
+                        child: const _PixelIcon(_bubbleTail, size: 16, grid: 8),
+                      ),
+                      const SizedBox(height: 6),
+                    ],
+                    Tooltip(
+                      message: message,
+                      child: CustomPaint(size: Size.square(mascot), painter: _MascotPainter()),
+                    ),
+                  ],
                 ),
-                child: Text(message, style: _pixel(16, height: 1.35), textAlign: TextAlign.center),
               ),
-              Transform.translate(
-                offset: const Offset(0, -2),
-                child: const _PixelIcon(_bubbleTail, size: 16, grid: 8),
-              ),
-              const SizedBox(height: 6),
-              CustomPaint(size: const Size.square(96), painter: _MascotPainter()),
-            ],
-          ),
+            );
+          },
         ),
       ),
     );

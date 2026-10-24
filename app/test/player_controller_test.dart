@@ -63,4 +63,18 @@ void main() {
     controller.selectSubsong(-1);
     expect(core.calls.where((c) => c.startsWith('subsong')), ['subsong 4']);
   });
+
+  test('la manopola MegaSound arriva al core, il confronto A/B manda 0', () {
+    controller.setMegaSound(0.7);
+    controller.toggleMegaSoundCompare();
+    expect(controller.megaSoundBypassed, isTrue);
+    expect(controller.megaSound, 0.7);
+    controller.toggleMegaSoundCompare();
+    // Girare la manopola durante il confronto torna a far sentire l'effetto.
+    controller.toggleMegaSoundCompare();
+    controller.setMegaSound(1.4);
+    expect(controller.megaSoundBypassed, isFalse);
+    expect(core.calls.where((c) => c.startsWith('megasound')),
+        ['megasound 70', 'megasound 0', 'megasound 70', 'megasound 0', 'megasound 100']);
+  });
 }

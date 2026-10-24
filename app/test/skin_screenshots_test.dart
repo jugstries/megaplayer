@@ -2,36 +2,18 @@
 // build/screenshots, per controllarle a occhio: non è un confronto con
 // immagini di riferimento.
 
-import 'dart:io';
-
-import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:megaplayer/app.dart';
 import 'package:megaplayer/player/player_controller.dart';
 
 import 'fake_core.dart';
-
-Future<void> _loadFonts() async {
-  Future<void> load(String family, Future<ByteData> data) => (FontLoader(family)..addFont(data)).load();
-
-  await load('Sora', rootBundle.load('assets/fonts/Sora-Variable.ttf'));
-  await load('JetBrainsMono', rootBundle.load('assets/fonts/JetBrainsMono-Variable.ttf'));
-  await load('PixelifySans', rootBundle.load('assets/fonts/PixelifySans-Variable.ttf'));
-  await load('Silkscreen', rootBundle.load('assets/fonts/Silkscreen-Regular.ttf'));
-  await load('VT323', rootBundle.load('assets/fonts/VT323-Regular.ttf'));
-
-  // Le icone Material stanno nella cache dell'SDK, accanto a flutter_tester.
-  final artifacts = File(Platform.resolvedExecutable).parent.parent.parent;
-  final icons = File('${artifacts.path}/material_fonts/MaterialIcons-Regular.otf');
-  if (icons.existsSync()) {
-    await load('MaterialIcons', Future.value(ByteData.sublistView(icons.readAsBytesSync())));
-  }
-}
+import 'fonts.dart';
 
 void main() {
   autoUpdateGoldenFiles = true;
 
-  setUpAll(_loadFonts);
+  setUpAll(loadAppFonts);
 
   Future<void> shoot(WidgetTester tester, PlayerController controller, String name) async {
     tester.view.physicalSize = const Size(1440, 900);
@@ -52,7 +34,14 @@ void main() {
   }
 
   testWidgets('skin moderna', (tester) async {
-    await shoot(tester, playingTitle(), 'moderna');
+    await shoot(tester, playingTitle()..setMegaSound(0.7), 'moderna');
+  });
+
+  testWidgets('skin moderna, confronto A/B', (tester) async {
+    final controller = playingTitle()
+      ..setMegaSound(0.45)
+      ..toggleMegaSoundCompare();
+    await shoot(tester, controller, 'moderna-confronto');
   });
 
   testWidgets('skin moderna, nessun brano', (tester) async {
@@ -60,7 +49,7 @@ void main() {
   });
 
   testWidgets('skin retrò', (tester) async {
-    await shoot(tester, playingTitle()..setSkin(Skin.retro), 'retro');
+    await shoot(tester, playingTitle()..setSkin(Skin.retro)..setMegaSound(0.7), 'retro');
   });
 
   testWidgets('skin retrò, sottobrani', (tester) async {

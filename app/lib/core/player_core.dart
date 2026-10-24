@@ -18,6 +18,10 @@ abstract interface class PlayerCore {
   void selectSubsong(int index);
   void setVolume(double volume);
 
+  /// La manopola MegaSound, da 0 (spenta) a 1 (tutti gli effetti).
+  void setMegaSound(double amount);
+
+
   CoreStatus status();
   TrackDetails details();
 

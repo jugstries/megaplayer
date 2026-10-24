@@ -4,7 +4,9 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
 import '../../core/models.dart';
+import '../../player/megasound.dart';
 import '../../player/player_controller.dart';
+import '../knob_control.dart';
 
 // Skin moderna: scura, minimale, angoli arrotondati, accenti a gradiente.
 
@@ -382,13 +384,20 @@ class _MainColumn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scope = _ScopePanel(controller: controller);
+    final bottom = Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(child: _ScopePanel(controller: controller)),
+        const SizedBox(width: 20),
+        SizedBox(width: 340, child: _MegaSoundPanel(controller: controller)),
+      ],
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _NowPlaying(controller: controller),
         const SizedBox(height: 20),
-        if (fill) Expanded(child: scope) else SizedBox(height: 260, child: scope),
+        if (fill) Expanded(child: bottom) else SizedBox(height: 300, child: bottom),
       ],
     );
   }
@@ -935,6 +944,272 @@ class _ScopePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_ScopePainter old) => !identical(old.samples, samples);
+}
+
+/// La manopola MegaSound: gli effetti si accendono a mano a mano che gira.
+class _MegaSoundPanel extends StatelessWidget {
+  const _MegaSoundPanel({required this.controller});
+
+  final PlayerController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final amount = controller.megaSound;
+    final bypassed = controller.megaSoundBypassed;
+    final knob = KnobControl(
+      value: amount,
+      onChanged: controller.setMegaSound,
+      label: 'Manopola MegaSound',
+      builder: (context, focused) => CustomPaint(
+        painter: _KnobPainter(amount: amount, bypassed: bypassed, focused: focused),
+        // La percentuale la legge già lo slider.
+        child: ExcludeSemantics(
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '${(amount * 100).round()}%',
+                  style: _sora(28, weight: 700, color: bypassed ? _muted : _text, height: 1.1),
+                ),
+                Text(
+                  bypassed ? 'originale' : megaSoundCharacter(amount),
+                  style: _sora(12, weight: 500, color: _muted),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    return _Panel(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Text('MegaSound', style: _sora(18, weight: 600)),
+              const Spacer(),
+              _CompareSwitch(bypassed: bypassed, onToggle: controller.toggleMegaSoundCompare),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Expanded(
+            child: Row(
+              children: [
+                Expanded(child: Center(child: AspectRatio(aspectRatio: 1, child: knob))),
+                const SizedBox(width: 16),
+                Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    for (var i = 0; i < megaSoundStages.length; i++)
+                      _StageRow(
+                        name: megaSoundStages[i].name,
+                        color: _stageColor(i / (megaSoundStages.length - 1)),
+                        level: bypassed ? 0 : megaSoundStages[i].level(amount),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Il colore del gradiente arancio, rosa, viola alla posizione [t] (0..1).
+Color _stageColor(double t) =>
+    t < 0.5 ? Color.lerp(_orange, _pink, t * 2)! : Color.lerp(_pink, _violet, (t - 0.5) * 2)!;
+
+/// Confronto A/B: l'originale contro il suono con la manopola.
+class _CompareSwitch extends StatelessWidget {
+  const _CompareSwitch({required this.bypassed, required this.onToggle});
+
+  final bool bypassed;
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget option(String label, String tooltip, bool active) {
+      return Semantics(
+        selected: active,
+        button: true,
+        child: Tooltip(
+          message: tooltip,
+          child: InkWell(
+            onTap: active ? null : onToggle,
+            borderRadius: BorderRadius.circular(9),
+            child: Container(
+              height: 28,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: active ? _border : Colors.transparent,
+                borderRadius: BorderRadius.circular(9),
+              ),
+              child: Text(label, style: _sora(12, weight: active ? 600 : 500, color: active ? _text : _muted)),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(2),
+      decoration: BoxDecoration(
+        color: _inset,
+        borderRadius: BorderRadius.circular(11),
+        border: Border.all(color: _insetBorder),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          option('A', 'Ascolta l\'originale', bypassed),
+          const SizedBox(width: 2),
+          option('B', 'Ascolta con MegaSound', !bypassed),
+        ],
+      ),
+    );
+  }
+}
+
+class _StageRow extends StatelessWidget {
+  const _StageRow({required this.name, required this.color, required this.level});
+
+  final String name;
+  final Color color;
+  final double level;
+
+  @override
+  Widget build(BuildContext context) {
+    final lit = level > 0;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: lit ? Color.lerp(_track, color, 0.35 + 0.65 * level) : _track,
+              boxShadow: [if (lit) BoxShadow(color: color.withValues(alpha: 0.6 * level), blurRadius: 8)],
+            ),
+          ),
+          const SizedBox(width: 10),
+          Text(name, style: _sora(13, weight: 500, color: lit ? Color.lerp(_muted, _text, level)! : _faint)),
+        ],
+      ),
+    );
+  }
+}
+
+class _KnobPainter extends CustomPainter {
+  _KnobPainter({required this.amount, required this.bypassed, required this.focused});
+
+  final double amount;
+  final bool bypassed;
+  final bool focused;
+
+  // L'arco va da sette e mezza a quattro e mezza, come sulle manopole vere.
+  static const _start = math.pi * 3 / 4;
+  static const _sweep = math.pi * 3 / 2;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = size.center(Offset.zero);
+    final radius = size.shortestSide / 2;
+    const stroke = 8.0;
+    final arcRect = Rect.fromCircle(center: center, radius: radius - stroke);
+
+    canvas.drawArc(
+      arcRect,
+      _start,
+      _sweep,
+      false,
+      Paint()
+        ..color = _track
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = stroke
+        ..strokeCap = StrokeCap.round,
+    );
+
+    if (amount > 0) {
+      final shader = const SweepGradient(
+        colors: [_orange, _pink, _violet],
+        endAngle: _sweep,
+        transform: GradientRotation(_start),
+      ).createShader(arcRect);
+      // Con uno shader il colore conta solo per l'opacità.
+      final alpha = bypassed ? 0.3 : 1.0;
+      canvas.drawArc(
+        arcRect,
+        _start,
+        _sweep * amount,
+        false,
+        Paint()
+          ..shader = shader
+          ..color = Colors.black.withValues(alpha: alpha * 0.5)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = stroke + 6
+          ..strokeCap = StrokeCap.round
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
+      );
+      canvas.drawArc(
+        arcRect,
+        _start,
+        _sweep * amount,
+        false,
+        Paint()
+          ..shader = shader
+          ..color = Colors.black.withValues(alpha: alpha)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = stroke
+          ..strokeCap = StrokeCap.round,
+      );
+    }
+
+    final bodyRadius = radius - stroke * 2 - 10;
+    final body = Rect.fromCircle(center: center, radius: bodyRadius);
+    canvas.drawCircle(
+      center + const Offset(0, 6),
+      bodyRadius,
+      Paint()
+        ..color = Colors.black.withValues(alpha: 0.45)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10),
+    );
+    canvas.drawCircle(
+      center,
+      bodyRadius,
+      Paint()
+        ..shader = const LinearGradient(
+          colors: [_surfaceRaised, _inset],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+        ).createShader(body),
+    );
+    canvas.drawCircle(
+      center,
+      bodyRadius,
+      Paint()
+        ..color = focused ? _violet : _border
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = focused ? 2 : 1,
+    );
+
+    final angle = _start + _sweep * amount;
+    final pointer = center + Offset(math.cos(angle), math.sin(angle)) * (bodyRadius - 12);
+    canvas.drawCircle(pointer, 4, Paint()..color = bypassed ? _faint : _text);
+  }
+
+  @override
+  bool shouldRepaint(_KnobPainter old) =>
+      old.amount != amount || old.bypassed != bypassed || old.focused != focused;
 }
 
 class _Aside extends StatelessWidget {

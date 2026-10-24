@@ -98,21 +98,6 @@ UadeInput prepareInput(const SourceFile& file)
     return input;
 }
 
-// `name` dentro `directory`, anche con maiuscole e minuscole diverse (sui
-// dischi che le distinguono). Vuoto se non c'è.
-std::filesystem::path findIgnoringCase(const std::filesystem::path& directory, const std::string& name)
-{
-    std::error_code error;
-    if (std::filesystem::is_regular_file(directory / name, error))
-        return directory / name;
-    const std::string wanted = lowercase(name);
-    for (const auto& entry : std::filesystem::directory_iterator(directory, error)) {
-        if (entry.is_regular_file(error) && lowercase(entry.path().filename().string()) == wanted)
-            return entry.path();
-    }
-    return {};
-}
-
 class UadeDecoder final : public Decoder {
 public:
     UadeDecoder(const SourceFile& file, const OutputSpec& spec)

@@ -2,8 +2,11 @@
 
 #include <ancient/ancient.hpp>
 
+#include <algorithm>
+#include <cctype>
 #include <fstream>
 #include <stdexcept>
+#include <system_error>
 
 namespace mp {
 
@@ -26,6 +29,12 @@ std::vector<uint8_t> readFile(const std::filesystem::path& path)
     if (!in.read(reinterpret_cast<char*>(data.data()), size))
         throw std::runtime_error("errore di lettura su " + path.string());
     return data;
+}
+
+std::string lowercase(std::string text)
+{
+    std::transform(text.begin(), text.end(), text.begin(), [](unsigned char c) { return std::tolower(c); });
+    return text;
 }
 
 } // namespace
@@ -52,6 +61,19 @@ SourceFile loadSourceFile(const std::filesystem::path& path)
         }
     }
     return file;
+}
+
+std::filesystem::path findIgnoringCase(const std::filesystem::path& directory, const std::string& name)
+{
+    std::error_code error;
+    if (std::filesystem::is_regular_file(directory / name, error))
+        return directory / name;
+    const std::string wanted = lowercase(name);
+    for (const auto& entry : std::filesystem::directory_iterator(directory, error)) {
+        if (entry.is_regular_file(error) && lowercase(entry.path().filename().string()) == wanted)
+            return entry.path();
+    }
+    return {};
 }
 
 } // namespace mp

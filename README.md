@@ -12,6 +12,8 @@ Flutter (per ora macOS) con due skin: moderna e retrò.
 | `miniaudio` | miniaudio, stb_vorbis | file audio: MP3 (e MP1/MP2), FLAC, WAV, Ogg Vorbis, con titolo e autore dai tag |
 | `sid`     | libsidplayfp 3.1.1, libresidfp 1.2.3 | Commodore 64: PSID e RSID, con l'emulazione reSIDfp del chip SID (6581 e 8580) |
 | `gme`     | game-music-emu 0.6.5  | console: NES (NSF, NSFE), SNES (SPC), Game Boy (GBS), Master System e Mega Drive (VGM, VGZ, GYM), PC Engine (HES), MSX (KSS), ZX Spectrum (AY), Atari (SAP) |
+| `adlmidi` | libADLMIDI 1.6.2.1    | MIDI (MID, RMI) e i suoi parenti dei giochi DOS: XMI, MUS di Doom, HMI/HMP, GMF, su quattro chip FM OPL3 emulati (Nuked OPL3) |
+| `adplug`  | AdPlug 2.4, libbinio 1.5 | una cinquantina di formati AdLib dei giochi e dei tracker DOS (RAD, HSC, D00, A2M, CMF, IMF/WLF, DRO, ROL, LDS, SA2, AMD, XAD, Westwood ADL, ...) e i VGM per i chip OPL, su Nuked OPL3 |
 | `openmpt` | libopenmpt            | moduli tracker: MOD, XM, S3M, IT, MED, OKT, ...                |
 | `uade`    | UADE 3.05             | 200+ formati Amiga, con i replayer originali Eagleplayer/DeliTracker in emulazione 68000 + Paula |
 
@@ -42,6 +44,17 @@ una dissolvenza. Per i SID non servono le ROM del C64: libsidplayfp ha un
 kernal sostitutivo, che basta quasi sempre (le ROM originali sono protette da
 copyright).
 
+Il MIDI suona come su una Sound Blaster: libADLMIDI usa i banchi di timbri FM
+dei giochi, scelti secondo il formato. I giochi con la libreria Miles (XMI)
+usavano il banco AIL, Doom (MUS) quello DMX di Bobby Prince, i giochi con la
+libreria HMI il suo; per il MIDI generico c'è il banco General MIDI DMXOPL3.
+I formati AdLib quasi sempre si riconoscono solo dall'estensione. Alcuni
+vogliono un file di timbri accanto al brano (`standard.bnk` per ROL, `.snd`
+o `.tim` per MUS di AdLib, `insts.dat` per KSM, `patch.003` per Sierra), che
+AdPlug cerca nella stessa cartella; da soli vengono saltati. Gli S3M con
+strumenti AdLib restano a libopenmpt, gli MDI (MIDI con dentro i timbri
+AdLib) vanno ad AdPlug.
+
 Quando più backend riconoscono un file vince quello col punteggio più alto
 (`openmpt` per i formati che conosce, perché è più veloce, conosce la durata
 dei brani e fa seek immediato). Se l'apertura fallisce si prova il successivo.
@@ -71,9 +84,10 @@ ctest --test-dir build
 ```
 
 `scripts/build-deps.sh` scarica a versioni fissate i sorgenti di UADE,
-libzakalwe, bencode-tools, ancient, miniaudio, game-music-emu, libsidplayfp e
-libresidfp in `third_party/src` (di questi ultimi due gli archivi di rilascio,
-con la verifica dello SHA-256) e applica `patches/uade-in-process.patch` a
+libzakalwe, bencode-tools, ancient, miniaudio, game-music-emu, libsidplayfp,
+libresidfp, libADLMIDI, AdPlug e libbinio in `third_party/src` (di
+libsidplayfp e libresidfp gli archivi di rilascio, con la verifica dello
+SHA-256) e applica `patches/uade-in-process.patch` a
 UADE. Tutto il resto lo fa CMake: compila
 UADE senza il suo script di configurazione (che funziona solo su UNIX, vedi
 [cmake/UadeInProcess.cmake](cmake/UadeInProcess.cmake)) e copia replayer e
@@ -299,8 +313,8 @@ app/            app desktop in Flutter
 web/            pagina di prova della build WebAssembly
 tests/          test automatici del core; in tests/data file audio di prova
                 (toni generati, rigenerabili con make_audio_fixtures.sh)
-cmake/          build di UADE e libsidplayfp dai sorgenti, toolchain di
-                cross-compilazione
+cmake/          build di UADE, libsidplayfp e AdPlug dai sorgenti, toolchain
+                di cross-compilazione
 patches/        modifiche alle dipendenze
 scripts/        download delle dipendenze, build WebAssembly, server di prova,
                 passo di build dell'app macOS
@@ -317,6 +331,8 @@ UADE è GPL-2.0 (il motore UAE) con parti LGPL; i replayer in
 `share/uade/players` hanno licenze e autori diversi. libopenmpt è BSD-3,
 ancient e libarchive BSD-2, miniaudio e stb_vorbis public domain / MIT-0,
 game-music-emu LGPL-2.1 (con l'emulatore Nuked del YM2612, anche lui LGPL),
-libsidplayfp e libresidfp GPL-2.0.
+libsidplayfp e libresidfp GPL-2.0, AdPlug e libbinio LGPL-2.1; libADLMIDI ha
+parti LGPL, MIT e BSD, ma nel complesso è GPL-3.0 o successiva, e i suoi
+banchi di timbri hanno ciascuno le sue note.
 Finché il backend UADE è incluso, il binario risultante va distribuito sotto
 GPL.

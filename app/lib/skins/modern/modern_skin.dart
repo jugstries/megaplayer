@@ -267,6 +267,7 @@ class _Sidebar extends StatelessWidget {
           const _FormatItem(color: _pink, label: 'Moduli tracker'),
           const _FormatItem(color: _violet, label: 'C64 SID'),
           const _FormatItem(color: Color(0xFFB58CFF), label: 'Console'),
+          const _FormatItem(color: Color(0xFFC9A6FF), label: 'PC / DOS'),
           const _FormatItem(color: Color(0xFFD9C2FF), label: 'File audio'),
           const Spacer(),
           Container(

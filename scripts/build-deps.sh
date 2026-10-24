@@ -2,7 +2,7 @@
 #
 # Scarica, a versioni fissate, i sorgenti delle dipendenze che compila
 # direttamente CMake (UADE con libzakalwe e bencode-tools, ancient, miniaudio,
-# game-music-emu, libsidplayfp con libresidfp)
+# game-music-emu, libsidplayfp con libresidfp, libADLMIDI, AdPlug con libbinio)
 # e applica a UADE la patch per farlo girare nel processo del player.
 # libopenmpt e libarchive invece arrivano dal sistema (brew, apt, MSYS2...),
 # vedi README.md.
@@ -22,6 +22,9 @@ BENCODETOOLS_REF=v1.0.1
 ANCIENT_REF=v2.3.0
 MINIAUDIO_REF=0.11.25
 GME_REF=0.6.5
+ADLMIDI_REF=v1.6.2.1
+LIBBINIO_REF=libbinio-1.5
+ADPLUG_REF=adplug-2.4
 LIBRESIDFP_VERSION=1.2.3
 LIBRESIDFP_SHA256=e9b53a984ca708c3e8d9139eb6aad6141f73ffc22d70a020f7966803f4e2f76d
 LIBSIDPLAYFP_VERSION=3.1.1
@@ -75,6 +78,9 @@ clone uade         https://gitlab.com/uade-music-player/uade.git       "$UADE_RE
 clone ancient      https://github.com/temisu/ancient.git               "$ANCIENT_REF"
 clone miniaudio    https://github.com/mackron/miniaudio.git            "$MINIAUDIO_REF"
 clone game-music-emu https://github.com/libgme/game-music-emu.git      "$GME_REF"
+clone libadlmidi   https://github.com/Wohlstand/libADLMIDI.git        "$ADLMIDI_REF"
+clone libbinio     https://github.com/adplug/libbinio.git             "$LIBBINIO_REF"
+clone adplug       https://github.com/adplug/adplug.git               "$ADPLUG_REF"
 fetch libresidfp   "https://github.com/libsidplayfp/libresidfp/releases/download/v$LIBRESIDFP_VERSION/libresidfp-$LIBRESIDFP_VERSION.tar.gz" "$LIBRESIDFP_SHA256"
 fetch libsidplayfp "https://github.com/libsidplayfp/libsidplayfp/releases/download/v$LIBSIDPLAYFP_VERSION/libsidplayfp-$LIBSIDPLAYFP_VERSION.tar.gz" "$LIBSIDPLAYFP_SHA256"
 

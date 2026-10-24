@@ -2,6 +2,12 @@
 
 #include "MiniaudioDecoder.h"
 
+#ifdef MP_WITH_ADLMIDI
+#include "AdlMidiDecoder.h"
+#endif
+#ifdef MP_WITH_ADPLUG
+#include "AdplugDecoder.h"
+#endif
 #ifdef MP_WITH_GME
 #include "GmeDecoder.h"
 #endif
@@ -25,6 +31,12 @@ void registerBuiltinDecoders(DecoderRegistry& registry)
 #endif
 #ifdef MP_WITH_SID
     registry.add(std::make_unique<SidDecoderFactory>());
+#endif
+#ifdef MP_WITH_ADLMIDI
+    registry.add(std::make_unique<AdlMidiDecoderFactory>());
+#endif
+#ifdef MP_WITH_ADPLUG
+    registry.add(std::make_unique<AdplugDecoderFactory>());
 #endif
 #ifdef MP_WITH_OPENMPT
     registry.add(std::make_unique<OpenMptDecoderFactory>());

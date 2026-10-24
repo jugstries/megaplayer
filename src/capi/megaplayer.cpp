@@ -190,6 +190,11 @@ void mp_engine_set_volume(mp_engine* engine, float volume)
     engine->player.setVolume(volume);
 }
 
+void mp_engine_set_megasound(mp_engine* engine, float amount)
+{
+    engine->player.setMegaSound(amount);
+}
+
 void mp_engine_status(mp_engine* engine, mp_status* out)
 {
     const mp::PlayerStatus status = engine->player.status();

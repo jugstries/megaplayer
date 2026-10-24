@@ -66,7 +66,8 @@ add_library(megaplayer_core STATIC
     src/core/SourceFile.cpp
     src/core/TrackList.cpp
     src/core/WavWriter.cpp
-    src/decoders/BuiltinDecoders.cpp)
+    src/decoders/BuiltinDecoders.cpp
+    src/dsp/MegaSound.cpp)
 target_include_directories(megaplayer_core PUBLIC src)
 target_link_libraries(megaplayer_core PUBLIC ancient miniaudio)
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
@@ -175,6 +176,13 @@ endif()
 # --- Test (ctest --test-dir build) ---
 
 enable_testing()
+
+add_executable(megasound_test tests/MegaSoundTest.cpp)
+target_link_libraries(megasound_test PRIVATE megaplayer_core)
+if(EMSCRIPTEN)
+    target_link_options(megasound_test PRIVATE ${MP_NODE_LINK_OPTIONS})
+endif()
+add_test(NAME megasound COMMAND megasound_test)
 if(MP_UADE_ENABLED)
     add_executable(uade_inprocess_test tests/UadeInProcessTest.cpp)
     target_link_libraries(uade_inprocess_test PRIVATE megaplayer_core)

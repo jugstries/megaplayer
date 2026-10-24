@@ -2,6 +2,7 @@
 
 #include "AudioOutput.h"
 #include "Decoder.h"
+#include "dsp/MegaSound.h"
 
 #include <atomic>
 #include <cstdint>
@@ -46,6 +47,7 @@ public:
     void seek(double seconds);
     void selectSubsong(int index);
     void setVolume(float volume); // 0..1
+    void setMegaSound(float amount); // 0..1, vedi MegaSound
 
     PlayerStatus status() const;
     TrackInfo info() const;
@@ -65,6 +67,7 @@ private:
     // decodifica.
     mutable std::mutex mutex_;
     std::unique_ptr<Decoder> decoder_;
+    MegaSound megaSound_;
     bool decoding_ = false;
     bool paused_ = false;
     // L'ultimo secondo di audio scritto nell'uscita, per frame assoluto.

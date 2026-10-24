@@ -71,6 +71,10 @@ MP_API void mp_engine_seek(mp_engine* engine, double seconds);
 MP_API void mp_engine_select_subsong(mp_engine* engine, int32_t index);
 MP_API void mp_engine_set_volume(mp_engine* engine, float volume);
 
+/* La manopola MegaSound, da 0 (spenta) a 1 (tutti gli effetti). */
+MP_API void mp_engine_set_megasound(mp_engine* engine, float amount);
+
+
 MP_API void mp_engine_status(mp_engine* engine, mp_status* out);
 
 /*

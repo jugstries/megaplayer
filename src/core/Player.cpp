@@ -19,6 +19,7 @@ constexpr double kBufferSeconds = 0.3;
 Player::Player(int sampleRate)
     : sampleRate_(sampleRate)
     , output_(sampleRate, kBufferSeconds)
+    , megaSound_(sampleRate)
     , history_(static_cast<size_t>(sampleRate) * kChannels)
 {
     output_.start();
@@ -38,6 +39,7 @@ void Player::play(std::unique_ptr<Decoder> decoder)
     decoder_ = std::move(decoder);
     decoding_ = decoder_ != nullptr;
     paused_ = false;
+    megaSound_.reset();
     output_.flush();
     output_.setPaused(false);
 }
@@ -64,6 +66,7 @@ void Player::seek(double seconds)
         return;
     decoder_->seek(std::max(0.0, seconds));
     decoding_ = true;
+    megaSound_.reset();
     output_.flush();
 }
 
@@ -74,12 +77,19 @@ void Player::selectSubsong(int index)
         return;
     decoder_->selectSubsong(index);
     decoding_ = true;
+    megaSound_.reset();
     output_.flush();
 }
 
 void Player::setVolume(float volume)
 {
     output_.setVolume(std::clamp(volume, 0.0f, 1.0f));
+}
+
+void Player::setMegaSound(float amount)
+{
+    std::lock_guard lock(mutex_);
+    megaSound_.setAmount(amount);
 }
 
 PlayerStatus Player::status() const
@@ -151,6 +161,9 @@ void Player::run()
                 if (got == 0) {
                     decoding_ = false;
                 } else {
+                    // Sempre, anche spenta: così accenderla non fa saltare
+                    // l'audio. A riposo ritarda soltanto, senza toccarlo.
+                    megaSound_.process(chunk.data(), got);
                     output_.write(chunk.data(), got);
                     remember(chunk.data(), got);
                     wrote = true;

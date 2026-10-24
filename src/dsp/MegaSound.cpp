@@ -35,19 +35,24 @@ constexpr float kBodyFrom = 0.5f;
 constexpr double kBodyHz = 300;
 constexpr float kBodyDriveMax = 4.0f;
 // Riverbero avvolgente, senza bassi (mandata filtrata a kReverbSendHz): entra
-// presto, sale in fretta nella prima metà, è pieno a kReverbFullAt e la
-// stanza cresce su tutta la corsa. Il
-// pre-delay lo stacca dal suono diretto, così si sente come spazio attorno e
-// non impasta; la coda ha gli alti smorzati, per non far friggere i campioni a
-// 8 bit.
+// presto, sale in fretta nella prima metà, poi più piano fino a fine corsa, e
+// la stanza cresce con lui. Il pre-delay lo stacca dal suono diretto, così si
+// sente come spazio attorno e non impasta.
 constexpr float kReverbFrom = 0.1f;
-constexpr float kReverbFullAt = 0.9f;
-constexpr float kReverbMax = 0.45f;
+constexpr float kReverbMax = 0.39f;
 constexpr float kRoomFrom = 0.6f;
-constexpr float kRoomTo = 0.88f;
+constexpr float kRoomTo = 0.79f;
 constexpr double kReverbSendHz = 350;
 constexpr double kReverbPreDelayMs = 20;
-constexpr float kReverbDamp = 0.35f;
+// Il colore: scuro fino a kReverbToneFrom (mandata tagliata sopra
+// kReverbDarkHz, alti della coda smorzati in fretta), poi si schiarisce fino
+// a fine corsa, dove la coda è più lunga e più forte e altrimenti suonerebbe
+// cupa.
+constexpr float kReverbToneFrom = 0.6f;
+constexpr double kReverbDarkHz = 2700;
+constexpr double kReverbBrightHz = 5500;
+constexpr float kReverbDarkDamp = 0.6f;
+constexpr float kReverbBrightDamp = 0.42f;
 // Clipper morbido nell'ultimo tratto, tarato sul soffitto finale: il margine
 // di volume lo spinge in saturazione, invece di lasciare tutto al limiter.
 constexpr float kClipperFrom = 0.7f;
@@ -285,15 +290,16 @@ void MegaSound::Reverb::reset()
     preDelayPos_ = 0;
 }
 
-void MegaSound::Reverb::setRoom(float roomSize)
+void MegaSound::Reverb::setRoom(float roomSize, float damp)
 {
     feedback_ = roomSize * 0.28f + 0.7f;
+    damp_ = damp;
 }
 
 float MegaSound::Reverb::comb(Comb& c, float input)
 {
     const float output = c.buffer[c.pos];
-    c.store = flushDenormal(output * (1 - kReverbDamp) + c.store * kReverbDamp);
+    c.store = flushDenormal(output * (1 - damp_) + c.store * damp_);
     c.buffer[c.pos] = input + c.store * feedback_;
     if (++c.pos == c.buffer.size())
         c.pos = 0;
@@ -331,7 +337,8 @@ void MegaSound::Reverb::process(float input, float& left, float& right)
 // --- La catena ---
 
 MegaSound::MegaSound(int sampleRate)
-    : amountCoef_(coefficient(0.06, sampleRate))
+    : sampleRate_(sampleRate)
+    , amountCoef_(coefficient(0.06, sampleRate))
     , bodyCoef_(coefficient(0.3, 4.0 * sampleRate)) // 2 canali a frequenza doppia
     , attackCoef_(coefficient(0.005, sampleRate))
     , releaseCoef_(coefficient(0.12, sampleRate))
@@ -383,6 +390,7 @@ void MegaSound::resetEffects()
         exciterPost_[c].reset();
         bodyBand_[c].reset();
         reverbSend_[c].reset();
+        reverbTone_[c].reset();
         oversampler_[c].reset();
     }
     reverb_.reset();
@@ -441,8 +449,16 @@ void MegaSound::updateSettings()
 
     s.clipper = ramp(a, kClipperFrom, 1);
 
-    s.reverb = kReverbMax * std::sqrt(ramp(a, kReverbFrom, kReverbFullAt));
-    reverb_.setRoom(kRoomFrom + (kRoomTo - kRoomFrom) * ramp(a, kReverbFrom, 1));
+    s.reverb = kReverbMax * std::sqrt(ramp(a, kReverbFrom, 1));
+    const float tone = ramp(a, kReverbToneFrom, 1);
+    reverb_.setRoom(kRoomFrom + (kRoomTo - kRoomFrom) * ramp(a, kReverbFrom, 1),
+                    kReverbDarkDamp + (kReverbBrightDamp - kReverbDarkDamp) * tone);
+    if (tone != reverbToneAt_) {
+        const double hz = kReverbDarkHz * std::pow(kReverbBrightHz / kReverbDarkHz, tone);
+        for (Biquad& filter : reverbTone_)
+            filter.lowpass(sampleRate_, hz);
+        reverbToneAt_ = tone;
+    }
 }
 
 // Quanto volume toglie il compressore, alle impostazioni di adesso, al
@@ -607,7 +623,9 @@ void MegaSound::process(float* frames, size_t count)
 
             float reverbLeft;
             float reverbRight;
-            const float send = (reverbSend_[0].process(left) + reverbSend_[1].process(right)) * 0.015f;
+            const float send = (reverbTone_[0].process(reverbSend_[0].process(left))
+                                + reverbTone_[1].process(reverbSend_[1].process(right)))
+                * 0.015f;
             reverb_.process(send, reverbLeft, reverbRight);
             left += s.reverb * reverbLeft;
             right += s.reverb * reverbRight;

@@ -175,10 +175,13 @@ come un plugin a manopola singola
    clipper morbido (dal 70%), tarato sul tetto finale: il margine di volume
    lo spinge in saturazione invece di lasciare tutto al limiter;
 4. riverbero avvolgente senza bassi (la mandata parte da 350 Hz): entra dal
-   10%, sale in fretta nella prima metà ed è pieno al 90%, con stanza sempre
-   più grande (coda da 1.3 a 3 s), 20 ms di pre-delay che lo staccano dal
-   suono diretto e alti smorzati nella coda. Rispetto al suono sta a circa
-   −17 dB al 50% e −11 dB al 100%;
+   10%, sale in fretta nella prima metà e poi più piano fino in fondo, con
+   stanza sempre più grande (coda da 1.2 a 2.1 s) e 20 ms di pre-delay che lo
+   staccano dal suono diretto. Fino al 60% è scuro (mandata tagliata sopra i
+   2.7 kHz, alti della coda smorzati in fretta), poi si schiarisce fino a
+   5.5 kHz: a fine corsa la coda è più lunga e più forte, e scura
+   suonerebbe cupa. Rispetto al suono che lo alimenta sta tra −15 e −18 dB
+   al 50% e tra −10 e −12 dB al 100%;
 5. volume: una compensazione restituisce subito quello che toglie il
    compressore (calcolata, alle impostazioni di quel momento, sull'energia
    del segnale nell'ultimo secondo e mezzo), il guadagno automatico corregge
@@ -213,18 +216,18 @@ centro):
 
 | | originale | 25% | 50% | 100% |
 |---|---|---|---|---|
-| Stormlord `jt.title` | −10.2 dB | −7.5 dB | −7.3 dB | −6.3 dB |
-| Unreal `jt.title_and_game_end` | −10.8 dB | −7.5 dB | −7.1 dB | −5.9 dB |
-| Turrican 2 Load | −14.4 dB | −7.5 dB | −7.2 dB | −6.5 dB |
-| AHX.Cruisin | −12.4 dB | −7.1 dB | −6.8 dB | −5.9 dB |
+| Stormlord `jt.title` | −10.2 dB | −7.6 dB | −7.6 dB | −6.9 dB |
+| Unreal `jt.title_and_game_end` | −10.7 dB | −7.6 dB | −7.4 dB | −6.6 dB |
+| Turrican 2 Load | −14.4 dB | −7.5 dB | −7.4 dB | −6.9 dB |
+| AHX.Cruisin | −12.4 dB | −7.1 dB | −6.9 dB | −6.4 dB |
 
 Loudness percepita (LUFS, BS.1770) rispetto all'originale:
 
 | | 25% | 50% | 75% | 100% |
 |---|---|---|---|---|
-| Stormlord `jt.title` | +1.5 dB | +2.6 dB | +3.7 dB | +4.8 dB |
+| Stormlord `jt.title` | +1.5 dB | +2.5 dB | +3.7 dB | +4.8 dB |
 | Unreal `jt.title_and_game_end` | +0.9 dB | +1.8 dB | +2.7 dB | +3.6 dB |
-| Turrican 2 Load | +1.6 dB | +2.4 dB | +3.2 dB | +4.1 dB |
+| Turrican 2 Load | +1.6 dB | +2.4 dB | +3.2 dB | +4.0 dB |
 | AHX.Cruisin (già molto forte) | +1.3 dB | +2.1 dB | +2.5 dB | +2.9 dB |
 
 Tutta la catena costa circa l'1.5% di un core.

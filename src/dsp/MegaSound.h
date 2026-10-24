@@ -82,7 +82,7 @@ private:
     public:
         void init(int sampleRate);
         void reset();
-        void setRoom(float roomSize);
+        void setRoom(float roomSize, float damp);
         void process(float input, float& left, float& right);
 
     private:
@@ -103,6 +103,7 @@ private:
         std::vector<float> preDelay_;
         size_t preDelayPos_ = 0;
         float feedback_ = 0.84f;
+        float damp_ = 0.5f;
     };
 
     // Parametri derivati dalla posizione della manopola.
@@ -123,6 +124,7 @@ private:
     void widen(float inLeft, float inRight, float& outLeft, float& outRight);
     void resetEffects();
 
+    double sampleRate_;
     float target_ = 0;
     float current_ = 0;
     bool engaged_ = false;
@@ -136,6 +138,8 @@ private:
     float bodyLowRms_ = 0, bodyWarmRms_ = 0, bodyGain_ = 1;
     float bodyCoef_;
     std::array<Biquad, 2> reverbSend_;
+    std::array<Biquad, 2> reverbTone_;
+    float reverbToneAt_ = -1; // il colore a cui sono regolati i filtri
     std::array<Oversampler, 2> oversampler_;
     Reverb reverb_;
 

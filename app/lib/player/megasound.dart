@@ -22,7 +22,7 @@ const megaSoundStages = [
   // Fino a metà corsa la saturazione, poi il corpo sui bassi.
   MegaSoundStage('Saturazione', 'SAT', 0, 1),
   MegaSoundStage('Brillantezza', 'EXC', 0, 0.7),
-  MegaSoundStage('Riverbero', 'REV', 0.1, 0.9),
+  MegaSoundStage('Riverbero', 'REV', 0.1, 1),
   MegaSoundStage('Clipper', 'CLIP', 0.7, 1),
 ];
 

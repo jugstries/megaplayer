@@ -53,3 +53,15 @@ else()
     target_compile_definitions(adplug PRIVATE stricmp=strcasecmp)
 endif()
 target_link_libraries(adplug PUBLIC binio)
+
+# libADLMIDI ha la sua copia di Nuked OPL3, di un'altra versione ma con le
+# stesse funzioni: il linker ne terrebbe una sola, e AdPlug finirebbe a usare
+# quella di libADLMIDI sulla sua struttura opl3_chip, più piccola, scrivendo
+# oltre la fine. Le funzioni di AdPlug, prese dal suo nukedopl.h, si
+# rinominano.
+file(STRINGS "${MP_ADPLUG_DIR}/src/nukedopl.h" mp_nuked_declarations REGEX "OPL3_[A-Za-z0-9]+\\(")
+string(REGEX MATCHALL "OPL3_[A-Za-z0-9]+" mp_nuked_functions "${mp_nuked_declarations}")
+list(REMOVE_DUPLICATES mp_nuked_functions)
+foreach(function ${mp_nuked_functions})
+    target_compile_definitions(adplug PRIVATE ${function}=adplug_${function})
+endforeach()

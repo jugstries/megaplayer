@@ -22,6 +22,7 @@ endif()
 
 option(MP_WITH_OPENMPT "Backend libopenmpt (moduli tracker)" ON)
 option(MP_WITH_UADE "Backend UADE (formati Amiga)" ON)
+option(MP_WITH_GME "Backend game-music-emu (console a 8 e 16 bit)" ON)
 option(MP_WITH_ARCHIVES "Apertura diretta degli archivi LHA/ZIP/7z/... (libarchive)" ON)
 
 set(MP_THIRD_PARTY "${CMAKE_CURRENT_SOURCE_DIR}/third_party")
@@ -111,6 +112,27 @@ if(MP_WITH_OPENMPT)
         target_link_libraries(megaplayer_core PUBLIC PkgConfig::OPENMPT)
     else()
         message(WARNING "libopenmpt non trovata: backend openmpt disattivato")
+    endif()
+endif()
+
+set(MP_GME_ENABLED OFF)
+if(MP_WITH_GME)
+    if(NOT EXISTS "${MP_THIRD_PARTY}/src/game-music-emu/CMakeLists.txt")
+        message(WARNING "game-music-emu non scaricato (scripts/build-deps.sh): backend gme disattivato")
+    else()
+        # Solo la libreria statica. I .vgz arrivano già decompressi da ancient
+        # (gzip): zlib non serve.
+        set(GME_BUILD_SHARED OFF CACHE BOOL "" FORCE)
+        set(GME_BUILD_STATIC ON CACHE BOOL "" FORCE)
+        set(GME_BUILD_FRAMEWORK OFF CACHE BOOL "" FORCE)
+        set(GME_BUILD_TESTING OFF CACHE BOOL "" FORCE)
+        set(GME_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+        set(GME_ZLIB OFF CACHE BOOL "" FORCE)
+        add_subdirectory("${MP_THIRD_PARTY}/src/game-music-emu" "${CMAKE_BINARY_DIR}/game-music-emu" EXCLUDE_FROM_ALL)
+        target_sources(megaplayer_core PRIVATE src/decoders/GmeDecoder.cpp)
+        target_compile_definitions(megaplayer_core PRIVATE MP_WITH_GME)
+        target_link_libraries(megaplayer_core PUBLIC gme::gme)
+        set(MP_GME_ENABLED ON)
     endif()
 endif()
 
@@ -230,6 +252,21 @@ if(MP_UADE_ENABLED)
                 "${MP_THIRD_PARTY}/src/uade/songs/AHX.Cruisin")
     set_tests_properties(cli_render_megasound PROPERTIES
         PASS_REGULAR_EXPRESSION "MegaSound: +70%.*Scritti 0:05")
+endif()
+
+# I brani di prova di game-music-emu: un NSF e un VGM compresso con gzip, che
+# arriva a gme già decompresso. Il VGM va esportato tutto: deve finire alla
+# durata dichiarata.
+if(MP_GME_ENABLED)
+    add_test(NAME cli_render_nsf
+        COMMAND megaplayer render -t 5 -o "${CMAKE_BINARY_DIR}/test-nsf.wav"
+                "${MP_THIRD_PARTY}/src/game-music-emu/test.nsf")
+    set_tests_properties(cli_render_nsf PROPERTIES PASS_REGULAR_EXPRESSION "Backend: +gme.*Scritti 0:05")
+    add_test(NAME cli_render_vgz
+        COMMAND megaplayer render -o "${CMAKE_BINARY_DIR}/test-vgz.wav"
+                "${MP_THIRD_PARTY}/src/game-music-emu/test.vgz")
+    set_tests_properties(cli_render_vgz PROPERTIES
+        PASS_REGULAR_EXPRESSION "Packer: +gzip.*Backend: +gme.*Durata: +1:37.*Scritti 1:37")
 endif()
 
 # Un MOD generato da tests/make_test_mod.py, suonato da entrambi i backend.

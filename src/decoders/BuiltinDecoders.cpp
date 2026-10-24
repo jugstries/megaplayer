@@ -2,6 +2,9 @@
 
 #include "MiniaudioDecoder.h"
 
+#ifdef MP_WITH_GME
+#include "GmeDecoder.h"
+#endif
 #ifdef MP_WITH_OPENMPT
 #include "OpenMptDecoder.h"
 #endif
@@ -14,6 +17,9 @@ namespace mp {
 void registerBuiltinDecoders(DecoderRegistry& registry)
 {
     registry.add(std::make_unique<MiniaudioDecoderFactory>());
+#ifdef MP_WITH_GME
+    registry.add(std::make_unique<GmeDecoderFactory>());
+#endif
 #ifdef MP_WITH_OPENMPT
     registry.add(std::make_unique<OpenMptDecoderFactory>());
 #endif

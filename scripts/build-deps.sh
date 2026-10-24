@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 #
 # Scarica, a versioni fissate, i sorgenti delle dipendenze che compila
-# direttamente CMake (UADE con libzakalwe e bencode-tools, ancient, miniaudio)
+# direttamente CMake (UADE con libzakalwe e bencode-tools, ancient, miniaudio,
+# game-music-emu)
 # e applica a UADE la patch per farlo girare nel processo del player.
 # libopenmpt e libarchive invece arrivano dal sistema (brew, apt, MSYS2...),
 # vedi README.md.
@@ -20,6 +21,7 @@ LIBZAKALWE_REF=v1.0.0
 BENCODETOOLS_REF=v1.0.1
 ANCIENT_REF=v2.3.0
 MINIAUDIO_REF=0.11.25
+GME_REF=0.6.5
 
 if [[ "${1:-}" == "--clean" ]]; then
 	# third_party/install è il prefisso delle versioni precedenti dello script.
@@ -42,6 +44,7 @@ clone bencodetools https://gitlab.com/heikkiorsila/bencodetools.git    "$BENCODE
 clone uade         https://gitlab.com/uade-music-player/uade.git       "$UADE_REF"
 clone ancient      https://github.com/temisu/ancient.git               "$ANCIENT_REF"
 clone miniaudio    https://github.com/mackron/miniaudio.git            "$MINIAUDIO_REF"
+clone game-music-emu https://github.com/libgme/game-music-emu.git      "$GME_REF"
 
 # Patch per far girare uadecore in un thread del player (src/uade/InProcess.cpp).
 UADE_PATCH="$ROOT/patches/uade-in-process.patch"

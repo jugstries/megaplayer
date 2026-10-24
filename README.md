@@ -10,6 +10,7 @@ Flutter (per ora macOS) con due skin: moderna e retrò.
 | Backend   | Libreria              | Cosa suona                                                     |
 |-----------|-----------------------|----------------------------------------------------------------|
 | `miniaudio` | miniaudio, stb_vorbis | file audio: MP3 (e MP1/MP2), FLAC, WAV, Ogg Vorbis, con titolo e autore dai tag |
+| `gme`     | game-music-emu 0.6.5  | console: NES (NSF, NSFE), SNES (SPC), Game Boy (GBS), Master System e Mega Drive (VGM, VGZ, GYM), PC Engine (HES), MSX (KSS), ZX Spectrum (AY), Atari (SAP) |
 | `openmpt` | libopenmpt            | moduli tracker: MOD, XM, S3M, IT, MED, OKT, ...                |
 | `uade`    | UADE 3.05             | 200+ formati Amiga, con i replayer originali Eagleplayer/DeliTracker in emulazione 68000 + Paula |
 
@@ -62,8 +63,9 @@ ctest --test-dir build
 ```
 
 `scripts/build-deps.sh` scarica a versioni fissate i sorgenti di UADE,
-libzakalwe, bencode-tools, ancient e miniaudio in `third_party/src` e applica
-`patches/uade-in-process.patch` a UADE. Tutto il resto lo fa CMake: compila
+libzakalwe, bencode-tools, ancient, miniaudio e game-music-emu in
+`third_party/src` e applica `patches/uade-in-process.patch` a UADE. Tutto il
+resto lo fa CMake: compila
 UADE senza il suo script di configurazione (che funziona solo su UNIX, vedi
 [cmake/UadeInProcess.cmake](cmake/UadeInProcess.cmake)) e copia replayer e
 configurazione in `build/uade-data`. La CLI e i test li cercano lì; le app li
@@ -294,6 +296,7 @@ aggiungere un'opzione `MP_WITH_*` in `CMakeLists.txt`.
 
 UADE è GPL-2.0 (il motore UAE) con parti LGPL; i replayer in
 `share/uade/players` hanno licenze e autori diversi. libopenmpt è BSD-3,
-ancient e libarchive BSD-2, miniaudio e stb_vorbis public domain / MIT-0.
+ancient e libarchive BSD-2, miniaudio e stb_vorbis public domain / MIT-0,
+game-music-emu LGPL-2.1 (con l'emulatore Nuked del YM2612, anche lui LGPL).
 Finché il backend UADE è incluso, il binario risultante va distribuito sotto
 GPL.

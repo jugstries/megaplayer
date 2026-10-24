@@ -31,22 +31,46 @@ Con `-b` si sceglie a mano.
 
 ## Build
 
-Serve un compilatore C++20, CMake ≥ 3.21, pkg-config e git.
+[![build](https://github.com/jugstries/megaplayer/actions/workflows/build.yml/badge.svg)](https://github.com/jugstries/megaplayer/actions/workflows/build.yml)
+
+Serve un compilatore C++20 (Clang o GCC; su Windows MinGW-w64), CMake ≥ 3.21,
+Ninja, pkg-config, git e Python 3 per i test. libopenmpt e libarchive arrivano
+dal sistema:
+
+| Sistema | Dipendenze |
+|---|---|
+| macOS | `brew install cmake ninja libopenmpt libarchive` |
+| Debian/Ubuntu | `apt install cmake ninja-build pkg-config libopenmpt-dev libarchive-dev` |
+| Windows (MSYS2, ambiente UCRT64) | `pacman -S git mingw-w64-ucrt-x86_64-{gcc,cmake,ninja,pkgconf,python,libopenmpt,libarchive}` |
+
+Poi, uguale ovunque (su Windows dalla shell di MSYS2):
 
 ```bash
-brew install libopenmpt libarchive   # Debian/Ubuntu: apt install libopenmpt-dev libarchive-dev
-scripts/build-deps.sh                # UADE (+ libzakalwe, bencode-tools), ancient, miniaudio
+scripts/build-deps.sh
 cmake -S . -B build -G Ninja
 cmake --build build
+ctest --test-dir build
 ```
 
-`scripts/build-deps.sh` scarica le dipendenze a versioni fissate in
-`third_party/src`, applica `patches/uade-in-process.patch` a UADE e installa
-replayer e configurazione di UADE in `third_party/install`. Il percorso dei
-replayer è compilato in libuade: se sposti la cartella del progetto rilancia
-`scripts/build-deps.sh --clean`.
+`scripts/build-deps.sh` scarica a versioni fissate i sorgenti di UADE,
+libzakalwe, bencode-tools, ancient e miniaudio in `third_party/src` e applica
+`patches/uade-in-process.patch` a UADE. Tutto il resto lo fa CMake: compila
+UADE senza il suo script di configurazione (che funziona solo su UNIX, vedi
+[cmake/UadeInProcess.cmake](cmake/UadeInProcess.cmake)) e copia replayer e
+configurazione in `build/uade-data`. La CLI e i test li cercano lì; le app li
+indicano a runtime con `mp_set_uade_data_dir()`.
 
-Test: `ctest --test-dir build`.
+La CI di GitHub Actions ([.github/workflows/build.yml](.github/workflows/build.yml))
+compila e prova tutto su Linux e Windows; macOS si prova in locale.
+
+Per controllare la build Windows da macOS senza aspettare la CI c'è la
+cross-compilazione con MinGW-w64 (`brew install mingw-w64`), senza libopenmpt
+e libarchive; i generatori dell'emulatore 68000 vengono dalla build nativa:
+
+```bash
+cmake -S . -B build-win -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/mingw-w64-x86_64.cmake \
+  -DMP_UADE_HOST_TOOLS=$PWD/build -DMP_WITH_OPENMPT=OFF -DMP_WITH_ARCHIVES=OFF
+```
 
 ### UADE nel processo del player
 
@@ -63,9 +87,10 @@ L'audio è identico, bit per bit, a quello della versione con processo
 separato. L'emulatore usa molte variabili globali, quindi suona un solo brano
 UADE per volta: aprirne un secondo mentre il primo suona dà un errore.
 
-Oggi la build è provata su macOS. Restano da fare il porting su Windows
-(thread POSIX e header generati dallo script di configurazione di UADE) e la
-build WebAssembly; libzakalwe e bencode-tools sono ancora librerie esterne.
+Su Windows UADE si compila con MinGW-w64: il thread di `uadecore` usa le
+pthread di MinGW, e le poche funzioni POSIX che mancano (`strsep`, `lockf`,
+`realpath`…) stanno in [src/uade/windows](src/uade/windows), incluse solo lì.
+Resta da fare la build WebAssembly.
 
 libuade registra in `~/.uade/contentdb` la durata dei brani suonati fino in
 fondo e la mostra alle riproduzioni successive. È un solo valore per file:
@@ -120,9 +145,9 @@ due skin con un core finto e salva le immagini in `app/build/screenshots`;
 Limiti attuali:
 
 - la sandbox di macOS è disattivata, e la libreria punta a libopenmpt e
-  libarchive di Homebrew e ai replayer di UADE in `third_party/install`: l'app
+  libarchive di Homebrew e ai replayer di UADE in `build/uade-data`: l'app
   gira solo su questa macchina di sviluppo. Per distribuirla vanno messi nel
-  bundle;
+  bundle (i replayer con `mp_set_uade_data_dir()`);
 - gli oscilloscopi mostrano i canali sinistro e destro dell'uscita: i quattro
   canali Paula separati richiedono lavoro nel core;
 - niente trascinamento dei file sulla finestra e la skin scelta non viene
@@ -140,9 +165,10 @@ src/capi/       API C per le interfacce grafiche
 src/cli/        la riga di comando
 app/            app desktop in Flutter
 tests/          test automatici del core
-cmake/          build di UADE dai sorgenti
+cmake/          build di UADE dai sorgenti, toolchain di cross-compilazione
 patches/        modifiche alle dipendenze
-scripts/        build delle dipendenze e passo di build dell'app macOS
+scripts/        download delle dipendenze e passo di build dell'app macOS
+.github/        CI per Linux e Windows
 ```
 
 Per aggiungere un backend: implementare `Decoder` e `DecoderFactory`

@@ -39,6 +39,13 @@ typedef struct mp_status {
     double duration;       /* secondi, negativa se sconosciuta */
 } mp_status;
 
+/*
+ * Cartella con replayer e configurazione di UADE, se non è quella scelta alla
+ * compilazione (un'app impacchettata, WebAssembly). Va chiamata prima di
+ * mp_engine_create.
+ */
+MP_API void mp_set_uade_data_dir(const char* path);
+
 /* Apre il dispositivo audio. NULL se non ci riesce. */
 MP_API mp_engine* mp_engine_create(int32_t sample_rate);
 MP_API void mp_engine_destroy(mp_engine* engine);

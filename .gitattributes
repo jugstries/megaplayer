@@ -1,0 +1,4 @@
+# Fine riga LF ovunque, anche nei checkout su Windows: gli script bash e
+# `git apply` della patch di UADE non tollerano CRLF.
+* text=auto eol=lf
+*.patch -text

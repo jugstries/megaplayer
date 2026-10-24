@@ -9,7 +9,12 @@
 #include "core/SourceFile.h"
 #include "decoders/UadeDecoder.h"
 
+#ifdef _WIN32
+#include <windows.h>
+#include <psapi.h>
+#else
 #include <sys/resource.h>
+#endif
 
 #include <cstdint>
 #include <cstdio>
@@ -51,12 +56,18 @@ uint64_t renderHash(mp::UadeDecoderFactory& factory, const mp::SourceFile& file)
 
 long maxRssKb()
 {
+#ifdef _WIN32
+    PROCESS_MEMORY_COUNTERS counters{};
+    GetProcessMemoryInfo(GetCurrentProcess(), &counters, sizeof counters);
+    return static_cast<long>(counters.PeakWorkingSetSize / 1024);
+#else
     rusage usage{};
     getrusage(RUSAGE_SELF, &usage);
 #ifdef __APPLE__
     return usage.ru_maxrss / 1024; // su macOS è in byte
 #else
     return usage.ru_maxrss;
+#endif
 #endif
 }
 

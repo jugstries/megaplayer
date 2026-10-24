@@ -17,6 +17,9 @@ struct UadeStateDeleter {
 // player (src/uade/InProcess.cpp), un brano per volta.
 class UadeDecoderFactory final : public DecoderFactory {
 public:
+    // Vedi mp::setUadeDataDirectory().
+    static void setDataDirectory(const std::string& path);
+
     std::string_view name() const override { return "uade"; }
     std::string_view description() const override;
     int probe(const SourceFile& file) override;

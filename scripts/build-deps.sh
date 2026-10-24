@@ -1,23 +1,19 @@
 #!/usr/bin/env bash
 #
-# Scarica (a versioni fissate) e compila le dipendenze che non usiamo come
-# pacchetti di sistema. Tutto finisce sotto third_party/:
+# Scarica, a versioni fissate, i sorgenti delle dipendenze che compila
+# direttamente CMake (UADE con libzakalwe e bencode-tools, ancient, miniaudio)
+# e applica a UADE la patch per farlo girare nel processo del player.
+# libopenmpt e libarchive invece arrivano dal sistema (brew, apt, MSYS2...),
+# vedi README.md.
 #
-#   third_party/src/      sorgenti clonati
-#   third_party/install/  prefisso di installazione di UADE e delle sue librerie
-#
-# ancient e miniaudio vengono solo clonati: li compila direttamente CMake,
-# che compila anche UADE nella versione nello stesso processo. libopenmpt e
-# libarchive invece arrivano dal sistema (brew, apt, vcpkg...), vedi README.md.
+# Funziona su macOS, Linux e Windows (bash di MSYS2 o Git for Windows).
 #
 # Uso: scripts/build-deps.sh [--clean]
 
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TP="$ROOT/third_party"
-SRC="$TP/src"
-PREFIX="$TP/install"
+SRC="$ROOT/third_party/src"
 
 UADE_REF=uade-3.05
 LIBZAKALWE_REF=v1.0.0
@@ -26,16 +22,11 @@ ANCIENT_REF=v2.3.0
 MINIAUDIO_REF=0.11.25
 
 if [[ "${1:-}" == "--clean" ]]; then
-	rm -rf "$SRC" "$PREFIX"
+	# third_party/install è il prefisso delle versioni precedenti dello script.
+	rm -rf "$SRC" "$ROOT/third_party/install"
 fi
 
-case "$(uname -s)" in
-	Darwin) JOBS="$(sysctl -n hw.ncpu)"; SHLIB_EXT=dylib ;;
-	Linux)  JOBS="$(nproc)";             SHLIB_EXT=so ;;
-	*) echo "UADE supporta solo sistemi UNIX (macOS, Linux, BSD)." >&2; exit 1 ;;
-esac
-
-mkdir -p "$SRC" "$PREFIX/lib"
+mkdir -p "$SRC"
 
 # clone <nome> <url> <ref>: clona una sola volta, alla versione richiesta.
 clone() {
@@ -53,59 +44,11 @@ clone ancient      https://github.com/temisu/ancient.git               "$ANCIENT
 clone miniaudio    https://github.com/mackron/miniaudio.git            "$MINIAUDIO_REF"
 
 # Patch per far girare uadecore in un thread del player (src/uade/InProcess.cpp).
-# Se viene applicata ora, UADE va riconfigurato: ossupport.c è generato da
-# unixsupport.c.
 UADE_PATCH="$ROOT/patches/uade-in-process.patch"
-UADE_RECONFIGURE=0
 if ! git -C "$SRC/uade" apply --reverse --check "$UADE_PATCH" 2>/dev/null; then
 	echo "==> applico $(basename "$UADE_PATCH")"
 	git -C "$SRC/uade" apply "$UADE_PATCH"
-	UADE_RECONFIGURE=1
-fi
-
-# libzakalwe si chiama libzakalwe.so anche su macOS: UADE la cerca con quel nome.
-if [[ ! -f "$PREFIX/lib/libzakalwe.so" ]]; then
-	echo "==> compilo libzakalwe"
-	(
-		cd "$SRC/libzakalwe"
-		if [[ "$SHLIB_EXT" == dylib ]]; then
-			# Il linker di macOS non conosce -soname: al suo posto un install
-			# name assoluto, così libuade e uadecore la trovano a runtime.
-			# Clang recente rifiuta anche le dichiarazioni implicite di un
-			# paio di file.
-			sed -i '' -e 's|-Wl,-soname,\$@|-Wl,-install_name,$(PREFIX)/lib/$@|' \
-				-e 's/^CFLAGS = -W -Wall/CFLAGS = -Wno-implicit-function-declaration -W -Wall/' Makefile
-		fi
-		./configure --prefix="$PREFIX"
-		make -j"$JOBS" install PREFIX="$PREFIX" CC="${CC:-cc}"
-	)
-fi
-
-if [[ ! -f "$PREFIX/lib/libbencodetools.$SHLIB_EXT" ]]; then
-	echo "==> compilo bencode-tools"
-	(
-		cd "$SRC/bencodetools"
-		./configure --prefix="$PREFIX" --without-python
-		make -j"$JOBS"
-		make install
-	)
-fi
-
-# La build classica genera gli header e ossupport.c che servono alla versione
-# nello stesso processo compilata da CMake, e installa replayer e
-# configurazione in $PREFIX/share/uade.
-if [[ ! -f "$PREFIX/lib/libuade.$SHLIB_EXT" || "$UADE_RECONFIGURE" == 1 ]]; then
-	echo "==> compilo UADE"
-	(
-		cd "$SRC/uade"
-		./configure --prefix="$PREFIX" \
-			--bencode-tools-prefix="$PREFIX" \
-			--libzakalwe-prefix="$PREFIX" \
-			--without-uade123 --without-uadesimple --without-uadefs --without-write-audio
-		make -j"$JOBS"
-		make install
-	)
 fi
 
 echo
-echo "Dipendenze pronte in $PREFIX"
+echo "Sorgenti pronti in $SRC"

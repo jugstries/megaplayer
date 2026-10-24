@@ -1,0 +1,74 @@
+# Build e test del core su Linux e Windows. macOS si compila e si prova in
+# locale.
+name: build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Dipendenze di sistema
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build pkg-config python3 libopenmpt-dev libarchive-dev
+
+      - name: Sorgenti delle dipendenze
+        run: scripts/build-deps.sh
+
+      - name: Build
+        run: |
+          cmake -S . -B build -G Ninja
+          cmake --build build
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            git
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-python
+            mingw-w64-ucrt-x86_64-libopenmpt
+            mingw-w64-ucrt-x86_64-libarchive
+
+      - name: Sorgenti delle dipendenze
+        run: scripts/build-deps.sh
+
+      - name: Build
+        run: |
+          cmake -S . -B build -G Ninja
+          cmake --build build
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Eseguibili
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: megaplayer-windows
+          path: |
+            build/megaplayer.exe
+            build/libmegaplayer.dll
+          if-no-files-found: ignore

@@ -1,4 +1,5 @@
 /build/
+/build-*/
 /third_party/src/
 /third_party/install/
 .DS_Store

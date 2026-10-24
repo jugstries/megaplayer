@@ -87,6 +87,11 @@ const char* fail(mp_engine* engine, const std::exception& e)
 
 extern "C" {
 
+void mp_set_uade_data_dir(const char* path)
+{
+    mp::setUadeDataDirectory(path ? path : "");
+}
+
 mp_engine* mp_engine_create(int32_t sample_rate)
 {
     try {

@@ -20,4 +20,13 @@ void registerBuiltinDecoders(DecoderRegistry& registry)
     (void)registry;
 }
 
+void setUadeDataDirectory(const std::string& path)
+{
+#ifdef MP_WITH_UADE
+    UadeDecoderFactory::setDataDirectory(path);
+#else
+    (void)path;
+#endif
+}
+
 } // namespace mp

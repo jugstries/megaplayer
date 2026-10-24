@@ -19,12 +19,17 @@ struct ConfigDeleter {
 
 using StatePtr = std::unique_ptr<uade_state, UadeStateDeleter>;
 
+// Vuota: la cartella scelta alla compilazione (UADE_CONFIG_BASE_DIR).
+std::string gDataDirectory;
+
 StatePtr newState(int sampleRate)
 {
     std::unique_ptr<uade_config, ConfigDeleter> config(uade_new_config());
     if (!config)
         throw DecoderError("memoria esaurita");
 
+    if (!gDataDirectory.empty())
+        uade_config_set_option(config.get(), UC_BASE_DIR, gDataDirectory.c_str());
     uade_config_set_option(config.get(), UC_FREQUENCY, std::to_string(sampleRate).c_str());
     // Un sottobrano per volta: il passaggio al successivo lo decide il player.
     uade_config_set_option(config.get(), UC_ONE_SUBSONG, nullptr);
@@ -182,6 +187,11 @@ private:
 void UadeStateDeleter::operator()(uade_state* state) const
 {
     uade_cleanup_state(state);
+}
+
+void UadeDecoderFactory::setDataDirectory(const std::string& path)
+{
+    gDataDirectory = path;
 }
 
 std::string_view UadeDecoderFactory::description() const

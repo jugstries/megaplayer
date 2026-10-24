@@ -90,9 +90,18 @@ index aa75e73..f04f927 100644
    if (!s_argv) {
      fprintf (stderr, "uadecore: Out of memory for command line parsing.\n");
 diff --git a/src/uademain.c b/src/uademain.c
-index a711d55..4dac9f6 100644
+index a711d55..dd0b5ce 100644
 --- a/src/uademain.c
 +++ b/src/uademain.c
+@@ -283,7 +283,7 @@ void write_log_standard (const char *fmt, ...)
+ 
+ static void uade_signal_initializations(void)
+ {
+-#ifdef HAVE_SIGACTION
++#if defined(HAVE_SIGACTION) && !defined(UADE_IN_PROCESS)
+ 	struct sigaction act = {.sa_handler = SIG_IGN};
+ 
+ 	while (1) {
 @@ -299,7 +299,15 @@ static void uade_signal_initializations(void)
  
  int uadecore_main (int argc, char **argv)

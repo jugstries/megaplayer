@@ -36,4 +36,9 @@ private:
 // Registra i backend inclusi nella build (vedi le opzioni MP_WITH_* in CMake).
 void registerBuiltinDecoders(DecoderRegistry& registry);
 
+// Cartella con replayer e configurazione di UADE, se non è quella scelta alla
+// compilazione (un'app impacchettata, WebAssembly). Va impostata prima di
+// aprire o riconoscere file.
+void setUadeDataDirectory(const std::string& path);
+
 } // namespace mp

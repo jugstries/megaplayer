@@ -10,19 +10,23 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE RelWithDebInfo)
 endif()
+if(MINGW)
+    # Eseguibili e DLL senza le DLL del runtime C++ di MinGW.
+    add_link_options(-static-libgcc -static-libstdc++)
+endif()
 
 option(MP_WITH_OPENMPT "Backend libopenmpt (moduli tracker)" ON)
-option(MP_WITH_UADE "Backend UADE (formati Amiga, solo UNIX)" ON)
+option(MP_WITH_UADE "Backend UADE (formati Amiga)" ON)
 option(MP_WITH_ARCHIVES "Apertura diretta degli archivi LHA/ZIP/7z/... (libarchive)" ON)
 
 set(MP_THIRD_PARTY "${CMAKE_CURRENT_SOURCE_DIR}/third_party")
-set(MP_DEPS_PREFIX "${MP_THIRD_PARTY}/install")
 
 if(NOT EXISTS "${MP_THIRD_PARTY}/src/ancient" OR NOT EXISTS "${MP_THIRD_PARTY}/src/miniaudio")
     message(FATAL_ERROR "Dipendenze mancanti: esegui prima scripts/build-deps.sh")
 endif()
 
-find_package(PkgConfig REQUIRED)
+# libopenmpt e libarchive arrivano dal sistema, trovate con pkg-config.
+find_package(PkgConfig)
 
 # --- ancient: decompressori per i packer d'epoca (compilato dai sorgenti) ---
 
@@ -75,7 +79,9 @@ if(MP_WITH_ARCHIVES)
             set(ENV{PKG_CONFIG_PATH} "${MP_BREW_LIBARCHIVE}/lib/pkgconfig:$ENV{PKG_CONFIG_PATH}")
         endif()
     endif()
-    pkg_check_modules(LIBARCHIVE IMPORTED_TARGET libarchive)
+    if(PKG_CONFIG_FOUND)
+        pkg_check_modules(LIBARCHIVE IMPORTED_TARGET libarchive)
+    endif()
     if(LIBARCHIVE_FOUND)
         target_compile_definitions(megaplayer_core PRIVATE MP_WITH_ARCHIVES)
         target_link_libraries(megaplayer_core PUBLIC PkgConfig::LIBARCHIVE)
@@ -85,7 +91,9 @@ if(MP_WITH_ARCHIVES)
 endif()
 
 if(MP_WITH_OPENMPT)
-    pkg_check_modules(OPENMPT IMPORTED_TARGET libopenmpt)
+    if(PKG_CONFIG_FOUND)
+        pkg_check_modules(OPENMPT IMPORTED_TARGET libopenmpt)
+    endif()
     if(OPENMPT_FOUND)
         target_sources(megaplayer_core PRIVATE src/decoders/OpenMptDecoder.cpp)
         target_compile_definitions(megaplayer_core PRIVATE MP_WITH_OPENMPT)
@@ -97,9 +105,7 @@ endif()
 
 set(MP_UADE_ENABLED OFF)
 if(MP_WITH_UADE)
-    if(WIN32)
-        message(WARNING "UADE non è ancora portato su Windows: backend uade disattivato")
-    elseif(NOT EXISTS "${MP_DEPS_PREFIX}/share/uade/eagleplayer.conf")
+    if(NOT EXISTS "${MP_THIRD_PARTY}/src/uade/eagleplayer.conf")
         message(WARNING "UADE non preparato (scripts/build-deps.sh): backend uade disattivato")
     else()
         include(cmake/UadeInProcess.cmake)
@@ -114,11 +120,6 @@ endif()
 
 add_executable(megaplayer src/cli/main.cpp src/cli/Terminal.cpp)
 target_link_libraries(megaplayer PRIVATE megaplayer_core)
-if(MP_UADE_ENABLED)
-    # Su Linux libzakalwe e bencode-tools sono librerie condivise nel
-    # prefisso privato.
-    set_target_properties(megaplayer PROPERTIES BUILD_RPATH "${MP_DEPS_PREFIX}/lib")
-endif()
 
 # --- Libreria dinamica con l'API C, per l'app Flutter (app/) ---
 
@@ -129,9 +130,6 @@ set_target_properties(megaplayer_capi PROPERTIES
     CXX_VISIBILITY_PRESET hidden
     INSTALL_NAME_DIR "@rpath"
     BUILD_WITH_INSTALL_NAME_DIR ON)
-if(MP_UADE_ENABLED)
-    set_target_properties(megaplayer_capi PROPERTIES BUILD_RPATH "${MP_DEPS_PREFIX}/lib")
-endif()
 
 # --- Test (ctest --test-dir build) ---
 
@@ -139,7 +137,37 @@ enable_testing()
 if(MP_UADE_ENABLED)
     add_executable(uade_inprocess_test tests/UadeInProcessTest.cpp)
     target_link_libraries(uade_inprocess_test PRIVATE megaplayer_core)
-    set_target_properties(uade_inprocess_test PROPERTIES BUILD_RPATH "${MP_DEPS_PREFIX}/lib")
+    if(WIN32)
+        target_link_libraries(uade_inprocess_test PRIVATE psapi)
+    endif()
     add_test(NAME uade_inprocess
         COMMAND uade_inprocess_test "${MP_THIRD_PARTY}/src/uade/songs/AHX.Cruisin")
+
+    # La CLI su un brano AHX, che solo UADE suona: deve esportarne 5 secondi.
+    add_test(NAME cli_render_ahx
+        COMMAND megaplayer render -t 5 -o "${CMAKE_BINARY_DIR}/test-ahx.wav"
+                "${MP_THIRD_PARTY}/src/uade/songs/AHX.Cruisin")
+    set_tests_properties(cli_render_ahx PROPERTIES PASS_REGULAR_EXPRESSION "Scritti 0:05")
+endif()
+
+# Un MOD generato da tests/make_test_mod.py, suonato da entrambi i backend.
+find_package(Python3 COMPONENTS Interpreter)
+if(Python3_FOUND)
+    add_test(NAME make_test_mod
+        COMMAND Python3::Interpreter "${CMAKE_CURRENT_SOURCE_DIR}/tests/make_test_mod.py" "${CMAKE_BINARY_DIR}/test.mod")
+    set_tests_properties(make_test_mod PROPERTIES FIXTURES_SETUP test_mod)
+    set(MP_MOD_BACKENDS)
+    if(OPENMPT_FOUND)
+        list(APPEND MP_MOD_BACKENDS openmpt)
+    endif()
+    if(MP_UADE_ENABLED)
+        list(APPEND MP_MOD_BACKENDS uade)
+    endif()
+    foreach(backend ${MP_MOD_BACKENDS})
+        add_test(NAME cli_render_mod_${backend}
+            COMMAND megaplayer render -b ${backend} -t 5 -o "${CMAKE_BINARY_DIR}/test-mod-${backend}.wav"
+                    "${CMAKE_BINARY_DIR}/test.mod")
+        set_tests_properties(cli_render_mod_${backend} PROPERTIES
+            FIXTURES_REQUIRED test_mod PASS_REGULAR_EXPRESSION "Backend: +${backend}.*Scritti 0:05")
+    endforeach()
 endif()

@@ -1,5 +1,7 @@
 #include "Archive.h"
 
+#include "decoders/AudioTags.h"
+
 #include <system_error>
 #include <utility>
 
@@ -136,28 +138,41 @@ std::optional<ExtractedArchive> openArchive(const std::filesystem::path& path)
         if (archive_entry_filetype(entry) != AE_IFREG)
             continue;
 
+        // I nomi che libarchive non sa convertire (Latin-1 negli archivi
+        // Amiga e nei CD) si leggono come Latin-1: i dischi di macOS non
+        // accettano nomi in UTF-8 non valido.
         const char* utf8 = archive_entry_pathname_utf8(entry);
-        const std::string name = utf8 ? utf8 : archive_entry_pathname(entry);
+        const std::string name = utf8 ? utf8 : textToUtf8(archive_entry_pathname(entry));
         const std::filesystem::path relative = safeRelativePath(name);
         if (relative.empty())
             continue;
 
+        // Un file che non si riesce a scrivere, o troppo grande per essere
+        // musica, si salta: il resto dell'archivio si suona lo stesso.
         const std::filesystem::path target = root / relative;
-        std::filesystem::create_directories(target.parent_path());
+        std::error_code error;
+        std::filesystem::create_directories(target.parent_path(), error);
         std::ofstream out(target, std::ios::binary);
-        if (!out)
-            throw std::runtime_error("impossibile estrarre " + name);
-
+        if (!out) {
+            archive_read_data_skip(reader.get());
+            continue;
+        }
         std::uintmax_t total = 0;
         la_ssize_t got;
         while ((got = archive_read_data(reader.get(), buffer.data(), buffer.size())) > 0) {
             total += static_cast<std::uintmax_t>(got);
             if (total > kMaxEntryBytes)
-                throw std::runtime_error(name + ": file troppo grande");
+                break;
             out.write(buffer.data(), got);
         }
         if (got < 0)
             throw std::runtime_error(name + ": " + lastError(reader.get()));
+        out.close();
+        if (total > kMaxEntryBytes) {
+            archive_read_data_skip(reader.get());
+            std::filesystem::remove(target, error);
+            continue;
+        }
 
         entries.push_back({target, relative.generic_string()});
     }

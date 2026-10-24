@@ -26,8 +26,10 @@ Gli archivi (LHA, ZIP, 7z, tar, ...) si aprono direttamente, tramite
 temporanea, cancellata all'uscita, e si suonano i brani che contengono. I file
 che nessun backend riconosce (testi, icone `.info`) vengono saltati. I file
 restano su disco e non solo in memoria perché alcuni formati Amiga sono divisi
-in più file, che UADE cerca uno accanto all'altro. libarchive non legge gli
-archivi LZX dell'Amiga.
+in più file, che UADE cerca uno accanto all'altro. I nomi in Latin-1 (archivi
+Amiga, CD) si convertono in UTF-8, e un file che non si riesce a estrarre si
+salta senza perdere il resto dell'archivio. libarchive non legge gli archivi
+LZX dell'Amiga.
 
 I replayer di questi formati in due file ricavano il nome del secondo dal
 primo, con la convenzione dell'Amiga: `mdat.Brano` cerca `smpl.Brano`. Le

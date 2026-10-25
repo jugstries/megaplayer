@@ -149,6 +149,12 @@ class LibraryBrowser extends ChangeNotifier {
     _search();
   }
 
+  /// Sostituisce i valori scelti di un filtro, o di tutti e due.
+  void setFilters({Set<String>? platforms, Set<String>? formats}) {
+    query = query.copyWith(platforms: platforms, formats: formats);
+    _search();
+  }
+
   void clearFilters() {
     query = query.copyWith(text: '', platforms: const {}, formats: const {});
     _search();

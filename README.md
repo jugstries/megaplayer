@@ -345,10 +345,17 @@ di ogni voce si sceglie il sottobrano o la si toglie. «Riproduci» mette una
 playlist al posto della coda; dal lettore si aggiunge a una playlist il
 sottobrano che suona.
 
+Nella skin retrò le stesse cose stanno nella finestra sotto «In
+riproduzione», con le linguette Coda, Libreria e Playlist (un menu con le
+playlist e «Nuova playlist…»). La libreria è un elenco alla Finder con
+nome, formato e durata: il triangolino apre i sottobrani, piattaforma e
+formato si scelgono da menu a comparsa con la spunta. Gli avvisi («Aggiunto
+alla coda») li dà la mascotte nella finestra «Ciao!».
+
 Test: `flutter test` in `app/`. `test/skin_screenshots_test.dart` disegna le
 skin con un core e un database finti e salva le immagini in
-`app/build/screenshots`; `test/modern_skin_test.dart` usa libreria, coda e
-playlist con clic e menu; `test/ffi_core_test.dart` prova i binding con la
+`app/build/screenshots`; `test/modern_skin_test.dart` e
+`test/retro_skin_test.dart` usano libreria, coda e playlist con clic e menu; `test/ffi_core_test.dart` prova i binding con la
 libreria vera se `MEGAPLAYER_CORE` indica `libmegaplayer.dylib` (la parte
 che suona vuole anche `STORMLORD_LHA`, un archivio di prova).
 
@@ -361,9 +368,7 @@ Limiti attuali:
 - gli oscilloscopi mostrano i canali sinistro e destro dell'uscita: i quattro
   canali Paula separati richiedono lavoro nel core;
 - niente trascinamento dei file sulla finestra, né dalla libreria alle
-  playlist, e niente import o export M3U;
-- libreria e playlist ci sono solo nella skin moderna: la retrò ha la coda
-  com'era.
+  playlist, e niente import o export M3U.
 
 ## Struttura
 

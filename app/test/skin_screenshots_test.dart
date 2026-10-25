@@ -20,7 +20,7 @@ void main() {
     WidgetTester tester,
     PlayerController controller,
     String name, {
-    String? open,
+    List<String> taps = const [],
     Size size = const Size(1440, 900),
   }) async {
     tester.view.physicalSize = size;
@@ -28,8 +28,10 @@ void main() {
     addTearDown(tester.view.reset);
     await tester.pumpWidget(MegaplayerApp(controller: controller));
     await tester.pump();
-    if (open != null) {
-      await tester.tap(find.text(open).first);
+    for (final text in taps) {
+      await tester.tap(find.text(text).first);
+      // Le voci dei menu agiscono al frame dopo la chiusura.
+      await tester.pump();
       await tester.pump();
     }
     await expectLater(find.byType(MegaplayerApp), matchesGoldenFile('../build/screenshots/$name.png'));
@@ -82,23 +84,23 @@ void main() {
   });
 
   testWidgets('skin moderna, libreria', (tester) async {
-    await shoot(tester, withLibrary(FakeLibraryStore()), 'moderna-libreria', open: 'Libreria');
+    await shoot(tester, withLibrary(FakeLibraryStore()), 'moderna-libreria', taps: ['Libreria']);
   });
 
   testWidgets('skin moderna, dentro una cartella dal nome lungo', (tester) async {
     final controller = withLibrary(FakeLibraryStore())
       ..library.openFolder('Music-AmigaModsAnthology-1of4-Psychodk.mcsteam.iso/Modules/Artist7');
-    await shoot(tester, controller, 'moderna-cartella', open: 'Libreria', size: const Size(1180, 800));
+    await shoot(tester, controller, 'moderna-cartella', taps: ['Libreria'], size: const Size(1180, 800));
   });
 
   testWidgets('skin moderna, ricerca nella libreria', (tester) async {
     final controller = withLibrary(FakeLibraryStore())..library.togglePlatform('c64');
-    await shoot(tester, controller, 'moderna-ricerca', open: 'Libreria');
+    await shoot(tester, controller, 'moderna-ricerca', taps: ['Libreria']);
   });
 
   testWidgets('skin moderna, libreria da scegliere', (tester) async {
     final controller = PlayerController(FakeCore(), store: FakeLibraryStore())..restore();
-    await shoot(tester, controller, 'moderna-libreria-vuota', open: 'Libreria');
+    await shoot(tester, controller, 'moderna-libreria-vuota', taps: ['Libreria']);
   });
 
   testWidgets('skin moderna, playlist', (tester) async {
@@ -109,7 +111,7 @@ void main() {
       controller.tracks[3],
     ]);
     controller.createPlaylist('Da sentire');
-    await shoot(tester, controller, 'moderna-playlist', open: 'Preferiti');
+    await shoot(tester, controller, 'moderna-playlist', taps: ['Preferiti']);
   });
 
   testWidgets('skin moderna, finestra stretta', (tester) async {
@@ -118,6 +120,44 @@ void main() {
 
   testWidgets('skin retrò', (tester) async {
     await shoot(tester, playingTitle()..setSkin(Skin.retro)..setMegaSound(0.7), 'retro');
+  });
+
+  testWidgets('skin retrò, coda con le linguette', (tester) async {
+    await shoot(tester, withLibrary(FakeLibraryStore())..setSkin(Skin.retro), 'retro-coda');
+  });
+
+  testWidgets('skin retrò, libreria', (tester) async {
+    final controller = withLibrary(FakeLibraryStore())..setSkin(Skin.retro);
+    await shoot(tester, controller, 'retro-libreria', taps: ['LIBRERIA']);
+  });
+
+  testWidgets('skin retrò, menu del filtro per formato', (tester) async {
+    final controller = withLibrary(FakeLibraryStore())
+      ..setSkin(Skin.retro)
+      ..library.toggleFormat('PSID');
+    await shoot(tester, controller, 'retro-filtro', taps: ['LIBRERIA', 'PSID']);
+  });
+
+  testWidgets('skin retrò, playlist', (tester) async {
+    final controller = withLibrary(FakeLibraryStore())..setSkin(Skin.retro);
+    controller.createPlaylist('Preferiti', entries: [
+      controller.tracks[2],
+      controller.tracks[1].withSubsong(2),
+      controller.tracks[3],
+    ]);
+    await shoot(tester, controller, 'retro-playlist', taps: ['PLAYLIST', 'Preferiti']);
+  });
+
+  testWidgets('skin retrò, libreria da scegliere', (tester) async {
+    final controller = PlayerController(FakeCore(), store: FakeLibraryStore())
+      ..restore()
+      ..setSkin(Skin.retro);
+    await shoot(tester, controller, 'retro-libreria-vuota', taps: ['LIBRERIA']);
+  });
+
+  testWidgets('skin retrò, finestra stretta con la libreria', (tester) async {
+    final controller = withLibrary(FakeLibraryStore())..setSkin(Skin.retro);
+    await shoot(tester, controller, 'retro-stretta', taps: ['LIBRERIA'], size: const Size(1000, 760));
   });
 
   testWidgets('skin retrò, sottobrani', (tester) async {

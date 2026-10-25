@@ -1,12 +1,18 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
 import '../../core/models.dart';
+import '../../player/library_browser.dart';
 import '../../player/megasound.dart';
 import '../../player/player_controller.dart';
 import '../knob_control.dart';
+import '../skin_text.dart';
+
+part 'retro_library.dart';
+part 'retro_lists.dart';
 
 // Skin retrò: il Mac a 1 bit degli anni '80, con pochi accenti pastello.
 
@@ -33,88 +39,137 @@ TextStyle _silk(double size, {Color color = _ink}) =>
 TextStyle _vt(double size, {Color color = _ink, double? height}) =>
     TextStyle(fontFamily: 'VT323', fontSize: size, color: color, height: height);
 
-class RetroSkin extends StatelessWidget {
+class RetroSkin extends StatefulWidget {
   const RetroSkin({super.key, required this.controller});
 
   final PlayerController controller;
 
   @override
+  State<RetroSkin> createState() => _RetroSkinState();
+}
+
+class _RetroSkinState extends State<RetroSkin> {
+  _View _view = _View.queue;
+  int? _playlist;
+
+  /// Quello che la mascotte sta dicendo, per qualche secondo.
+  String? _notice;
+  Timer? _noticeTimer;
+
+  void _show(_View view, {int? playlist}) {
+    // Un altro clic su «Libreria» riporta alla cartella principale.
+    if (view == _View.library && _view == _View.library) widget.controller.library.openFolder('');
+    setState(() {
+      _view = view;
+      _playlist = playlist;
+    });
+  }
+
+  void _sayNotice(String message) {
+    _noticeTimer?.cancel();
+    setState(() => _notice = message);
+    _noticeTimer = Timer(const Duration(seconds: 4), () {
+      if (mounted) setState(() => _notice = null);
+    });
+  }
+
+  @override
+  void dispose() {
+    _noticeTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: _desk,
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _MenuBar(controller: controller),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  if (constraints.maxWidth >= 1100) {
-                    return Row(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Expanded(
-                          flex: 5,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              _NowPlayingWindow(controller: controller),
-                              const SizedBox(height: 24),
-                              Expanded(child: _PlaylistWindow(controller: controller)),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 24),
-                        Expanded(
-                          flex: 3,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              Expanded(child: _ScopeWindow(controller: controller)),
-                              const SizedBox(height: 24),
-                              _InfoWindow(controller: controller),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 24),
-                        SizedBox(
-                          width: 260,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              _MegaSoundWindow(controller: controller),
-                              const SizedBox(height: 24),
-                              _OutputWindow(controller: controller),
-                              const SizedBox(height: 24),
-                              Expanded(child: _HelloWindow(controller: controller)),
-                            ],
-                          ),
-                        ),
-                      ],
-                    );
-                  }
-                  return ListView(
-                    children: [
-                      _NowPlayingWindow(controller: controller),
-                      const SizedBox(height: 24),
-                      SizedBox(height: 320, child: _PlaylistWindow(controller: controller)),
-                      const SizedBox(height: 24),
-                      SizedBox(height: 260, child: _ScopeWindow(controller: controller)),
-                      const SizedBox(height: 24),
-                      _InfoWindow(controller: controller),
-                      const SizedBox(height: 24),
-                      _MegaSoundWindow(controller: controller),
-                      const SizedBox(height: 24),
-                      _OutputWindow(controller: controller),
-                    ],
-                  );
-                },
+    final controller = widget.controller;
+    // Una playlist appena cancellata non c'è più: si torna alla coda.
+    final playlist = controller.playlists.where((p) => p.id == _playlist).firstOrNull;
+    final view = _view == _View.playlist && playlist == null ? _View.queue : _view;
+    final browser = _BrowserWindow(controller: controller, view: view, playlist: playlist, onShow: _show);
+
+    return Theme(
+      data: _theme,
+      child: _Notices(
+        say: _sayNotice,
+        child: Scaffold(
+          backgroundColor: _desk,
+          body: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _MenuBar(controller: controller),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      if (constraints.maxWidth >= 1100) {
+                        return Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Expanded(
+                              flex: 5,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  _NowPlayingWindow(controller: controller),
+                                  const SizedBox(height: 24),
+                                  Expanded(child: browser),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 24),
+                            Expanded(
+                              flex: 3,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  Expanded(child: _ScopeWindow(controller: controller)),
+                                  const SizedBox(height: 24),
+                                  _InfoWindow(controller: controller),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 24),
+                            SizedBox(
+                              width: 260,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  _MegaSoundWindow(controller: controller),
+                                  const SizedBox(height: 24),
+                                  _OutputWindow(controller: controller),
+                                  const SizedBox(height: 24),
+                                  Expanded(child: _HelloWindow(controller: controller, notice: _notice)),
+                                ],
+                              ),
+                            ),
+                          ],
+                        );
+                      }
+                      return ListView(
+                        children: [
+                          _NowPlayingWindow(controller: controller),
+                          const SizedBox(height: 24),
+                          SizedBox(height: 540, child: browser),
+                          const SizedBox(height: 24),
+                          SizedBox(height: 200, child: _HelloWindow(controller: controller, notice: _notice)),
+                          const SizedBox(height: 24),
+                          SizedBox(height: 260, child: _ScopeWindow(controller: controller)),
+                          const SizedBox(height: 24),
+                          _InfoWindow(controller: controller),
+                          const SizedBox(height: 24),
+                          _MegaSoundWindow(controller: controller),
+                          const SizedBox(height: 24),
+                          _OutputWindow(controller: controller),
+                        ],
+                      );
+                    },
+                  ),
+                ),
               ),
-            ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -304,6 +359,39 @@ class _PixelIcon extends StatelessWidget {
   ];
   static const down = [
     [3, 1, 2, 3], [1, 4, 6, 1], [2, 5, 4, 1], [3, 6, 2, 1],
+  ];
+  static const folder = [
+    [1, 3, 6, 2], [1, 5, 14, 9],
+  ];
+  static const archive = [
+    [1, 2, 14, 3], [2, 6, 12, 2], [2, 8, 4, 4], [10, 8, 4, 4], [2, 12, 12, 2],
+  ];
+  static const home = [
+    [7, 1, 2, 1], [6, 2, 4, 1], [5, 3, 6, 1], [4, 4, 8, 1], [3, 5, 10, 1], [2, 6, 12, 1],
+    [3, 7, 10, 3], [3, 10, 4, 5], [9, 10, 4, 5],
+  ];
+  static const plus = [
+    [7, 3, 2, 10], [3, 7, 10, 2],
+  ];
+  static const dots = [
+    [2, 7, 2, 2], [7, 7, 2, 2], [12, 7, 2, 2],
+  ];
+  static const listAdd = [
+    [1, 3, 9, 2], [1, 7, 9, 2], [1, 11, 5, 2], [11, 8, 2, 7], [8, 10, 8, 2],
+  ];
+  // Queste sulla griglia di 8.
+  static const check = [
+    [6, 1, 1, 1], [5, 2, 1, 1], [4, 3, 1, 1], [1, 3, 1, 1], [2, 4, 1, 1], [3, 5, 1, 1], [3, 4, 1, 1],
+  ];
+  static const triangleRight = [
+    [2, 1, 1, 6], [3, 2, 1, 4], [4, 3, 1, 2],
+  ];
+  static const triangleDown = [
+    [1, 2, 6, 1], [2, 3, 4, 1], [3, 4, 2, 1],
+  ];
+  static const close = [
+    [1, 1, 1, 1], [6, 1, 1, 1], [2, 2, 1, 1], [5, 2, 1, 1], [3, 3, 2, 2], [2, 5, 1, 1], [5, 5, 1, 1],
+    [1, 6, 1, 1], [6, 6, 1, 1],
   ];
 
   final List<List<int>> pixels;
@@ -509,12 +597,12 @@ class _NowPlayingWindow extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
                           child: Center(child: Text('SOTTOBRANO', style: _silk(12))),
                         ),
                         const _Divider(),
                         Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 14),
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
                           child: Center(
                             child: Text(
                               '${status.subsong + 1} / ${math.max(1, status.subsongCount)}',
@@ -536,6 +624,20 @@ class _NowPlayingWindow extends StatelessWidget {
                           onPressed: () => controller.selectSubsong(status.subsong - 1),
                           child: (c) => _PixelIcon(_PixelIcon.down, size: 16, grid: 8, color: c),
                         ),
+                        if (controller.store != null && track != null) ...[
+                          const _Divider(),
+                          MenuAnchor(
+                            menuChildren: _playlistMenuItems(context, controller, () => [controller.playingEntry!]),
+                            builder: (context, menu, _) => _RetroButton(
+                              label: status.subsongCount > 1
+                                  ? 'Aggiungi a una playlist questo sottobrano'
+                                  : 'Aggiungi a una playlist',
+                              width: 44,
+                              onPressed: () => menu.isOpen ? menu.close() : menu.open(),
+                              child: (c) => _PixelIcon(_PixelIcon.listAdd, size: 16, color: c),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -624,101 +726,6 @@ class _ProgressStripPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_ProgressStripPainter old) => old.fraction != fraction || old.position != position;
-}
-
-class _PlaylistWindow extends StatelessWidget {
-  const _PlaylistWindow({required this.controller});
-
-  final PlayerController controller;
-
-  @override
-  Widget build(BuildContext context) {
-    final tracks = controller.tracks;
-    final archive = tracks.isNotEmpty && tracks.first.fromArchive ? ' — ${tracks.first.location.split(' · ').first}' : '';
-
-    return _Window(
-      title: 'Playlist$archive',
-      expand: true,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Container(
-            height: 30,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: _ink, width: 2))),
-            child: Row(
-              children: [
-                SizedBox(width: 40, child: Text('#', style: _silk(11))),
-                Expanded(child: Text('BRANO', style: _silk(11))),
-                SizedBox(width: 220, child: Text('POSIZIONE', style: _silk(11))),
-              ],
-            ),
-          ),
-          Expanded(
-            child: tracks.isEmpty
-                ? Center(child: Text('Nessun brano: usa Apri… nel menu', style: _pixel(16)))
-                : RawScrollbar(
-                    thumbVisibility: true,
-                    trackVisibility: true,
-                    thickness: 14,
-                    thumbColor: _ink,
-                    trackColor: _lightGray,
-                    trackBorderColor: _ink,
-                    radius: Radius.zero,
-                    child: ListView.builder(
-                      itemCount: tracks.length,
-                      itemExtent: 44,
-                      itemBuilder: (context, i) => _PlaylistRow(
-                        index: i,
-                        track: tracks[i],
-                        current: i == controller.currentIndex,
-                        onTap: () => controller.playIndex(i),
-                      ),
-                    ),
-                  ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _PlaylistRow extends StatelessWidget {
-  const _PlaylistRow({required this.index, required this.track, required this.current, required this.onTap});
-
-  final int index;
-  final Track track;
-  final bool current;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = current ? _paper : _ink;
-    return Semantics(
-      button: true,
-      selected: current,
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        child: GestureDetector(
-          onTap: onTap,
-          child: Container(
-            color: current ? _ink : _paper,
-            padding: const EdgeInsets.only(left: 12, right: 24),
-            child: Row(
-              children: [
-                SizedBox(width: 40, child: Text((index + 1).toString().padLeft(2, '0'), style: _vt(22, color: color))),
-                Expanded(child: Text(track.fileName, style: _pixel(16, color: color), overflow: TextOverflow.ellipsis)),
-                SizedBox(
-                  width: 220,
-                  child: Text(track.location, style: _pixel(14, color: color), overflow: TextOverflow.ellipsis),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 class _ScopeWindow extends StatelessWidget {
@@ -1257,13 +1264,17 @@ class _PixelSlider extends StatelessWidget {
 }
 
 class _HelloWindow extends StatelessWidget {
-  const _HelloWindow({required this.controller});
+  const _HelloWindow({required this.controller, this.notice});
 
   final PlayerController controller;
 
+  /// Un avviso del momento ("Aggiunto alla coda"), prima di tutto il resto.
+  final String? notice;
+
   @override
   Widget build(BuildContext context) {
-    final message = controller.error ??
+    final message = notice ??
+        controller.error ??
         (controller.tracks.isEmpty
             ? 'Benvenuto in megaplayer! Apri un archivio o un modulo dal menu.'
             : controller.status.isPlaying
@@ -1277,29 +1288,39 @@ class _HelloWindow extends StatelessWidget {
         painter: _DitherPainter(),
         child: LayoutBuilder(
           builder: (context, constraints) {
-            // Con poco spazio resta solo la mascotte, più piccola.
+            // Con meno spazio la mascotte si rimpicciolisce per lasciare
+            // la nuvoletta; con pochissimo resta solo lei.
             final roomy = constraints.maxHeight >= 220;
-            final mascot = constraints.maxHeight >= 130 ? 96.0 : 64.0;
+            final speaks = constraints.maxHeight >= 110;
+            final mascot = roomy ? 96.0 : (speaks ? 40.0 : 64.0);
             return ClipRect(
               child: Padding(
-                padding: const EdgeInsets.all(16),
+                padding: EdgeInsets.all(roomy ? 16 : 10),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    if (roomy) ...[
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                        decoration: const BoxDecoration(
-                          color: _paper,
-                          border: Border.fromBorderSide(BorderSide(color: _ink, width: 2)),
+                    if (speaks) ...[
+                      Flexible(
+                        child: Container(
+                          padding: EdgeInsets.symmetric(horizontal: 14, vertical: roomy ? 12 : 8),
+                          decoration: const BoxDecoration(
+                            color: _paper,
+                            border: Border.fromBorderSide(BorderSide(color: _ink, width: 2)),
+                          ),
+                          child: Text(
+                            message,
+                            style: _pixel(16, height: 1.35),
+                            textAlign: TextAlign.center,
+                            maxLines: roomy ? 6 : 3,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
-                        child: Text(message, style: _pixel(16, height: 1.35), textAlign: TextAlign.center),
                       ),
                       Transform.translate(
                         offset: const Offset(0, -2),
                         child: const _PixelIcon(_bubbleTail, size: 16, grid: 8),
                       ),
-                      const SizedBox(height: 6),
+                      SizedBox(height: roomy ? 6 : 2),
                     ],
                     Tooltip(
                       message: message,

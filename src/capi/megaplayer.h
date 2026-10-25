@@ -116,6 +116,35 @@ MP_API void mp_engine_set_megasound(mp_engine* engine, float amount);
  */
 MP_API void mp_engine_set_channel_muted(mp_engine* engine, int32_t channel, int32_t muted);
 
+/*
+ * Esporta un brano in WAV o MP3 (dall'estensione di out_path) come lo suona
+ * il player: il sottobrano [subsong] (base 0), i canali di [muted] zittiti e
+ * la MegaSound a [megasound] (0..1). [title], [artist] e [album] vanno nei tag
+ * dell'MP3 (NULL o "" per nessuno). Gira in un thread suo, fino alla fine del
+ * brano (al più un quarto d'ora per quelli che non lo dicono); la
+ * riproduzione si ferma prima, perché UADE suona un brano per volta. 0, o -1
+ * in caso di errore (mp_engine_last_error).
+ */
+MP_API int32_t mp_engine_export(mp_engine* engine, const char* ref, int32_t subsong, const char* out_path,
+                                float megasound, const int32_t* muted, int32_t muted_count, const char* title,
+                                const char* artist, const char* album);
+
+typedef struct mp_export_status {
+    int32_t running;   /* 1 mentre scrive */
+    int32_t failed;    /* 1 se è fallita: mp_engine_export_error dice perché */
+    int32_t cancelled; /* 1 se è stata annullata */
+    int32_t reserved;
+    double seconds;    /* scritti finora */
+    double total;      /* da scrivere, -1 se non si sa */
+} mp_export_status;
+
+MP_API void mp_engine_export_status(mp_engine* engine, mp_export_status* out);
+MP_API const char* mp_engine_export_error(mp_engine* engine);
+/* Si ferma e cancella il file. */
+MP_API void mp_engine_export_cancel(mp_engine* engine);
+/* 1 se la build sa scrivere MP3. */
+MP_API int32_t mp_can_export_mp3(void);
+
 MP_API void mp_engine_status(mp_engine* engine, mp_status* out);
 
 /*

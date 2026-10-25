@@ -15,6 +15,7 @@ namespace mp {
 struct WavWriter::Impl {
     ma_encoder encoder{};
     std::vector<int16_t> buffer;
+    bool finished = false;
 };
 
 WavWriter::WavWriter(const std::filesystem::path& path, int sampleRate)
@@ -34,7 +35,15 @@ WavWriter::WavWriter(const std::filesystem::path& path, int sampleRate)
 
 WavWriter::~WavWriter()
 {
+    finish();
+}
+
+void WavWriter::finish()
+{
+    if (impl_->finished)
+        return;
     ma_encoder_uninit(&impl_->encoder);
+    impl_->finished = true;
 }
 
 void WavWriter::write(const float* frames, size_t count)

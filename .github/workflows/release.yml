@@ -58,6 +58,7 @@ jobs:
             mingw-w64-ucrt-x86_64-python
             mingw-w64-ucrt-x86_64-libopenmpt
             mingw-w64-ucrt-x86_64-libarchive
+            mingw-w64-ucrt-x86_64-lame
 
       - name: Core
         shell: msys2 {0}
@@ -128,7 +129,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Dipendenze
-        run: brew install ninja pkg-config libopenmpt libarchive
+        run: brew install ninja pkg-config libopenmpt libarchive lame
 
       - name: Core
         run: |

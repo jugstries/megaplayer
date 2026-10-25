@@ -2,12 +2,15 @@
 
 #include "Json.h"
 #include "core/DecoderRegistry.h"
+#include "core/Exporter.h"
 #include "core/Player.h"
 #include "core/SourceFile.h"
 #include "core/TrackList.h"
 
 #include <cstdio>
 #include <exception>
+#include <filesystem>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -23,8 +26,11 @@ struct mp_engine {
     mp::DecoderRegistry registry;
     mp::TrackCollector collector{registry};
     mp::Player player;
+    // Dopo il player: chiude il suo decoder prima del collector anche lui.
+    std::unique_ptr<mp::Exporter> exporter;
 
     std::string error;
+    std::string exportError;
     std::string backendsJson;
     std::string collectJson;
     std::string infoJson;
@@ -140,6 +146,9 @@ const char* mp_engine_collect(mp_engine* engine, const char* path)
 int32_t mp_engine_play(mp_engine* engine, const char* ref)
 {
     try {
+        // UADE suona un brano per volta: un'esportazione in corso si annulla.
+        if (engine->exporter && engine->exporter->status().running)
+            engine->exporter.reset();
         engine->player.stop();
         const mp::SourceFile source = mp::loadSourceFile(engine->collector.resolve(ref));
         engine->player.play(engine->registry.open(source, {engine->player.sampleRate()}));
@@ -193,6 +202,67 @@ void mp_engine_set_megasound(mp_engine* engine, float amount)
 void mp_engine_set_channel_muted(mp_engine* engine, int32_t channel, int32_t muted)
 {
     engine->player.setChannelMuted(channel, muted != 0);
+}
+
+int32_t mp_engine_export(mp_engine* engine, const char* ref, int32_t subsong, const char* out_path, float megasound,
+                         const int32_t* muted, int32_t muted_count, const char* title, const char* artist,
+                         const char* album)
+{
+    try {
+        engine->exporter.reset();
+        engine->player.stop();
+        const mp::SourceFile source = mp::loadSourceFile(engine->collector.resolve(ref));
+        auto decoder = engine->registry.open(source, {engine->player.sampleRate()});
+        if (subsong > 0 && subsong < decoder->info().subsongCount)
+            decoder->selectSubsong(subsong);
+        const auto channels = static_cast<int32_t>(decoder->channels().size());
+        for (int32_t i = 0; i < muted_count; ++i) {
+            if (muted[i] >= 0 && muted[i] < channels)
+                decoder->setChannelMuted(muted[i], true);
+        }
+        mp::ExportOptions options;
+        const std::string output = out_path;
+        options.output = std::filesystem::path(std::u8string(output.begin(), output.end()));
+        options.sampleRate = engine->player.sampleRate();
+        options.megaSound = megasound;
+        options.tags = {title ? title : "", artist ? artist : "", album ? album : ""};
+        engine->exporter = std::make_unique<mp::Exporter>(std::move(decoder), std::move(options));
+        return 0;
+    } catch (const std::exception& e) {
+        fail(engine, e);
+        return -1;
+    }
+}
+
+void mp_engine_export_status(mp_engine* engine, mp_export_status* out)
+{
+    *out = {};
+    out->total = -1;
+    if (!engine->exporter)
+        return;
+    const mp::Exporter::Status status = engine->exporter->status();
+    out->running = status.running ? 1 : 0;
+    out->failed = status.failed ? 1 : 0;
+    out->cancelled = status.cancelled ? 1 : 0;
+    out->seconds = status.seconds;
+    out->total = status.total.value_or(-1);
+    engine->exportError = status.error;
+}
+
+const char* mp_engine_export_error(mp_engine* engine)
+{
+    return engine->exportError.c_str();
+}
+
+void mp_engine_export_cancel(mp_engine* engine)
+{
+    if (engine->exporter)
+        engine->exporter->cancel();
+}
+
+int32_t mp_can_export_mp3(void)
+{
+    return mp::canWriteMp3() ? 1 : 0;
 }
 
 void mp_engine_status(mp_engine* engine, mp_status* out)

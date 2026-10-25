@@ -74,14 +74,14 @@ Con `-b` si sceglie a mano.
 [![build](https://github.com/jugstries/megaplayer/actions/workflows/build.yml/badge.svg)](https://github.com/jugstries/megaplayer/actions/workflows/build.yml)
 
 Serve un compilatore C++20 (Clang o GCC; su Windows MinGW-w64), CMake ≥ 3.21,
-Ninja, pkg-config, git e Python 3 per i test. libopenmpt e libarchive arrivano
-dal sistema:
+Ninja, pkg-config, git e Python 3 per i test. libopenmpt, libarchive e LAME
+(per esportare in MP3) arrivano dal sistema:
 
 | Sistema | Dipendenze |
 |---|---|
-| macOS | `brew install cmake ninja libopenmpt libarchive` |
-| Debian/Ubuntu | `apt install cmake ninja-build pkg-config libopenmpt-dev libarchive-dev` |
-| Windows (MSYS2, ambiente UCRT64) | `pacman -S git mingw-w64-ucrt-x86_64-{gcc,cmake,ninja,pkgconf,python,libopenmpt,libarchive}` |
+| macOS | `brew install cmake ninja libopenmpt libarchive lame` |
+| Debian/Ubuntu | `apt install cmake ninja-build pkg-config libopenmpt-dev libarchive-dev libmp3lame-dev` |
+| Windows (MSYS2, ambiente UCRT64) | `pacman -S git mingw-w64-ucrt-x86_64-{gcc,cmake,ninja,pkgconf,python,libopenmpt,libarchive,lame}` |
 
 Poi, uguale ovunque (su Windows dalla shell di MSYS2):
 
@@ -177,6 +177,7 @@ build/megaplayer render -s 2 -o out.wav Stormlord.lha/Stormlord/jt.ingame   # es
 build/megaplayer play -m 60 Stormlord.lha      # con MegaSound al 60%
 build/megaplayer play --roms ~/Roms/Roland --roland SC-88Pro brano.mid   # MIDI su un Sound Canvas
 build/megaplayer render --from 600 -t 30 -o pezzo.wav brano.mid    # 30 secondi dal minuto 10
+build/megaplayer render -m 60 -M 2 -o brano.mp3 mod.enigma   # MP3 con MegaSound, senza il canale 2
 build/megaplayer render -M 1,3 -o out.wav mod.enigma   # senza i canali 1 e 3
 build/megaplayer backends
 ```
@@ -270,6 +271,27 @@ d'arrivo, i SysEx dopo l'ultimo reset (dei DT1 Roland l'ultimo per
 indirizzo), poi per ogni canale banco, programma, controller, parametri RPN e
 NRPN e pitch bend. Ai moduli emulati arriva al ritmo del cavo MIDI, come a
 quelli veri, che altrimenti ne perderebbero pezzi.
+
+## Esportazione
+
+Il brano che suona si esporta in WAV (PCM a 16 bit) o in MP3 com'è in quel
+momento: il sottobrano, i canali zittiti o in solo, la MegaSound. Da riga di
+comando lo fa `render` con `-o brano.wav` o `-o brano.mp3`, `-m`, `-M`,
+`--from` e `-t`; nell'app il pulsante con la freccia nel riquadro dei
+sottobrani (moderna) o il menu «Esporta…» (retrò), che chiede il formato,
+se tenere MegaSound e canali, e dove salvare. Il core fa il render a parte,
+più veloce del tempo reale, in un thread suo
+([src/core/Exporter.cpp](src/core/Exporter.cpp)); la riproduzione si ferma,
+perché UADE suona un brano per volta, e alla fine riprende dallo stesso
+punto con gli stessi canali. Senza effetti il WAV è identico al bit a quello
+che il decoder produce. Un brano che non dice quanto dura si ferma dopo un
+quarto d'ora.
+
+L'MP3 lo scrive LAME ([src/core/Mp3Writer.cpp](src/core/Mp3Writer.cpp)):
+VBR alla qualità più alta (V0, intorno ai 245 kbit/s), tag ID3v2 in UTF-16
+con titolo (o il nome del file), autore e album (l'archivio e la cartella
+del brano), e il tag LAME con la durata esatta, così si sente senza silenzi
+in più e i lettori mostrano la durata giusta.
 
 ## Libreria
 
@@ -577,7 +599,7 @@ ancient e libarchive BSD-2, miniaudio e stb_vorbis public domain / MIT-0,
 game-music-emu LGPL-2.1 (con l'emulatore Nuked del YM2612, anche lui LGPL),
 libsidplayfp e libresidfp GPL-2.0, AdPlug e libbinio LGPL-2.1; gearmulator
 (88emu) GPL-3.0, con parti derivate da Nuked-SC55 e Nuked-MT32 sotto GPL-2.0
-o successiva; FluidSynth LGPL-2.1 o successiva; il SoundFont GeneralUser GS
+o successiva; FluidSynth LGPL-2.1 o successiva; LAME LGPL-2.0 o successiva; il SoundFont GeneralUser GS
 (S. Christian Collins) ha la sua licenza, che ne permette l'uso nei
 programmi, e viaggia accanto a lui nelle app; libADLMIDI ha
 parti LGPL, MIT e BSD, ma nel complesso è GPL-3.0 o successiva, e i suoi

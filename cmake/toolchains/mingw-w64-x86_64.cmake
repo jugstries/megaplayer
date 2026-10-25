@@ -3,7 +3,7 @@
 #
 #   cmake -S . -B build-win -G Ninja \
 #     -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/mingw-w64-x86_64.cmake \
-#     -DMP_UADE_HOST_TOOLS=$PWD/build -DMP_WITH_OPENMPT=OFF -DMP_WITH_ARCHIVES=OFF
+#     -DMP_UADE_HOST_TOOLS=$PWD/build -DMP_WITH_OPENMPT=OFF -DMP_WITH_ARCHIVES=OFF -DMP_WITH_MP3=OFF
 #
 # MP_UADE_HOST_TOOLS indica una build nativa con uade_build68k e uade_gencpu.
 

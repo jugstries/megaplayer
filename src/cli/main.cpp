@@ -2,10 +2,10 @@
 
 #include "core/AudioOutput.h"
 #include "core/DecoderRegistry.h"
+#include "core/Exporter.h"
 #include "core/Platform.h"
 #include "core/SourceFile.h"
 #include "core/TrackList.h"
-#include "core/WavWriter.h"
 #include "dsp/MegaSound.h"
 #ifdef MP_WITH_LIBRARY
 #include "library/Library.h"
@@ -41,7 +41,7 @@ const char* const kUsage = R"(megaplayer - prototipo da riga di comando
 Uso:
   megaplayer play   [opzioni] FILE...           riproduce i file
   megaplayer info   [opzioni] FILE...           formato, backend e metadati
-  megaplayer render [opzioni] -o OUT.wav FILE   esporta in WAV
+  megaplayer render [opzioni] -o OUT.wav FILE   esporta in WAV (o MP3: -o OUT.mp3)
   megaplayer backends                           backend disponibili
   megaplayer library scan [CARTELLA]            indicizza la cartella della libreria
   megaplayer library search [TESTO...]          cerca nella libreria
@@ -54,7 +54,7 @@ Opzioni:
   -t, --seconds N      durata massima in secondi
   --from N             parte da N secondi, con un salto (play e render)
   -r, --rate HZ        frequenza di campionamento (default 48000)
-  -o, --output FILE    file WAV di uscita (render)
+  -o, --output FILE    file di uscita, .wav o .mp3 (render)
   -m, --megasound N    manopola MegaSound da 0 a 100 (play e render)
   -M, --mute LISTA     zittisce questi canali, es. 1,3 o 2-4 (da 1)
   --roms CARTELLA      dove cercare le ROM dei moduli Roland per i MIDI
@@ -396,29 +396,16 @@ int runRender(const Options& options, const DecoderRegistry& registry)
         std::cout << "\n";
     }
 
-    // Qui non serve un ritardo costante: spenta, la catena si salta e il WAV
-    // resta identico al bit.
-    MegaSound megaSound(options.sampleRate);
-    megaSound.setAmount(options.megaSound / 100.0f);
-    megaSound.reset();
-    WavWriter wav(options.output, options.sampleRate);
-    std::vector<float> chunk(kChunkFrames * kChannels);
-    const size_t maxFrames = options.seconds
-        ? static_cast<size_t>(std::llround(*options.seconds * options.sampleRate))
-        : std::numeric_limits<size_t>::max();
+    ExportOptions exportOptions;
+    exportOptions.output = options.output;
+    exportOptions.sampleRate = options.sampleRate;
+    exportOptions.megaSound = options.megaSound / 100.0f;
+    exportOptions.maxSeconds = options.seconds;
+    exportOptions.tags = {decoder->info().title, decoder->info().author, {}};
+    double written = 0;
+    exportTrack(*decoder, exportOptions, [&](double seconds) { written = seconds; }, cli::interrupted);
 
-    size_t total = 0;
-    while (total < maxFrames && !cli::interrupted()) {
-        const size_t got = decoder->render(chunk.data(), std::min(kChunkFrames, maxFrames - total));
-        if (got == 0)
-            break;
-        if (megaSound.engaged())
-            megaSound.process(chunk.data(), got);
-        wav.write(chunk.data(), got);
-        total += got;
-    }
-
-    std::cout << "Scritti " << formatTime(static_cast<double>(total) / options.sampleRate) << " in "
+    std::cout << "Scritti " << formatTime(written) << " in "
               << options.output << "\n";
     return 0;
 }

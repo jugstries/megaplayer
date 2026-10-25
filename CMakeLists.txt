@@ -27,6 +27,7 @@ option(MP_WITH_SID "Backend libsidplayfp (Commodore 64)" ON)
 option(MP_WITH_ADLMIDI "Backend libADLMIDI (MIDI su chip FM OPL3)" ON)
 option(MP_WITH_88EMU "Backend 88emu (MIDI su Roland Sound Canvas e MT-32 emulati, con le ROM dell'utente)" ON)
 option(MP_WITH_FLUIDSYNTH "Backend FluidSynth (MIDI su un SoundFont, per chi non ha le ROM)" ON)
+option(MP_WITH_MP3 "Esportazione in MP3 (LAME)" ON)
 option(MP_WITH_ADPLUG "Backend AdPlug (formati AdLib dei giochi DOS)" ON)
 option(MP_WITH_ARCHIVES "Apertura diretta degli archivi LHA/ZIP/7z/... (libarchive)" ON)
 option(MP_WITH_LIBRARY "Libreria musicale: indice SQLite di una cartella, con ricerca (non per WebAssembly)" ON)
@@ -69,8 +70,10 @@ endif()
 
 add_library(megaplayer_core STATIC
     src/core/Archive.cpp
+    src/core/AudioFileWriter.cpp
     src/core/AudioOutput.cpp
     src/core/DecoderRegistry.cpp
+    src/core/Exporter.cpp
     src/core/Platform.cpp
     src/core/Player.cpp
     src/core/SourceFile.cpp
@@ -107,6 +110,34 @@ if(MP_WITH_ARCHIVES)
         target_link_libraries(megaplayer_core PUBLIC PkgConfig::LIBARCHIVE)
     else()
         message(WARNING "libarchive non trovata: gli archivi vanno estratti a mano")
+    endif()
+endif()
+
+# LAME per esportare in MP3, dal sistema come libopenmpt: con pkg-config
+# dove c'è il suo file (Homebrew, MSYS2), altrimenti cercato a mano (Debian e
+# Ubuntu non lo danno).
+set(MP_MP3_ENABLED OFF)
+if(MP_WITH_MP3 AND NOT EMSCRIPTEN)
+    if(PKG_CONFIG_FOUND)
+        pkg_check_modules(LAME IMPORTED_TARGET lame)
+    endif()
+    if(LAME_FOUND)
+        target_link_libraries(megaplayer_core PUBLIC PkgConfig::LAME)
+        set(MP_MP3_ENABLED ON)
+    else()
+        find_path(MP_LAME_INCLUDE_DIR lame.h PATH_SUFFIXES lame)
+        find_library(MP_LAME_LIBRARY mp3lame)
+        if(MP_LAME_INCLUDE_DIR AND MP_LAME_LIBRARY)
+            target_include_directories(megaplayer_core PRIVATE "${MP_LAME_INCLUDE_DIR}")
+            target_link_libraries(megaplayer_core PUBLIC "${MP_LAME_LIBRARY}")
+            set(MP_MP3_ENABLED ON)
+        endif()
+    endif()
+    if(MP_MP3_ENABLED)
+        target_sources(megaplayer_core PRIVATE src/core/Mp3Writer.cpp)
+        target_compile_definitions(megaplayer_core PRIVATE MP_WITH_MP3)
+    else()
+        message(WARNING "LAME non trovata: niente esportazione in MP3")
     endif()
 endif()
 
@@ -393,7 +424,7 @@ else()
     # --- Modulo WebAssembly con l'API C, per il browser (web/) ---
 
     set(MP_WEB_EXPORTS
-        _mp_set_uade_data_dir _mp_add_roland_rom_dir _mp_set_roland_device _mp_engine_roland_devices _mp_set_soundfont _mp_engine_soundfont _mp_engine_create _mp_engine_destroy _mp_engine_last_error
+        _mp_set_uade_data_dir _mp_add_roland_rom_dir _mp_set_roland_device _mp_engine_roland_devices _mp_set_soundfont _mp_engine_soundfont _mp_engine_export _mp_engine_export_status _mp_engine_export_error _mp_engine_export_cancel _mp_can_export_mp3 _mp_engine_create _mp_engine_destroy _mp_engine_last_error
         _mp_engine_backends _mp_engine_collect _mp_engine_play _mp_engine_stop _mp_engine_set_paused
         _mp_engine_seek _mp_engine_select_subsong _mp_engine_set_volume _mp_engine_set_megasound
         _mp_engine_set_channel_muted _mp_engine_status _mp_engine_track_info _mp_engine_scope _malloc _free)
@@ -573,6 +604,22 @@ if(Python3_FOUND)
 endif()
 
 # Il mute dei canali, con un brano di prova per ogni backend che lo permette.
+# L'esportazione su un tono dei dati di prova (e sul modulo generato, per il
+# mute, se c'è libopenmpt).
+add_executable(export_test tests/ExportTest.cpp)
+target_link_libraries(export_test PRIVATE megaplayer_core)
+if(EMSCRIPTEN)
+    target_link_options(export_test PRIVATE ${MP_NODE_LINK_OPTIONS})
+endif()
+set(MP_EXPORT_TEST_ARGS "${CMAKE_BINARY_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/tono.flac")
+if(OPENMPT_FOUND AND Python3_FOUND)
+    list(APPEND MP_EXPORT_TEST_ARGS "${CMAKE_BINARY_DIR}/test.mod")
+endif()
+add_test(NAME export COMMAND export_test ${MP_EXPORT_TEST_ARGS})
+if(OPENMPT_FOUND AND Python3_FOUND)
+    set_tests_properties(export PROPERTIES FIXTURES_REQUIRED test_mod)
+endif()
+
 add_executable(roland_devices_test tests/RolandDevicesTest.cpp)
 target_link_libraries(roland_devices_test PRIVATE megaplayer_core)
 if(EMSCRIPTEN)

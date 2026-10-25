@@ -90,7 +90,8 @@ const char* mp_engine_collect(mp_engine* engine, const char* path)
         for (const mp::Track& track : engine->collector.collect(path)) {
             if (json.size() > 1)
                 json += ',';
-            json += "{\"path\":" + mp::json::string(track.path.string()) + ",\"name\":" + mp::json::string(track.name)
+            json += "{\"path\":" + mp::json::string(track.path.string()) + ",\"ref\":" + mp::json::string(track.ref)
+                + ",\"name\":" + mp::json::string(track.name)
                 + ",\"archive\":" + (track.fromArchive ? "true" : "false") + "}";
         }
         engine->collectJson = json + "]";
@@ -100,11 +101,11 @@ const char* mp_engine_collect(mp_engine* engine, const char* path)
     }
 }
 
-int32_t mp_engine_play(mp_engine* engine, const char* path)
+int32_t mp_engine_play(mp_engine* engine, const char* ref)
 {
     try {
         engine->player.stop();
-        const mp::SourceFile source = mp::loadSourceFile(path);
+        const mp::SourceFile source = mp::loadSourceFile(engine->collector.resolve(ref));
         engine->player.play(engine->registry.open(source, {engine->player.sampleRate()}));
         engine->currentFile = source.fileName();
         engine->currentPackers = source.packers;

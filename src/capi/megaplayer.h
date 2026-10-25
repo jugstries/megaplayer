@@ -58,13 +58,18 @@ MP_API const char* mp_engine_backends(mp_engine* engine);
 
 /*
  * Brani contenuti in un file, un archivio o "ARCHIVIO/percorso/interno":
- * [{"path": "...", "name": "...", "archive": true}, ...]. I file estratti
- * restano su disco finché l'engine vive. NULL in caso di errore.
+ * [{"path": "...", "ref": "...", "name": "...", "archive": true}, ...].
+ * "path" è il file estratto, che resta su disco finché l'engine vive; "ref"
+ * ritrova il brano anche dopo (il percorso, o "ARCHIVIO/percorso/interno").
+ * NULL in caso di errore.
  */
 MP_API const char* mp_engine_collect(mp_engine* engine, const char* path);
 
-/* Apre e avvia un brano (un "path" di mp_engine_collect). 0 se riesce. */
-MP_API int32_t mp_engine_play(mp_engine* engine, const char* path);
+/*
+ * Apre e avvia un brano: un percorso o un "ref". Per un brano dentro un
+ * archivio non ancora estratto, estrae la sua cartella. 0 se riesce.
+ */
+MP_API int32_t mp_engine_play(mp_engine* engine, const char* ref);
 MP_API void mp_engine_stop(mp_engine* engine);
 MP_API void mp_engine_set_paused(mp_engine* engine, int32_t paused);
 MP_API void mp_engine_seek(mp_engine* engine, double seconds);
@@ -153,6 +158,35 @@ MP_API const char* mp_library_facets(mp_library* library, const char* text, cons
                                      const char* formats);
 /* Un brano, con "durations": la durata di ogni sottobrano (null se non si sa). "" se non c'è. */
 MP_API const char* mp_library_track(mp_library* library, const char* ref);
+
+/*
+ * Playlist. La coda è una playlist nascosta (mp_library_queue). Le voci sono
+ * brani interi o un loro sottobrano; lo stesso brano entra più volte solo
+ * con sottobrani diversi. Le funzioni che restituiscono un intero danno -1
+ * in caso di errore (mp_library_last_error).
+ */
+/* [{"id": 3, "name": "Preferiti", "count": 12}, ...], senza la coda. */
+MP_API const char* mp_library_playlists(mp_library* library);
+MP_API int64_t mp_library_playlist_create(mp_library* library, const char* name);
+MP_API int32_t mp_library_playlist_rename(mp_library* library, int64_t id, const char* name);
+MP_API int32_t mp_library_playlist_delete(mp_library* library, int64_t id);
+/* L'id della coda. */
+MP_API int64_t mp_library_queue(mp_library* library);
+/*
+ * [{"ref": "...", "subsong": 2 | null, "name": "...", "track": {...} | null}]:
+ * subsong null è il file intero; "track" ha i dati della libreria (come in
+ * mp_library_search) se il brano c'è. NULL in caso di errore.
+ */
+MP_API const char* mp_library_playlist_entries(mp_library* library, int64_t id);
+/*
+ * Sostituisce le voci: una per riga, "SOTTOBRANO\tREF\tNOME", con il
+ * sottobrano vuoto per il file intero. I doppioni si scartano.
+ */
+MP_API int32_t mp_library_playlist_set_entries(mp_library* library, int64_t id, const char* entries);
+
+/* Impostazioni dell'app (skin, volume, ...): "" se mai scritte. */
+MP_API const char* mp_library_setting(mp_library* library, const char* key);
+MP_API int32_t mp_library_set_setting(mp_library* library, const char* key, const char* value);
 
 #ifdef __cplusplus
 }

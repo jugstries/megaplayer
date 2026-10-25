@@ -1,11 +1,14 @@
 // Verifica la libreria con i toni di prova di tests/data, copiati in una
 // cartella con sottocartelle, un file nascosto, un file di testo e (se c'è
 // libarchive) uno zip: prima scansione, scansione senza novità, file cambiati
-// e spariti, ricerca, filtri, conteggi, cambio di radice, interruzione, e
-// l'API C con la scansione in background.
+// e spariti, ricerca, filtri, conteggi, cambio di radice, interruzione,
+// playlist, coda e impostazioni, l'API C con la scansione in background, e
+// come TrackCollector riapre per ref i brani negli archivi.
 // Uso: library_test DIR DATI [CMAKE]   (CMAKE serve a creare lo zip)
 
 #include "capi/megaplayer.h"
+#include "core/DecoderRegistry.h"
+#include "core/TrackList.h"
 #include "library/Library.h"
 
 #include <chrono>
@@ -149,11 +152,87 @@ void testLibrary(const fs::path& root, const fs::path& database, bool withArchiv
     result = library.scan(progress, stop);
     check(result.cancelled && result.filesRemoved == 0 && find(library, "tono.mp3"), "scansione interrotta");
 
-    // Un'altra radice svuota l'indice.
+    // Playlist, coda e impostazioni.
+    const std::string flacRef = (root / "Archivio" / "Toni" / "tono.flac").string();
+    check(library.playlists().empty(), "playlist in un database nuovo");
+    const int64_t favourites = library.createPlaylist("Preferiti");
+    const int64_t later = library.createPlaylist("Da sentire");
+    library.renamePlaylist(later, "Da ascoltare");
+    const int64_t queue = library.queue();
+    check(queue == library.queue() && queue != favourites && queue != later, "id della coda");
+    std::vector<mp::PlaylistInfo> playlists = library.playlists();
+    check(playlists.size() == 2 && playlists[0].name == "Preferiti" && playlists[1].name == "Da ascoltare",
+          "elenco delle playlist, senza la coda");
+    library.setPlaylistEntries(favourites, {
+                                               {flacRef, std::nullopt, "tono.flac", std::nullopt},
+                                               {flacRef, 0, "tono.flac", std::nullopt},
+                                               {flacRef, std::nullopt, "doppione", std::nullopt},
+                                               {"/fuori/brano.mod", 2, "brano.mod", std::nullopt},
+                                           });
+    std::vector<mp::PlaylistEntry> entries = library.playlistEntries(favourites);
+    check(entries.size() == 3, "voci della playlist, doppione scartato: " + std::to_string(entries.size()));
+    if (entries.size() == 3) {
+        check(entries[0].ref == flacRef && !entries[0].subsong && entries[0].track
+                  && entries[0].track->format == "FLAC",
+              "prima voce: file intero, con i dati della libreria");
+        check(entries[1].subsong == 0, "seconda voce: lo stesso file, un sottobrano");
+        check(entries[2].subsong == 2 && entries[2].name == "brano.mod" && !entries[2].track,
+              "voce di un brano fuori dalla libreria");
+    }
+    check(library.playlists()[0].count == 3, "conteggio delle voci");
+    library.setPlaylistEntries(queue, {{flacRef, std::nullopt, "tono.flac", std::nullopt}});
+    check(library.playlistEntries(queue).size() == 1 && library.playlists().size() == 2, "coda");
+    library.deletePlaylist(later);
+    check(library.playlists().size() == 1, "playlist cancellata");
+    bool threw = false;
+    try {
+        library.playlistEntries(later);
+    } catch (const std::runtime_error&) {
+        threw = true;
+    }
+    check(threw, "voci di una playlist cancellata");
+    threw = false;
+    try {
+        library.deletePlaylist(queue);
+    } catch (const std::runtime_error&) {
+        threw = true;
+    }
+    check(threw, "la coda non si cancella");
+    check(library.setting("app.skin").empty(), "impostazione mai scritta");
+    library.setSetting("app.skin", "retro");
+    check(library.setting("app.skin") == "retro", "impostazione");
+
+    // Un'altra radice svuota l'indice, ma le playlist restano.
     const fs::path other = root.parent_path() / "altra";
     fs::create_directories(other);
     library.setRoot(other);
     check(library.search({}).total == 0, "indice svuotato cambiando radice");
+    entries = library.playlistEntries(favourites);
+    check(entries.size() == 3 && !entries[0].track, "playlist dopo il cambio di radice");
+}
+
+void testResolve(const fs::path& root, bool withArchive)
+{
+    mp::DecoderRegistry registry;
+    mp::registerBuiltinDecoders(registry);
+    mp::TrackCollector collector(registry);
+    const std::string flac = (root / "Archivio" / "Toni" / "tono.flac").string();
+    check(collector.resolve(flac) == flac, "resolve di un file normale");
+    if (!withArchive)
+        return;
+    const std::string zip = (root / "toni.zip").string();
+    const fs::path extracted = collector.resolve(zip + "/dentro/zippato.wav");
+    check(fs::is_regular_file(extracted) && extracted.filename() == "zippato.wav", "resolve dentro lo zip");
+    check(collector.resolve(zip + "/dentro/zippato.wav") == extracted, "la seconda volta senza riestrarre");
+    bool threw = false;
+    try {
+        collector.resolve(zip + "/dentro/manca.wav");
+    } catch (const std::runtime_error&) {
+        threw = true;
+    }
+    check(threw, "resolve di un file che nello zip non c'è");
+    const std::vector<mp::Track> tracks = collector.collect(zip);
+    check(tracks.size() == 1 && tracks[0].ref == zip + "/dentro/zippato.wav", "ref da collect()");
 }
 
 void testCApi(const fs::path& root, const fs::path& database)
@@ -185,6 +264,24 @@ void testCApi(const fs::path& root, const fs::path& database)
     const std::string track = mp_library_track(library, ref.c_str());
     check(track.find("\"durations\":[1.000]") != std::string::npos, "mp_library_track: " + track);
     check(std::string(mp_library_track(library, "/non/esiste")).empty(), "mp_library_track di un brano assente");
+
+    const int64_t playlist = mp_library_playlist_create(library, "Prova");
+    check(playlist > 0, "mp_library_playlist_create");
+    const std::string lines = "\t" + ref + "\ttono.flac\n1\t" + ref + "\ttono.flac\n";
+    check(mp_library_playlist_set_entries(library, playlist, lines.c_str()) == 0, "mp_library_playlist_set_entries");
+    const std::string entries = mp_library_playlist_entries(library, playlist);
+    check(entries.find("\"subsong\":null") != std::string::npos && entries.find("\"subsong\":1") != std::string::npos
+              && entries.find("\"track\":{") != std::string::npos,
+          "mp_library_playlist_entries: " + entries.substr(0, 160));
+    check(std::string(mp_library_playlists(library)).find("\"name\":\"Prova\",\"count\":2") != std::string::npos,
+          "mp_library_playlists");
+    check(mp_library_playlist_set_entries(library, playlist, "riga senza tabulazioni") == -1,
+          "voci non valide");
+    check(mp_library_playlist_rename(library, playlist + 100, "x") == -1, "rinomina di una playlist che non c'è");
+    check(mp_library_queue(library) > 0, "mp_library_queue");
+    check(mp_library_set_setting(library, "app.volume", "0.5") == 0
+              && std::string(mp_library_setting(library, "app.volume")) == "0.5",
+          "impostazioni dall'API C");
     mp_library_close(library);
 }
 
@@ -229,6 +326,7 @@ int main(int argc, char** argv)
 
     testLibrary(root, base / "db" / "library.db", withArchive);
     testCApi(root, base / "capi.db");
+    testResolve(root, withArchive);
 
     std::printf(failures == 0 ? "ok\n" : "FALLITO\n");
     return failures == 0 ? 0 : 1;

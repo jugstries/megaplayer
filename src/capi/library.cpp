@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <exception>
 #include <mutex>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
@@ -41,6 +42,9 @@ struct mp_library {
     std::string searchJson;
     std::string facetsJson;
     std::string trackJson;
+    std::string playlistsJson;
+    std::string entriesJson;
+    std::string settingText;
 };
 
 namespace {
@@ -85,6 +89,36 @@ std::string trackFields(const mp::LibraryTrack& track)
         + ",\"subsongs\":" + std::to_string(track.subsongCount)
         + ",\"startSubsong\":" + std::to_string(track.startSubsong)
         + ",\"duration\":" + mp::json::number(track.duration);
+}
+
+// "SOTTOBRANO\tREF\tNOME", una voce per riga.
+std::vector<mp::PlaylistEntry> parseEntries(const char* text)
+{
+    std::vector<mp::PlaylistEntry> entries;
+    for (const std::string& line : lines(text)) {
+        const size_t first = line.find('\t');
+        const size_t second = first == std::string::npos ? first : line.find('\t', first + 1);
+        if (second == std::string::npos)
+            throw std::invalid_argument("voce di playlist non valida: " + line);
+        mp::PlaylistEntry entry;
+        if (first > 0)
+            entry.subsong = std::stoi(line.substr(0, first));
+        entry.ref = line.substr(first + 1, second - first - 1);
+        entry.name = line.substr(second + 1);
+        entries.push_back(std::move(entry));
+    }
+    return entries;
+}
+
+template <typename Function>
+auto guarded(mp_library* library, Function&& function, decltype(function()) failure)
+{
+    try {
+        return function();
+    } catch (const std::exception& e) {
+        library->error = e.what();
+        return failure;
+    }
 }
 
 } // namespace
@@ -269,6 +303,101 @@ const char* mp_library_track(mp_library* library, const char* ref)
         library->trackJson.clear();
     }
     return library->trackJson.c_str();
+}
+
+const char* mp_library_playlists(mp_library* library)
+{
+    return guarded(
+        library,
+        [&] {
+            std::string json = "[";
+            for (const mp::PlaylistInfo& playlist : library->library.playlists()) {
+                json += (json.size() > 1 ? ",{" : "{") + std::string("\"id\":") + std::to_string(playlist.id)
+                    + ",\"name\":" + mp::json::string(playlist.name) + ",\"count\":" + std::to_string(playlist.count)
+                    + "}";
+            }
+            library->playlistsJson = json + "]";
+            return library->playlistsJson.c_str();
+        },
+        static_cast<const char*>(nullptr));
+}
+
+int64_t mp_library_playlist_create(mp_library* library, const char* name)
+{
+    return guarded(library, [&] { return library->library.createPlaylist(name ? name : ""); }, int64_t{-1});
+}
+
+int32_t mp_library_playlist_rename(mp_library* library, int64_t id, const char* name)
+{
+    return guarded(
+        library,
+        [&] {
+            library->library.renamePlaylist(id, name ? name : "");
+            return int32_t{0};
+        },
+        int32_t{-1});
+}
+
+int32_t mp_library_playlist_delete(mp_library* library, int64_t id)
+{
+    return guarded(
+        library,
+        [&] {
+            library->library.deletePlaylist(id);
+            return int32_t{0};
+        },
+        int32_t{-1});
+}
+
+int64_t mp_library_queue(mp_library* library)
+{
+    return guarded(library, [&] { return library->library.queue(); }, int64_t{-1});
+}
+
+const char* mp_library_playlist_entries(mp_library* library, int64_t id)
+{
+    return guarded(
+        library,
+        [&] {
+            std::string json = "[";
+            for (const mp::PlaylistEntry& entry : library->library.playlistEntries(id)) {
+                json += (json.size() > 1 ? ",{" : "{") + std::string("\"ref\":") + mp::json::string(entry.ref)
+                    + ",\"subsong\":" + (entry.subsong ? std::to_string(*entry.subsong) : "null")
+                    + ",\"name\":" + mp::json::string(entry.name)
+                    + ",\"track\":" + (entry.track ? "{" + trackFields(*entry.track) + "}" : "null") + "}";
+            }
+            library->entriesJson = json + "]";
+            return library->entriesJson.c_str();
+        },
+        static_cast<const char*>(nullptr));
+}
+
+int32_t mp_library_playlist_set_entries(mp_library* library, int64_t id, const char* entries)
+{
+    return guarded(
+        library,
+        [&] {
+            library->library.setPlaylistEntries(id, parseEntries(entries));
+            return int32_t{0};
+        },
+        int32_t{-1});
+}
+
+const char* mp_library_setting(mp_library* library, const char* key)
+{
+    library->settingText = guarded(library, [&] { return library->library.setting(key ? key : ""); }, std::string());
+    return library->settingText.c_str();
+}
+
+int32_t mp_library_set_setting(mp_library* library, const char* key, const char* value)
+{
+    return guarded(
+        library,
+        [&] {
+            library->library.setSetting(key ? key : "", value ? value : "");
+            return int32_t{0};
+        },
+        int32_t{-1});
 }
 
 } // extern "C"

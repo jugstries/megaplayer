@@ -8,9 +8,9 @@
 #include <sqlite3.h>
 
 #include <algorithm>
-#include <chrono>
 #include <cstdint>
 #include <cstdlib>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <system_error>
@@ -22,7 +22,7 @@ namespace {
 
 namespace fs = std::filesystem;
 
-constexpr int kSchemaVersion = 1;
+constexpr int kSchemaVersion = 2; // 2: playlist e coda
 // Quando cambia come si leggono i file (un campo nuovo, una piattaforma
 // assegnata diversamente) si incrementa: la scansione successiva rilegge
 // tutto. Lo stesso succede quando cambiano i backend compilati, perché file
@@ -31,8 +31,8 @@ constexpr int kInspectorVersion = 1;
 // Oltre questo numero di sottobrani si indicizzano solo i primi: ognuno costa
 // un avvio per conoscerne la durata.
 constexpr int kMaxSubsongs = 256;
-// Ogni quanto la scansione rende visibile alle ricerche quello che ha letto.
-constexpr auto kCommitInterval = std::chrono::seconds(1);
+// I file invariati si segnano come visti a gruppi, in una transazione sola.
+constexpr size_t kSeenBatch = 500;
 
 const char* const kSchema = R"(
 CREATE TABLE IF NOT EXISTS settings (
@@ -71,11 +71,34 @@ CREATE TABLE IF NOT EXISTS subsongs (
     duration REAL,
     PRIMARY KEY (track, number)
 ) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS playlists (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    queue INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS playlist_entries (
+    playlist INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+    position INTEGER NOT NULL,
+    ref TEXT NOT NULL,
+    subsong INTEGER,
+    name TEXT NOT NULL,
+    PRIMARY KEY (playlist, position)
+) WITHOUT ROWID;
 )";
 
-const char* const kTrackColumns =
-    "ref, file, entry, name, folder, backend, format, player, platform, title, author, subsongs, "
-    "start_subsong, duration";
+// Le colonne di un brano, nell'ordine di readTrack(); `table` le qualifica
+// ("t." in una JOIN).
+std::string trackColumns(const std::string& table = {})
+{
+    static constexpr const char* names[] = {
+        "ref", "file", "entry", "name", "folder", "backend", "format", "player", "platform", "title", "author",
+        "subsongs", "start_subsong", "duration",
+    };
+    std::string columns;
+    for (const char* name : names)
+        columns += (columns.empty() ? "" : ", ") + table + name;
+    return columns;
+}
 
 std::runtime_error databaseError(sqlite3* db)
 {
@@ -184,25 +207,52 @@ private:
     sqlite3_stmt* statement_ = nullptr;
 };
 
-LibraryTrack readTrack(const Statement& row)
+// Le colonne di trackColumns(), da `first` in poi.
+LibraryTrack readTrack(const Statement& row, int first = 0)
 {
     LibraryTrack track;
-    track.ref = row.text(0);
-    track.file = row.text(1);
-    track.entry = row.text(2);
-    track.name = row.text(3);
-    track.folder = row.text(4);
-    track.backend = row.text(5);
-    track.format = row.text(6);
-    track.player = row.text(7);
-    track.platform = row.text(8);
-    track.title = row.text(9);
-    track.author = row.text(10);
-    track.subsongCount = static_cast<int>(row.integer(11));
-    track.startSubsong = static_cast<int>(row.integer(12));
-    track.duration = row.real(13);
+    track.ref = row.text(first);
+    track.file = row.text(first + 1);
+    track.entry = row.text(first + 2);
+    track.name = row.text(first + 3);
+    track.folder = row.text(first + 4);
+    track.backend = row.text(first + 5);
+    track.format = row.text(first + 6);
+    track.player = row.text(first + 7);
+    track.platform = row.text(first + 8);
+    track.title = row.text(first + 9);
+    track.author = row.text(first + 10);
+    track.subsongCount = static_cast<int>(row.integer(first + 11));
+    track.startSubsong = static_cast<int>(row.integer(first + 12));
+    track.duration = row.real(first + 13);
     return track;
 }
+
+// Una transazione: COMMIT con commit(), ROLLBACK se il blocco esce prima.
+class Transaction {
+public:
+    explicit Transaction(sqlite3* db)
+        : db_(db)
+    {
+        exec(db_, "BEGIN IMMEDIATE");
+    }
+    ~Transaction()
+    {
+        if (db_)
+            sqlite3_exec(db_, "ROLLBACK", nullptr, nullptr, nullptr);
+    }
+    Transaction(const Transaction&) = delete;
+    Transaction& operator=(const Transaction&) = delete;
+
+    void commit()
+    {
+        exec(db_, "COMMIT");
+        db_ = nullptr;
+    }
+
+private:
+    sqlite3* db_;
+};
 
 std::string readSetting(sqlite3* db, const std::string& key)
 {
@@ -437,6 +487,12 @@ std::string Library::setting(const std::string& key) const
     return readSetting(db_, key);
 }
 
+void Library::setSetting(const std::string& key, const std::string& value)
+{
+    const std::lock_guard lock(mutex_);
+    writeSetting(db_, key, value);
+}
+
 fs::path Library::root() const
 {
     return setting("root");
@@ -451,15 +507,10 @@ void Library::setRoot(const fs::path& root)
     if (normalized == this->root())
         return;
     const std::lock_guard lock(mutex_);
-    exec(db_, "BEGIN IMMEDIATE");
-    try {
-        exec(db_, "DELETE FROM files");
-        writeSetting(db_, "root", normalized.string());
-        exec(db_, "COMMIT");
-    } catch (...) {
-        sqlite3_exec(db_, "ROLLBACK", nullptr, nullptr, nullptr);
-        throw;
-    }
+    Transaction transaction(db_);
+    exec(db_, "DELETE FROM files");
+    writeSetting(db_, "root", normalized.string());
+    transaction.commit();
 }
 
 ScanResult Library::scan(ScanProgress& progress, const std::atomic<bool>& cancel)
@@ -530,58 +581,70 @@ ScanResult Library::scan(ScanProgress& progress, const std::atomic<bool>& cancel
     Statement upsertFile(db.get(), "INSERT INTO files (path, size, mtime, scan) VALUES (?, ?, ?, ?) "
                                    "ON CONFLICT (path) DO UPDATE SET size = excluded.size, "
                                    "mtime = excluded.mtime, scan = excluded.scan");
-    Statement insertTrack(db.get(), std::string("INSERT OR REPLACE INTO tracks (") + kTrackColumns
+    Statement insertTrack(db.get(), "INSERT OR REPLACE INTO tracks (" + trackColumns()
                                         + ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
     Statement insertSubsong(db.get(), "INSERT OR REPLACE INTO subsongs (track, number, duration) VALUES (?, ?, ?)");
 
-    exec(db.get(), "BEGIN IMMEDIATE");
-    try {
-        auto lastCommit = std::chrono::steady_clock::now();
-        for (const FoundFile& file : found) {
-            if (cancel) {
-                result.cancelled = true;
-                break;
-            }
-            const std::string path = file.path.string();
-            const auto entry = known.find(path);
-            if (entry != known.end() && entry->second == std::make_pair(file.size, file.mtime)) {
-                markSeen.bind(1, scanId).bind(2, path).run();
-            } else {
-                const std::vector<Inspected> tracks = inspectFile(file.path, rootPath, registry);
-                deleteTracks.bind(1, path).run();
-                upsertFile.bind(1, path).bind(2, file.size).bind(3, file.mtime).bind(4, scanId).run();
-                for (const Inspected& inspected : tracks) {
-                    const LibraryTrack& t = inspected.track;
-                    insertTrack.bind(1, t.ref).bind(2, t.file).bind(3, t.entry).bind(4, t.name).bind(5, t.folder);
-                    insertTrack.bind(6, t.backend).bind(7, t.format).bind(8, t.player).bind(9, t.platform);
-                    insertTrack.bind(10, t.title).bind(11, t.author).bind(12, int64_t{t.subsongCount});
-                    insertTrack.bind(13, int64_t{t.startSubsong}).bind(14, t.duration).run();
-                    for (size_t i = 0; i < inspected.durations.size(); ++i)
-                        insertSubsong.bind(1, t.ref).bind(2, static_cast<int64_t>(i)).bind(3, inspected.durations[i]).run();
-                }
-                ++result.filesRead;
-                result.tracksFound += static_cast<int>(tracks.size());
-                progress.filesRead = result.filesRead;
-                progress.tracksFound = result.tracksFound;
-            }
-            ++progress.filesChecked;
-            if (std::chrono::steady_clock::now() - lastCommit > kCommitInterval) {
-                exec(db.get(), "COMMIT");
-                exec(db.get(), "BEGIN IMMEDIATE");
-                lastCommit = std::chrono::steady_clock::now();
-            }
-        }
-        if (!result.cancelled && complete) {
-            Statement remove(db.get(), "DELETE FROM files WHERE scan <> ?");
-            remove.bind(1, scanId).run();
-            result.filesRemoved = sqlite3_changes(db.get());
-            writeSetting(db.get(), "inspector", inspector);
-        }
+    // Scritture brevi, e la lettura dei file fuori dalle transazioni: l'app
+    // intanto salva coda e playlist senza aspettare la fine della scansione.
+    {
+        Transaction transaction(db.get());
         writeSetting(db.get(), "scan", std::to_string(scanId));
-        exec(db.get(), "COMMIT");
-    } catch (...) {
-        sqlite3_exec(db.get(), "ROLLBACK", nullptr, nullptr, nullptr);
-        throw;
+        transaction.commit();
+    }
+    std::vector<std::string> seen;
+    auto flushSeen = [&] {
+        if (seen.empty())
+            return;
+        Transaction transaction(db.get());
+        for (const std::string& path : seen)
+            markSeen.bind(1, scanId).bind(2, path).run();
+        transaction.commit();
+        seen.clear();
+    };
+
+    for (const FoundFile& file : found) {
+        if (cancel) {
+            result.cancelled = true;
+            break;
+        }
+        const std::string path = file.path.string();
+        const auto entry = known.find(path);
+        if (entry != known.end() && entry->second == std::make_pair(file.size, file.mtime)) {
+            seen.push_back(path);
+            if (seen.size() >= kSeenBatch)
+                flushSeen();
+        } else {
+            const std::vector<Inspected> tracks = inspectFile(file.path, rootPath, registry);
+            Transaction transaction(db.get());
+            deleteTracks.bind(1, path).run();
+            upsertFile.bind(1, path).bind(2, file.size).bind(3, file.mtime).bind(4, scanId).run();
+            for (const Inspected& inspected : tracks) {
+                const LibraryTrack& t = inspected.track;
+                insertTrack.bind(1, t.ref).bind(2, t.file).bind(3, t.entry).bind(4, t.name).bind(5, t.folder);
+                insertTrack.bind(6, t.backend).bind(7, t.format).bind(8, t.player).bind(9, t.platform);
+                insertTrack.bind(10, t.title).bind(11, t.author).bind(12, int64_t{t.subsongCount});
+                insertTrack.bind(13, int64_t{t.startSubsong}).bind(14, t.duration).run();
+                for (size_t i = 0; i < inspected.durations.size(); ++i)
+                    insertSubsong.bind(1, t.ref).bind(2, static_cast<int64_t>(i)).bind(3, inspected.durations[i]).run();
+            }
+            transaction.commit();
+            ++result.filesRead;
+            result.tracksFound += static_cast<int>(tracks.size());
+            progress.filesRead = result.filesRead;
+            progress.tracksFound = result.tracksFound;
+        }
+        ++progress.filesChecked;
+    }
+    flushSeen();
+
+    if (!result.cancelled && complete) {
+        Transaction transaction(db.get());
+        Statement remove(db.get(), "DELETE FROM files WHERE scan <> ?");
+        remove.bind(1, scanId).run();
+        result.filesRemoved = sqlite3_changes(db.get());
+        writeSetting(db.get(), "inspector", inspector);
+        transaction.commit();
     }
     if (!complete)
         result.cancelled = true;
@@ -603,7 +666,7 @@ LibraryPage Library::search(const LibraryQuery& query) const
         count.step();
         page.total = static_cast<int>(count.integer(0));
     }
-    Statement select(db_, std::string("SELECT ") + kTrackColumns + " FROM tracks" + filter.where
+    Statement select(db_, "SELECT " + trackColumns() + " FROM tracks" + filter.where
                               + " ORDER BY folder COLLATE NOCASE, name COLLATE NOCASE, ref LIMIT ? OFFSET ?");
     filter.bindTo(select);
     const int next = static_cast<int>(filter.parameters.size()) + 1;
@@ -635,7 +698,7 @@ LibraryFacets Library::facets(const LibraryQuery& query) const
 std::optional<LibraryTrack> Library::track(const std::string& ref) const
 {
     const std::lock_guard lock(mutex_);
-    Statement select(db_, std::string("SELECT ") + kTrackColumns + " FROM tracks WHERE ref = ?");
+    Statement select(db_, "SELECT " + trackColumns() + " FROM tracks WHERE ref = ?");
     select.bind(1, ref);
     if (!select.step())
         return std::nullopt;
@@ -655,6 +718,107 @@ std::vector<std::optional<double>> Library::subsongDurations(const std::string& 
         durations[number] = select.real(1);
     }
     return durations;
+}
+
+void Library::requirePlaylist(int64_t id) const
+{
+    Statement select(db_, "SELECT 1 FROM playlists WHERE id = ?");
+    select.bind(1, id);
+    if (!select.step())
+        throw std::runtime_error("playlist inesistente");
+}
+
+std::vector<PlaylistInfo> Library::playlists() const
+{
+    const std::lock_guard lock(mutex_);
+    Statement select(db_, "SELECT p.id, p.name, (SELECT COUNT(*) FROM playlist_entries e WHERE e.playlist = p.id) "
+                          "FROM playlists p WHERE p.queue = 0 ORDER BY p.id");
+    std::vector<PlaylistInfo> playlists;
+    while (select.step())
+        playlists.push_back({select.integer(0), select.text(1), static_cast<int>(select.integer(2))});
+    return playlists;
+}
+
+int64_t Library::createPlaylist(const std::string& name)
+{
+    const std::lock_guard lock(mutex_);
+    Statement insert(db_, "INSERT INTO playlists (name) VALUES (?)");
+    insert.bind(1, name).run();
+    return sqlite3_last_insert_rowid(db_);
+}
+
+void Library::renamePlaylist(int64_t id, const std::string& name)
+{
+    const std::lock_guard lock(mutex_);
+    Statement update(db_, "UPDATE playlists SET name = ? WHERE id = ? AND queue = 0");
+    update.bind(1, name).bind(2, id).run();
+    if (sqlite3_changes(db_) == 0)
+        throw std::runtime_error("playlist inesistente");
+}
+
+void Library::deletePlaylist(int64_t id)
+{
+    const std::lock_guard lock(mutex_);
+    Statement remove(db_, "DELETE FROM playlists WHERE id = ? AND queue = 0");
+    remove.bind(1, id).run();
+    if (sqlite3_changes(db_) == 0)
+        throw std::runtime_error("playlist inesistente");
+}
+
+int64_t Library::queue()
+{
+    const std::lock_guard lock(mutex_);
+    Statement select(db_, "SELECT id FROM playlists WHERE queue = 1");
+    if (select.step())
+        return select.integer(0);
+    Statement insert(db_, "INSERT INTO playlists (name, queue) VALUES ('', 1)");
+    insert.run();
+    return sqlite3_last_insert_rowid(db_);
+}
+
+std::vector<PlaylistEntry> Library::playlistEntries(int64_t id) const
+{
+    const std::lock_guard lock(mutex_);
+    requirePlaylist(id);
+    Statement select(db_, "SELECT e.ref, e.subsong, e.name, " + trackColumns("t.")
+                              + " FROM playlist_entries e LEFT JOIN tracks t ON t.ref = e.ref"
+                                " WHERE e.playlist = ? ORDER BY e.position");
+    select.bind(1, id);
+    std::vector<PlaylistEntry> entries;
+    while (select.step()) {
+        PlaylistEntry entry;
+        entry.ref = select.text(0);
+        if (const std::optional<double> subsong = select.real(1))
+            entry.subsong = static_cast<int>(*subsong);
+        entry.name = select.text(2);
+        if (!select.text(3).empty())
+            entry.track = readTrack(select, 3);
+        entries.push_back(std::move(entry));
+    }
+    return entries;
+}
+
+void Library::setPlaylistEntries(int64_t id, const std::vector<PlaylistEntry>& entries)
+{
+    const std::lock_guard lock(mutex_);
+    requirePlaylist(id);
+    Transaction transaction(db_);
+    Statement remove(db_, "DELETE FROM playlist_entries WHERE playlist = ?");
+    remove.bind(1, id).run();
+    Statement insert(db_, "INSERT INTO playlist_entries (playlist, position, ref, subsong, name) VALUES (?, ?, ?, ?, ?)");
+    std::set<std::pair<std::string, int>> added;
+    int64_t position = 0;
+    for (const PlaylistEntry& entry : entries) {
+        if (!added.emplace(entry.ref, entry.subsong.value_or(-1)).second)
+            continue;
+        insert.bind(1, id).bind(2, position++).bind(3, entry.ref);
+        if (entry.subsong)
+            insert.bind(4, int64_t{*entry.subsong});
+        else
+            insert.bind(4, std::optional<double>{});
+        insert.bind(5, entry.name).run();
+    }
+    transaction.commit();
 }
 
 } // namespace mp

@@ -12,9 +12,12 @@ namespace mp {
 
 // Un brano da suonare: un file indicato dall'utente o estratto da un archivio.
 struct Track {
-    std::filesystem::path path;
-    std::string name; // come mostrarlo
+    std::filesystem::path path; // il file da aprire (per un archivio, quello estratto)
+    std::string name;           // come mostrarlo
     bool fromArchive = false;
+    // Come ritrovarlo dopo, anche quando i file estratti non ci sono più:
+    // il percorso, o "ARCHIVIO/percorso/interno". resolve() lo riapre.
+    std::string ref;
 };
 
 // Trasforma i percorsi indicati dall'utente in brani. Gli archivi vengono
@@ -37,12 +40,35 @@ public:
     // File scartati dall'ultima collect().
     int lastSkipped() const { return lastSkipped_; }
 
+    // Il file da aprire per un ref: lui stesso, o per un brano dentro un
+    // archivio il file estratto. Se l'archivio non è già estratto ne estrae
+    // solo la cartella del brano. Lancia std::runtime_error se il brano non
+    // c'è.
+    std::filesystem::path resolve(const std::string& ref);
+
     // Rimuove i file estratti finora.
-    void clear() { archives_.clear(); }
+    void clear()
+    {
+        collected_.clear();
+        resolved_.clear();
+    }
 
 private:
+    struct Extracted {
+        std::filesystem::path archive; // il file su disco
+        ExtractedArchive files;
+    };
+
+    // Il file estratto per una voce dell'archivio, se c'è già.
+    const ExtractedArchive::Entry* findExtracted(const std::filesystem::path& archive, const std::string& name) const;
+
     const DecoderRegistry& registry_;
-    std::vector<ExtractedArchive> archives_;
+    // Gli archivi di collect(), i cui file estratti chi chiama usa
+    // direttamente: restano finché vive il collector.
+    std::vector<Extracted> collected_;
+    // Le cartelle estratte da resolve(), dalla più vecchia: si tengono le
+    // ultime, le altre si riestraggono se servono.
+    std::vector<Extracted> resolved_;
     int lastSkipped_ = 0;
 };
 

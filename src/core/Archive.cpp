@@ -105,7 +105,7 @@ std::string lastError(archive* a)
 
 } // namespace
 
-std::optional<ExtractedArchive> openArchive(const std::filesystem::path& path)
+std::optional<ExtractedArchive> openArchive(const std::filesystem::path& path, const std::optional<std::string>& folder)
 {
     std::unique_ptr<archive, ArchiveDeleter> reader(archive_read_new());
     archive_read_support_filter_all(reader.get());
@@ -146,6 +146,9 @@ std::optional<ExtractedArchive> openArchive(const std::filesystem::path& path)
         const std::filesystem::path relative = safeRelativePath(name);
         if (relative.empty())
             continue;
+        // libarchive salta da sé i dati degli elementi che non si leggono.
+        if (folder && relative.parent_path().generic_string() != *folder)
+            continue;
 
         // Un file che non si riesce a scrivere, o troppo grande per essere
         // musica, si salta: il resto dell'archivio si suona lo stesso.
@@ -185,7 +188,7 @@ std::optional<ExtractedArchive> openArchive(const std::filesystem::path& path)
 
 #else
 
-std::optional<ExtractedArchive> openArchive(const std::filesystem::path&)
+std::optional<ExtractedArchive> openArchive(const std::filesystem::path&, const std::optional<std::string>&)
 {
     return std::nullopt;
 }

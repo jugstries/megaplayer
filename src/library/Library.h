@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <cstdint>
 #include <filesystem>
 #include <memory>
 #include <mutex>
@@ -64,6 +65,23 @@ struct ScanProgress {
     std::atomic<int> tracksFound{0};    // brani nei file letti
 };
 
+// Una playlist, o la coda (che è una playlist nascosta).
+struct PlaylistInfo {
+    int64_t id = 0;
+    std::string name;
+    int count = 0;
+};
+
+// Una voce di playlist: un brano, intero o un suo sottobrano. Il brano può
+// anche non essere nella libreria (un file aperto da fuori): `name` serve a
+// mostrarlo comunque.
+struct PlaylistEntry {
+    std::string ref;
+    std::optional<int> subsong; // nullopt: il file intero, tutti i sottobrani in fila
+    std::string name;
+    std::optional<LibraryTrack> track; // in lettura: i dati della libreria, se c'è
+};
+
 struct ScanResult {
     int filesFound = 0;
     int filesRead = 0;
@@ -75,6 +93,8 @@ struct ScanResult {
 // L'indice della libreria, in un database SQLite: la cartella radice, i suoi
 // file con data e dimensione, e per ogni brano formato, piattaforma, titolo,
 // autore e sottobrani con le durate. Cerca e filtra senza toccare i file.
+// Nello stesso database stanno le playlist, la coda e le impostazioni
+// dell'app.
 //
 // scan() può girare in un thread mentre gli altri metodi vengono chiamati da
 // un altro: usa una connessione sua, e il database è in modalità WAL.
@@ -114,8 +134,26 @@ public:
     // La durata di ogni sottobrano, nullopt dove non si sa.
     std::vector<std::optional<double>> subsongDurations(const std::string& ref) const;
 
-private:
+    // Le playlist dell'utente, nell'ordine in cui sono state create; la
+    // coda non c'è. Lanciano std::runtime_error per una playlist che non
+    // esiste.
+    std::vector<PlaylistInfo> playlists() const;
+    int64_t createPlaylist(const std::string& name);
+    void renamePlaylist(int64_t id, const std::string& name);
+    void deletePlaylist(int64_t id);
+    // La playlist che fa da coda, creata la prima volta.
+    int64_t queue();
+    std::vector<PlaylistEntry> playlistEntries(int64_t id) const;
+    // Sostituisce le voci. Lo stesso brano entra più volte solo con
+    // sottobrani diversi: i doppioni (stesso ref e sottobrano) si scartano.
+    void setPlaylistEntries(int64_t id, const std::vector<PlaylistEntry>& entries);
+
+    // Impostazioni dell'app (skin, volume, ...), vuote se mai scritte.
     std::string setting(const std::string& key) const;
+    void setSetting(const std::string& key, const std::string& value);
+
+private:
+    void requirePlaylist(int64_t id) const; // con mutex_ già preso
 
     std::filesystem::path database_;
     sqlite3* db_ = nullptr;

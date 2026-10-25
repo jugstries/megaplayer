@@ -35,8 +35,12 @@ private:
 };
 
 // Estrae `path` se è un archivio; std::nullopt se non lo è (o se il supporto
-// agli archivi non è compilato). Lancia std::runtime_error se l'archivio è
-// riconosciuto ma danneggiato.
-std::optional<ExtractedArchive> openArchive(const std::filesystem::path& path);
+// agli archivi non è compilato). Con `folder` estrae solo i file di quella
+// cartella dell'archivio ("" la radice), senza le sottocartelle: per suonare
+// un brano basta la sua cartella, dove stanno anche i file che lo
+// accompagnano. Lancia std::runtime_error se l'archivio è riconosciuto ma
+// danneggiato.
+std::optional<ExtractedArchive> openArchive(const std::filesystem::path& path,
+                                            const std::optional<std::string>& folder = std::nullopt);
 
 } // namespace mp

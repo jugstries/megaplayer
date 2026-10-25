@@ -8,12 +8,15 @@ import '../../core/models.dart';
 import '../../player/library_browser.dart';
 import '../../player/megasound.dart';
 import '../../player/player_controller.dart';
+import '../../update/updates.dart';
 import '../knob_control.dart';
 import '../skin_text.dart';
+import '../update_text.dart';
 
 part 'retro_channels.dart';
 part 'retro_library.dart';
 part 'retro_lists.dart';
+part 'retro_update.dart';
 
 // Skin retrò: il Mac a 1 bit degli anni '80, con pochi accenti pastello.
 
@@ -185,6 +188,8 @@ class _MenuBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final now = TimeOfDay.now();
     final backends = controller.backends.map((b) => b.name.toUpperCase()).join(' · ');
+    final updates = controller.updates;
+    _announceUpdate(context, updates);
     return Container(
       height: 46,
       padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -200,6 +205,11 @@ class _MenuBar extends StatelessWidget {
           const SizedBox(width: 10),
           _MenuItem(label: 'Apri…', onTap: controller.openFiles),
           _MenuItem(label: 'Skin moderna', onTap: () => controller.setSkin(Skin.modern)),
+          if (updates != null)
+            _MenuItem(
+              label: updates.offer != null ? 'Aggiorna!' : 'Aggiornamenti…',
+              onTap: () => _showUpdates(context, updates, check: updates.offer == null),
+            ),
           const Spacer(),
           Text('$backends · 48 KHZ', style: _silk(12)),
           const SizedBox(width: 14),
@@ -1280,6 +1290,7 @@ class _HelloWindow extends StatelessWidget {
   Widget build(BuildContext context) {
     final message = notice ??
         controller.error ??
+        _updateHint(controller.updates) ??
         (controller.tracks.isEmpty
             ? 'Benvenuto in megaplayer! Apri un archivio o un modulo dal menu.'
             : controller.status.isPlaying

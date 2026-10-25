@@ -50,3 +50,19 @@ String baseName(String path) {
   final parts = path.split(pathSeparators).where((part) => part.isNotEmpty);
   return parts.isEmpty ? path : parts.last;
 }
+
+// --- Date e dimensioni (anche per tool/download_page.dart) ---
+
+/// I megabyte all'italiana: "24,3 MB".
+String formatMegabytes(int bytes) => '${(bytes / (1024 * 1024)).toStringAsFixed(1).replaceAll('.', ',')} MB';
+
+const _months = [
+  'gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno', //
+  'luglio', 'agosto', 'settembre', 'ottobre', 'novembre', 'dicembre',
+];
+
+/// "25 ottobre 2026" da "2026-10-25"; com'è se non si legge.
+String formatDate(String date) {
+  final parsed = DateTime.tryParse(date);
+  return parsed == null ? date : '${parsed.day} ${_months[parsed.month - 1]} ${parsed.year}';
+}

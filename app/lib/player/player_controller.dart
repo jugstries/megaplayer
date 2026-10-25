@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import '../core/library_store.dart';
 import '../core/models.dart';
 import '../core/player_core.dart';
+import '../update/updates.dart';
 import 'library_browser.dart';
 
 enum Skin { modern, retro }
@@ -17,17 +18,21 @@ enum Skin { modern, retro }
 ///
 /// Con uno [store], coda, playlist, skin, volume e manopola restano da un
 /// avvio all'altro e c'è la libreria; senza, l'app funziona lo stesso e non
-/// ricorda niente.
+/// ricorda niente. Con [updates] l'app si aggiorna da sola.
 class PlayerController extends ChangeNotifier {
-  PlayerController(this.core, {this.store})
+  PlayerController(this.core, {this.store, this.updates})
       : backends = core.backends(),
         library = LibraryBrowser(store) {
     library.addListener(notifyListeners);
+    updates?.addListener(notifyListeners);
   }
 
   final PlayerCore core;
   final LibraryStore? store;
   final List<Backend> backends;
+
+  /// Null nelle build di sviluppo e dove l'app non sa ancora aggiornarsi.
+  final Updates? updates;
 
   /// La cartella della musica, con ricerca e filtri.
   final LibraryBrowser library;
@@ -543,6 +548,7 @@ class PlayerController extends ChangeNotifier {
   @override
   void dispose() {
     _timer?.cancel();
+    updates?.removeListener(notifyListeners);
     library.dispose();
     core.dispose();
     store?.dispose();

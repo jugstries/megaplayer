@@ -1,13 +1,16 @@
-// La libreria, la coda e le playlist della skin moderna, usate come un
-// utente: clic, menu e finestre di dialogo, con il core e il database finti.
+// La libreria, la coda, le playlist e gli aggiornamenti della skin moderna,
+// usati come un utente: clic, menu e finestre di dialogo, con il core, il
+// database e il sito finti.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:megaplayer/app.dart';
 import 'package:megaplayer/player/player_controller.dart';
+import 'package:megaplayer/update/updates.dart';
 
 import 'fake_core.dart';
 import 'fake_library.dart';
+import 'fake_updates.dart';
 import 'fonts.dart';
 
 void main() {
@@ -149,5 +152,61 @@ void main() {
     expect(controller.mutedChannels, isEmpty);
     expect(controller.soloChannels, isEmpty);
     expect(core.calls.where((c) => c.startsWith('unmute')), hasLength(3));
+  });
+
+  /// Fino alla fine delle animazioni delle finestre: «In riproduzione» ne
+  /// ha di continue, e pumpAndSettle non finirebbe.
+  Future<void> settle(WidgetTester tester) async {
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+  }
+
+  Future<void> openNowPlaying(WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1440, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(MegaplayerApp(controller: controller));
+    // La finestra dell'annuncio si apre al frame dopo.
+    await settle(tester);
+  }
+
+  testWidgets('aggiornamento: annunciato all\'avvio, poi installato dal bottone', (tester) async {
+    final updater = FakeUpdater(found: newRelease);
+    var quits = 0;
+    final updates = Updates(updater, quit: () async => quits++, currentVersion: '0.1.0');
+    controller = PlayerController(core, store: store, updates: updates)..restore();
+    await updates.check();
+    await openNowPlaying(tester);
+    expect(find.text('È arrivato megaplayer 0.2.0'), findsOneWidget);
+    expect(find.textContaining('Hai la 0.1.0. La nuova è del 25 ottobre 2026 e pesa 24,3 MB.'), findsOneWidget);
+    expect(find.textContaining('Solo e mute dei canali'), findsOneWidget);
+    await tester.tap(find.text('Più tardi'));
+    await settle(tester);
+    expect(find.text('È arrivato megaplayer 0.2.0'), findsNothing);
+
+    // Il bottone resta in vista finché non si installa.
+    await tester.tap(find.text('Aggiorna a 0.2.0'));
+    await settle(tester);
+    await tester.tap(find.text('Installa e riavvia'));
+    await tester.pump();
+    expect(find.text('Scarico l\'aggiornamento… 42%'), findsOneWidget);
+    expect(find.text('Scarico… 42%'), findsOneWidget);
+    updater.finishDownload();
+    await tester.pump();
+    expect(updater.launched, hasLength(1));
+    expect(quits, 1);
+  });
+
+  testWidgets('aggiornamenti: la versione cerca a mano e dice che è l\'ultima', (tester) async {
+    controller = PlayerController(core, store: store, updates: Updates(FakeUpdater(), quit: () async {}))..restore();
+    await openNowPlaying(tester);
+    expect(find.text('Nessun aggiornamento'), findsNothing);
+    await tester.tap(find.byTooltip('Cerca aggiornamenti'));
+    await settle(tester);
+    expect(find.text('Nessun aggiornamento'), findsOneWidget);
+    await tester.tap(find.text('OK'));
+    await settle(tester);
+    expect(find.text('Nessun aggiornamento'), findsNothing);
+    expect(find.textContaining('Aggiorna a'), findsNothing);
   });
 }

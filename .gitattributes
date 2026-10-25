@@ -2,3 +2,5 @@
 # `git apply` della patch di UADE non tollerano CRLF.
 * text=auto eol=lf
 *.patch -text
+# Lo script di Inno Setup con il fine riga di Windows, per sicurezza.
+*.iss text eol=crlf

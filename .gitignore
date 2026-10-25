@@ -4,3 +4,4 @@
 /third_party/install/
 /.claude/
 .DS_Store
+/dist/

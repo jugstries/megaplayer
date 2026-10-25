@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import 'app.dart';
@@ -7,6 +10,8 @@ import 'core/library_store.dart';
 import 'core/models.dart';
 import 'player/dock_icon.dart';
 import 'player/player_controller.dart';
+import 'update/updater.dart';
+import 'update/updates.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -18,12 +23,23 @@ void main() {
     } on CoreException catch (e) {
       debugPrint('megaplayer: $e');
     }
-    final controller = PlayerController(FfiPlayerCore.open(), store: store)
+    late final PlayerController controller;
+    final updater = Updater.forThisApp();
+    // Prima dell'installer la musica si ferma e il database si chiude.
+    final updates = updater == null
+        ? null
+        : Updates(updater, quit: () async {
+            controller.dispose();
+            exit(0);
+          });
+    controller = PlayerController(FfiPlayerCore.open(), store: store, updates: updates)
       ..restore()
       ..start();
     followSkinInDock(controller);
     runApp(MegaplayerApp(controller: controller));
     controller.openInitialFiles();
+    // Qualche secondo dopo l'avvio, per non rallentarlo.
+    if (updates != null) Timer(const Duration(seconds: 3), updates.start);
   } on Object catch (e) {
     // Libreria del core mancante o dispositivo audio non disponibile.
     runApp(StartupErrorApp(message: e is CoreException ? e.message : '$e'));

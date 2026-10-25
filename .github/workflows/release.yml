@@ -1,0 +1,97 @@
+# Le release dell'app desktop: a ogni tag v* (o a mano) compila l'app per
+# Windows con il core, le DLL da cui dipende e i replayer di UADE, ne fa
+# l'installer e lo lascia come artefatto. scripts/publish-update.sh lo
+# scarica, lo firma e prepara la cartella da caricare sul sito. Gira anche
+# sui branch che toccano l'app Windows o questo file, per provarli prima di
+# una release (sui tag i percorsi non contano).
+name: release
+
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+    paths:
+      - 'app/windows/**'
+      - '.github/workflows/release.yml'
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Versione
+        id: version
+        shell: bash
+        run: |
+          line=$(grep '^version:' app/pubspec.yaml)
+          version=${line#version: }
+          echo "name=${version%+*}" >> "$GITHUB_OUTPUT"
+          echo "build=${version#*+}" >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_REF" == refs/tags/* && "${GITHUB_REF_NAME#v}" != "${version%+*}" ]]; then
+            echo "il tag $GITHUB_REF_NAME non è la versione di app/pubspec.yaml (${version%+*})" >&2
+            exit 1
+          fi
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            git
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-python
+            mingw-w64-ucrt-x86_64-libopenmpt
+            mingw-w64-ucrt-x86_64-libarchive
+
+      - name: Core
+        shell: msys2 {0}
+        run: |
+          scripts/build-deps.sh
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --target megaplayer_capi uade_data
+          # La libreria del core, le DLL di MSYS2 da cui dipende e i replayer.
+          mkdir -p dist/core
+          cp build/libmegaplayer.dll dist/core/
+          ldd build/libmegaplayer.dll | awk '$3 ~ /^\/ucrt64\// { print $3 }' | sort -u | xargs -r cp -t dist/core/
+          cp -r build/uade-data dist/core/
+          ls dist/core
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.7
+          channel: stable
+          cache: true
+
+      - name: App
+        working-directory: app
+        shell: pwsh
+        run: |
+          flutter build windows --release `
+            --dart-define=MEGAPLAYER_VERSION=${{ steps.version.outputs.name }} `
+            --dart-define=MEGAPLAYER_BUILD=${{ steps.version.outputs.build }}
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Copy-Item -Recurse -Force ..\dist\core\* build\windows\x64\runner\Release\
+
+      - name: Installer
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup --no-progress -y }
+          & $iscc `
+            /DAppVersion=${{ steps.version.outputs.name }} `
+            /DAppBuild=${{ steps.version.outputs.build }} `
+            "/DSourceDir=$pwd\app\build\windows\x64\runner\Release" `
+            "/DOutputDir=$pwd\dist" `
+            app\windows\installer\megaplayer.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: megaplayer-windows-setup
+          path: dist/megaplayer-*-windows-setup.exe
+          if-no-files-found: error

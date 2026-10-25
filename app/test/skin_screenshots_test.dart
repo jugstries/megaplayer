@@ -6,9 +6,11 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:megaplayer/app.dart';
 import 'package:megaplayer/player/player_controller.dart';
+import 'package:megaplayer/update/updates.dart';
 
 import 'fake_core.dart';
 import 'fake_library.dart';
+import 'fake_updates.dart';
 import 'fonts.dart';
 
 void main() {
@@ -22,6 +24,7 @@ void main() {
     String name, {
     List<String> taps = const [],
     Size size = const Size(1440, 900),
+    bool dialog = false,
   }) async {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
@@ -34,6 +37,8 @@ void main() {
       await tester.pump();
       await tester.pump();
     }
+    // Finestre di dialogo: fino alla fine dell'animazione.
+    if (dialog) await tester.pump(const Duration(milliseconds: 400));
     await expectLater(find.byType(MegaplayerApp), matchesGoldenFile('../build/screenshots/$name.png'));
   }
 
@@ -59,9 +64,9 @@ void main() {
     return controller;
   }
 
-  PlayerController playingTitle() {
+  PlayerController playingTitle({Updates? updates}) {
     final core = FakeCore();
-    final controller = PlayerController(core)..addPaths([FakeCore.archive]);
+    final controller = PlayerController(core, updates: updates)..addPaths([FakeCore.archive]);
     controller.playIndex(2);
     core.position = 72;
     controller.refresh();
@@ -126,6 +131,21 @@ void main() {
     await shoot(tester, withLibrary(FakeLibraryStore()), 'moderna-stretta', size: const Size(1000, 700));
   });
 
+  testWidgets('skin moderna, aggiornamento annunciato', (tester) async {
+    final updates = Updates(FakeUpdater(found: newRelease), quit: () async {}, currentVersion: '0.1.0');
+    await updates.check();
+    await shoot(tester, playingTitle(updates: updates), 'moderna-aggiornamento', dialog: true);
+  });
+
+  testWidgets('skin moderna, aggiornamento che si scarica', (tester) async {
+    final updates = Updates(FakeUpdater(found: newRelease), quit: () async {}, currentVersion: '0.1.0');
+    await updates.check();
+    updates
+      ..markAnnounced()
+      ..install();
+    await shoot(tester, playingTitle(updates: updates), 'moderna-scaricamento', taps: ['Scarico… 42%'], dialog: true);
+  });
+
   testWidgets('skin retrò', (tester) async {
     await shoot(tester, playingTitle()..setSkin(Skin.retro)..setMegaSound(0.7), 'retro');
   });
@@ -187,5 +207,15 @@ void main() {
     core.position = 12;
     controller.refresh();
     await shoot(tester, controller, 'retro-sottobrani');
+  });
+
+  testWidgets('skin retrò, aggiornamento che si scarica', (tester) async {
+    final updates = Updates(FakeUpdater(found: newRelease), quit: () async {}, currentVersion: '0.1.0');
+    await updates.check();
+    updates
+      ..markAnnounced()
+      ..install();
+    await shoot(tester, playingTitle(updates: updates)..setSkin(Skin.retro), 'retro-aggiornamento',
+        taps: ['Aggiorna!'], dialog: true);
   });
 }

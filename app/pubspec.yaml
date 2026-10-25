@@ -4,9 +4,10 @@ publish_to: 'none'
 version: 0.1.0+1
 
 environment:
-  sdk: ^3.13.7
+  sdk: ^3.13.5
 
 dependencies:
+  cryptography: ^2.9.0
   ffi: ^2.2.0
   flutter:
     sdk: flutter

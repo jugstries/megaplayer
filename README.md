@@ -388,22 +388,67 @@ solo (con quelli in solo si sentono solo loro), «Tutti» li riaccende.
 Test: `flutter test` in `app/`. `test/skin_screenshots_test.dart` disegna le
 skin con un core e un database finti e salva le immagini in
 `app/build/screenshots`; `test/modern_skin_test.dart` e
-`test/retro_skin_test.dart` usano libreria, coda, playlist e canali con clic
-e menu; `test/ffi_core_test.dart` prova i binding con la
+`test/retro_skin_test.dart` usano libreria, coda, playlist, canali e
+aggiornamenti con clic e menu; `test/updater_test.dart` prova firma,
+download e controlli degli aggiornamenti contro un sito finto in locale;
+`test/ffi_core_test.dart` prova i binding con la
 libreria vera se `MEGAPLAYER_CORE` indica `libmegaplayer.dylib` (la parte
 che suona vuole anche `STORMLORD_LHA`, un archivio di prova).
 
 Limiti attuali:
 
-- la sandbox di macOS è disattivata, e la libreria punta a libopenmpt e
+- su macOS la sandbox è disattivata, e la libreria punta a libopenmpt e
   libarchive di Homebrew e ai replayer di UADE in `build/uade-data`: l'app
   gira solo su questa macchina di sviluppo. Per distribuirla vanno messi nel
-  bundle (i replayer con `mp_set_uade_data_dir()`);
+  bundle (i replayer in `Contents/Resources/uade-data`, che l'app già cerca),
+  e solo allora potrà aggiornarsi da sola come quella Windows;
+- l'installer di Windows non è firmato con un certificato: la prima volta
+  SmartScreen avvisa che l'autore è sconosciuto («Ulteriori informazioni»,
+  poi «Esegui comunque»). Gli aggiornamenti li scarica l'app, e non passano
+  da lì;
 - gli oscilloscopi mostrano i canali sinistro e destro dell'uscita: per le
   voci separate (quelle di Paula ora si zittiscono una per una) il core
   dovrebbe darne l'audio a parte;
 - niente trascinamento dei file sulla finestra, né dalla libreria alle
   playlist, e niente import o export M3U.
+
+## Release e aggiornamenti
+
+L'app Windows si aggiorna da sola dal sito: qualche secondo dopo l'avvio
+legge `updates/windows.json` da
+`https://www.claudiotassitano.it/projects/megaplayer/` e, se c'è una build
+più nuova, la annuncia con le novità (finestra della skin moderna, o avviso
+del Mac con la mascotte nella retrò). Si installa solo quando l'utente lo
+chiede: l'app scarica l'installer, ne controlla dimensione, SHA-256 e firma,
+lo lancia con `/SILENT` e si chiude; l'installer la riapre. Il manifesto è
+firmato con Ed25519 ([app/lib/update](app/lib/update)): l'app accetta solo
+quello che è firmato con la chiave privata, che sta nel Portachiavi del Mac
+di chi pubblica (servizio `megaplayer-update-key`) e non va mai in CI né nel
+repo. Dalla versione accanto al nome (skin moderna) o da «Aggiornamenti…»
+(retrò) si cerca a mano. Le build di sviluppo non cercano niente.
+
+Per pubblicare una versione:
+
+1. alzare `version` in [app/pubspec.yaml](app/pubspec.yaml), per esempio
+   `0.2.0+2` (il numero dopo il `+` è la build, e deve crescere);
+2. fare il commit e un tag annotato con le novità, che l'app mostra:
+   `git tag -a v0.2.0 -m "• Prima novità"`, poi il push del tag;
+3. la CI ([.github/workflows/release.yml](.github/workflows/release.yml))
+   compila core e app per Windows e fa l'installer con Inno Setup
+   ([app/windows/installer/megaplayer.iss](app/windows/installer/megaplayer.iss));
+4. `scripts/publish-update.sh v0.2.0` scarica l'installer dalla CI, lo firma
+   e prepara `dist/site`: `index.html` (la pagina per scaricarlo),
+   `updates/windows.json` e l'installer;
+5. caricare `dist/site` in `projects/megaplayer/` sul sito, il manifesto per
+   ultimo.
+
+La chiave si crea una volta con `dart run tool/update_key.dart` in `app/`,
+che stampa la chiave pubblica da scrivere in
+[app/lib/update/updater.dart](app/lib/update/updater.dart). Della privata
+conviene tenere una copia: senza, le copie già installate non accettano più
+aggiornamenti. Per provare l'app contro un altro sito:
+`--dart-define=MEGAPLAYER_UPDATES=http://.../updates/` e
+`--dart-define=MEGAPLAYER_BUILD=1`.
 
 ## Struttura
 
@@ -417,7 +462,9 @@ src/library/    la libreria: indice SQLite di una cartella, con ricerca
 src/uade/       UADE nel processo del player
 src/capi/       API C per le interfacce grafiche
 src/cli/        la riga di comando
-app/            app desktop in Flutter
+app/            app desktop in Flutter (runner macOS e Windows, installer
+                Windows, aggiornamenti in app/lib/update, strumenti di firma
+                in app/tool)
 web/            pagina di prova della build WebAssembly
 tests/          test automatici del core; in tests/data file audio di prova
                 (toni generati, rigenerabili con make_audio_fixtures.sh)
@@ -425,8 +472,8 @@ cmake/          build di UADE, libsidplayfp e AdPlug dai sorgenti, toolchain
                 di cross-compilazione
 patches/        modifiche alle dipendenze
 scripts/        download delle dipendenze, build WebAssembly, server di prova,
-                passo di build dell'app macOS
-.github/        CI per Linux, Windows e WebAssembly
+                passo di build dell'app macOS, pubblicazione delle release
+.github/        CI per Linux, Windows e WebAssembly; build delle release
 ```
 
 Per aggiungere un backend: implementare `Decoder` e `DecoderFactory`

@@ -7,12 +7,15 @@ import '../../core/models.dart';
 import '../../player/library_browser.dart';
 import '../../player/megasound.dart';
 import '../../player/player_controller.dart';
+import '../../update/updates.dart';
 import '../knob_control.dart';
 import '../skin_text.dart';
+import '../update_text.dart';
 
 part 'modern_channels.dart';
 part 'modern_library.dart';
 part 'modern_lists.dart';
+part 'modern_update.dart';
 
 // Skin moderna: scura, minimale, angoli arrotondati, accenti a gradiente.
 
@@ -178,6 +181,8 @@ class _Header extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final updates = controller.updates;
+    _announceUpdate(context, updates);
     return Row(
       children: [
         Container(
@@ -188,7 +193,9 @@ class _Header extends StatelessWidget {
         ),
         const SizedBox(width: 12),
         Text('megaplayer', style: _sora(20, weight: 700, spacing: -0.4)),
+        if (updates != null) ...[const SizedBox(width: 4), _VersionLabel(updates: updates)],
         const Spacer(),
+        if (updates?.offer != null) ...[_UpdateBadge(updates: updates!), const SizedBox(width: 12)],
         _PillButton(
           icon: Icons.folder_open_rounded,
           label: 'Apri file…',

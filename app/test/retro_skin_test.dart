@@ -1,14 +1,16 @@
-// Libreria, coda e playlist della skin retrò, usate come un utente: clic
-// sulle linguette, menu a comparsa e finestre di dialogo, con il core e il
-// database finti.
+// Libreria, coda, playlist e aggiornamenti della skin retrò, usati come un
+// utente: clic sulle linguette, menu a comparsa e finestre di dialogo, con
+// il core, il database e il sito finti.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:megaplayer/app.dart';
 import 'package:megaplayer/player/player_controller.dart';
+import 'package:megaplayer/update/updates.dart';
 
 import 'fake_core.dart';
 import 'fake_library.dart';
+import 'fake_updates.dart';
 import 'fonts.dart';
 
 void main() {
@@ -161,5 +163,46 @@ void main() {
     expect(controller.mutedChannels, isEmpty);
     expect(controller.soloChannels, isEmpty);
     expect(core.calls.where((c) => c.startsWith('unmute')), hasLength(3));
+  });
+
+  testWidgets('aggiornamento: l\'avviso all\'avvio, la mascotte e il menu', (tester) async {
+    final updater = FakeUpdater(found: newRelease);
+    final updates = Updates(updater, quit: () async {}, currentVersion: '0.1.0');
+    controller = PlayerController(core, store: store, updates: updates)
+      ..restore()
+      ..setSkin(Skin.retro);
+    await updates.check();
+    tester.view.physicalSize = const Size(1440, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(MegaplayerApp(controller: controller));
+    await tester.pumpAndSettle();
+    expect(find.text('È arrivato megaplayer 0.2.0'), findsOneWidget);
+    await tester.tap(find.text('Più tardi'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('C\'è megaplayer 0.2.0! Lo installi da «Aggiorna!» nel menu.'), findsOneWidget);
+    await tester.tap(find.text('Aggiorna!'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Installa e riavvia'));
+    await tester.pump();
+    // Lo dicono l'avviso e la mascotte.
+    expect(find.text('Scarico l\'aggiornamento… 42%'), findsNWidgets(2));
+    updater.finishDownload();
+    await tester.pump();
+    expect(updater.launched, hasLength(1));
+  });
+
+  testWidgets('aggiornamenti: dal menu, quando non ce ne sono', (tester) async {
+    controller = PlayerController(core, store: store, updates: Updates(FakeUpdater(), quit: () async {}))
+      ..restore()
+      ..setSkin(Skin.retro);
+    await open(tester, tab: 'CODA');
+    await tester.tap(find.text('Aggiornamenti…'));
+    await tester.pumpAndSettle();
+    expect(find.text('Nessun aggiornamento'), findsOneWidget);
+    await tester.tap(find.text('OK'));
+    await tester.pumpAndSettle();
+    expect(find.text('Aggiorna!'), findsNothing);
   });
 }

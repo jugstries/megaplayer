@@ -94,6 +94,183 @@ class PlaylistInfo {
   final int count;
 }
 
+/// Una ricerca nella libreria: le parole cercate, i filtri e la cartella.
+class LibraryQuery {
+  const LibraryQuery({
+    this.text = '',
+    this.platforms = const {},
+    this.formats = const {},
+    this.folder = '',
+    this.subfolders = true,
+  });
+
+  final String text;
+  final Set<String> platforms; // vuoto: tutte
+  final Set<String> formats; // vuoto: tutti
+
+  /// La cartella rispetto alla radice ("" per tutta la libreria), con le
+  /// sottocartelle se [subfolders].
+  final String folder;
+  final bool subfolders;
+
+  /// C'è qualcosa da cercare, oltre alla cartella.
+  bool get filtered => text.trim().isNotEmpty || platforms.isNotEmpty || formats.isNotEmpty;
+
+  LibraryQuery copyWith({
+    String? text,
+    Set<String>? platforms,
+    Set<String>? formats,
+    String? folder,
+    bool? subfolders,
+  }) =>
+      LibraryQuery(
+        text: text ?? this.text,
+        platforms: platforms ?? this.platforms,
+        formats: formats ?? this.formats,
+        folder: folder ?? this.folder,
+        subfolders: subfolders ?? this.subfolders,
+      );
+}
+
+/// Un brano della libreria (mp_library_search, mp_library_track).
+class LibraryItem {
+  const LibraryItem({
+    required this.ref,
+    required this.file,
+    required this.entry,
+    required this.name,
+    required this.folder,
+    required this.backend,
+    required this.format,
+    required this.player,
+    required this.platform,
+    required this.platformName,
+    required this.title,
+    required this.author,
+    required this.subsongs,
+    required this.startSubsong,
+    required this.duration,
+    this.durations = const [],
+  });
+
+  factory LibraryItem.fromJson(Map<String, dynamic> json) => LibraryItem(
+        ref: json['ref'] as String,
+        file: json['file'] as String,
+        entry: json['entry'] as String,
+        name: json['name'] as String,
+        folder: json['folder'] as String,
+        backend: json['backend'] as String,
+        format: json['format'] as String,
+        player: json['player'] as String,
+        platform: json['platform'] as String,
+        platformName: json['platformName'] as String,
+        title: json['title'] as String,
+        author: json['author'] as String,
+        subsongs: json['subsongs'] as int,
+        startSubsong: json['startSubsong'] as int,
+        duration: (json['duration'] as num?)?.toDouble(),
+        durations: [for (final value in json['durations'] as List? ?? const []) (value as num?)?.toDouble()],
+      );
+
+  final String ref;
+  final String file; // il file su disco, l'archivio se il brano è dentro
+  final String entry; // il percorso nell'archivio, vuoto per un file normale
+  final String name; // il nome del file del brano
+  final String folder; // rispetto alla radice, archivio compreso
+  final String backend;
+  final String format;
+  final String player;
+  final String platform;
+  final String platformName;
+  final String title;
+  final String author;
+
+  /// 0 se non si sa senza suonarlo (UADE).
+  final int subsongs;
+  final int startSubsong;
+  final double? duration; // del sottobrano iniziale
+
+  /// La durata di ogni sottobrano, solo da mp_library_track.
+  final List<double?> durations;
+
+  String get displayTitle => title.isNotEmpty ? title : name;
+
+  /// Il formato da mostrare: quello dichiarato, altrimenti il replayer.
+  String get formatLabel => format.isNotEmpty ? format : player;
+
+  /// La voce di coda o playlist: il file intero, o un suo sottobrano.
+  Track toTrack({int? subsong}) => Track(ref: ref, name: entry.isEmpty ? file : '$file > $entry', subsong: subsong);
+}
+
+class LibraryPage {
+  const LibraryPage({required this.total, required this.items});
+
+  factory LibraryPage.fromJson(Map<String, dynamic> json) => LibraryPage(
+        total: json['total'] as int,
+        items: [for (final item in json['tracks'] as List) LibraryItem.fromJson(item as Map<String, dynamic>)],
+      );
+
+  static const empty = LibraryPage(total: 0, items: []);
+
+  final int total; // tutti i brani della ricerca, non solo questa pagina
+  final List<LibraryItem> items;
+}
+
+/// Un valore di un filtro (piattaforma, formato) o una cartella, con quanti
+/// brani ha.
+class LibraryFacet {
+  const LibraryFacet({required this.id, required this.name, required this.count});
+
+  final String id;
+  final String name;
+  final int count;
+}
+
+class LibraryFacets {
+  const LibraryFacets({required this.platforms, required this.formats});
+
+  factory LibraryFacets.fromJson(Map<String, dynamic> json) => LibraryFacets(
+        platforms: [
+          for (final item in (json['platforms'] as List).cast<Map<String, dynamic>>())
+            LibraryFacet(id: item['id'] as String, name: item['name'] as String, count: item['count'] as int),
+        ],
+        formats: [
+          for (final item in (json['formats'] as List).cast<Map<String, dynamic>>())
+            LibraryFacet(id: item['name'] as String, name: item['name'] as String, count: item['count'] as int),
+        ],
+      );
+
+  static const empty = LibraryFacets(platforms: [], formats: []);
+
+  final List<LibraryFacet> platforms;
+  final List<LibraryFacet> formats;
+}
+
+/// A che punto è la scansione della cartella della libreria.
+class ScanStatus {
+  const ScanStatus({
+    this.running = false,
+    this.walking = false,
+    this.filesFound = 0,
+    this.filesChecked = 0,
+    this.filesRead = 0,
+    this.tracksFound = 0,
+    this.filesRemoved = 0,
+    this.error,
+  });
+
+  static const idle = ScanStatus();
+
+  final bool running;
+  final bool walking; // ancora a contare i file
+  final int filesFound;
+  final int filesChecked;
+  final int filesRead; // nuovi o cambiati
+  final int tracksFound; // nei file letti
+  final int filesRemoved;
+  final String? error; // se l'ultima scansione è fallita
+}
+
 /// Informazioni sul brano corrente, da backend e replayer.
 class TrackDetails {
   const TrackDetails({

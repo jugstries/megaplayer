@@ -8,14 +8,51 @@ import 'library_store.dart';
 import 'models.dart';
 
 typedef _Library = Pointer<Void>;
+typedef _Text = Pointer<Utf8>;
+typedef _SearchNative = _Text Function(_Library, _Text, _Text, _Text, _Text, Int32, Int32, Int32);
+typedef _Search = _Text Function(_Library, _Text, _Text, _Text, _Text, int, int, int);
+typedef _Counts = _Text Function(_Library, _Text, _Text, _Text, _Text);
+
+final class _ScanStatus extends Struct {
+  @Int32()
+  external int running;
+  @Int32()
+  external int walking;
+  @Int32()
+  external int filesFound;
+  @Int32()
+  external int filesChecked;
+  @Int32()
+  external int filesRead;
+  @Int32()
+  external int tracksFound;
+  @Int32()
+  external int filesRemoved;
+  @Int32()
+  external int failed;
+}
 
 /// Binding alle funzioni mp_library_* di libmegaplayer
-/// (src/capi/megaplayer.h): playlist, coda e impostazioni.
+/// (src/capi/megaplayer.h): l'indice della libreria, playlist, coda e
+/// impostazioni.
 class FfiLibraryStore implements LibraryStore {
   FfiLibraryStore._(DynamicLibrary lib, this._library)
       : _close = lib.lookupFunction<Void Function(_Library), void Function(_Library)>('mp_library_close'),
         _lastError = lib.lookupFunction<Pointer<Utf8> Function(_Library), Pointer<Utf8> Function(_Library)>(
             'mp_library_last_error'),
+        _root = lib.lookupFunction<_Text Function(_Library), _Text Function(_Library)>('mp_library_root'),
+        _setRoot = lib.lookupFunction<Int32 Function(_Library, _Text), int Function(_Library, _Text)>(
+            'mp_library_set_root'),
+        _scan = lib.lookupFunction<Int32 Function(_Library), int Function(_Library)>('mp_library_scan'),
+        _cancelScan = lib.lookupFunction<Void Function(_Library), void Function(_Library)>('mp_library_cancel_scan'),
+        _scanStatus = lib.lookupFunction<Void Function(_Library, Pointer<_ScanStatus>),
+            void Function(_Library, Pointer<_ScanStatus>)>('mp_library_scan_status'),
+        _search = lib.lookupFunction<_SearchNative, _Search>('mp_library_search'),
+        _facets = lib.lookupFunction<_Counts, _Counts>('mp_library_facets'),
+        _folders = lib.lookupFunction<_Counts, _Counts>('mp_library_folders'),
+        _track = lib.lookupFunction<_Text Function(_Library, _Text), _Text Function(_Library, _Text)>(
+            'mp_library_track'),
+        _status = calloc<_ScanStatus>(),
         _playlists = lib.lookupFunction<Pointer<Utf8> Function(_Library), Pointer<Utf8> Function(_Library)>(
             'mp_library_playlists'),
         _create = lib.lookupFunction<Int64 Function(_Library, Pointer<Utf8>), int Function(_Library, Pointer<Utf8>)>(
@@ -50,6 +87,16 @@ class FfiLibraryStore implements LibraryStore {
   final _Library _library;
   final void Function(_Library) _close;
   final Pointer<Utf8> Function(_Library) _lastError;
+  final _Text Function(_Library) _root;
+  final int Function(_Library, _Text) _setRoot;
+  final int Function(_Library) _scan;
+  final void Function(_Library) _cancelScan;
+  final void Function(_Library, Pointer<_ScanStatus>) _scanStatus;
+  final _Search _search;
+  final _Counts _facets;
+  final _Counts _folders;
+  final _Text Function(_Library, _Text) _track;
+  final Pointer<_ScanStatus> _status;
   final Pointer<Utf8> Function(_Library) _playlists;
   final int Function(_Library, Pointer<Utf8>) _create;
   final int Function(_Library, int, Pointer<Utf8>) _rename;
@@ -78,6 +125,77 @@ class FfiLibraryStore implements LibraryStore {
   List<dynamic> _json(Pointer<Utf8> text) {
     if (text == nullptr) throw _error();
     return jsonDecode(text.toDartString()) as List;
+  }
+
+  /// I campi di una ricerca come stringhe C, liberate alla fine.
+  T _withQuery<T>(LibraryQuery query, T Function(_Text text, _Text platforms, _Text formats, _Text folder) body) =>
+      _withString(query.text, (text) {
+        return _withString(query.platforms.join('\n'), (platforms) {
+          return _withString(query.formats.join('\n'), (formats) {
+            return _withString(query.folder, (folder) => body(text, platforms, formats, folder));
+          });
+        });
+      });
+
+  @override
+  String root() => _root(_library).toDartString();
+
+  @override
+  void setRoot(String path) => _check(_withString(path, (native) => _setRoot(_library, native)));
+
+  @override
+  void startScan() => _check(_scan(_library));
+
+  @override
+  void cancelScan() => _cancelScan(_library);
+
+  @override
+  ScanStatus scanStatus() {
+    _scanStatus(_library, _status);
+    final status = _status.ref;
+    return ScanStatus(
+      running: status.running != 0,
+      walking: status.walking != 0,
+      filesFound: status.filesFound,
+      filesChecked: status.filesChecked,
+      filesRead: status.filesRead,
+      tracksFound: status.tracksFound,
+      filesRemoved: status.filesRemoved,
+      error: status.failed != 0 ? _lastError(_library).toDartString() : null,
+    );
+  }
+
+  @override
+  LibraryPage search(LibraryQuery query, {int offset = 0, int limit = 200}) {
+    final json = _withQuery(query, (text, platforms, formats, folder) {
+      return _search(_library, text, platforms, formats, folder, query.subfolders ? 1 : 0, offset, limit);
+    });
+    return LibraryPage.fromJson(jsonDecode(json.toDartString()) as Map<String, dynamic>);
+  }
+
+  @override
+  LibraryFacets facets(LibraryQuery query) {
+    final json = _withQuery(query, (text, platforms, formats, folder) {
+      return _facets(_library, text, platforms, formats, folder);
+    });
+    return LibraryFacets.fromJson(jsonDecode(json.toDartString()) as Map<String, dynamic>);
+  }
+
+  @override
+  List<LibraryFacet> folders(LibraryQuery query) {
+    final json = _withQuery(query, (text, platforms, formats, folder) {
+      return _folders(_library, text, platforms, formats, folder);
+    });
+    return [
+      for (final item in (jsonDecode(json.toDartString()) as List).cast<Map<String, dynamic>>())
+        LibraryFacet(id: item['name'] as String, name: item['name'] as String, count: item['count'] as int),
+    ];
+  }
+
+  @override
+  LibraryItem? track(String ref) {
+    final json = _withString(ref, (native) => _track(_library, native)).toDartString();
+    return json.isEmpty ? null : LibraryItem.fromJson(jsonDecode(json) as Map<String, dynamic>);
   }
 
   @override
@@ -125,5 +243,8 @@ class FfiLibraryStore implements LibraryStore {
       _withString(key, (nativeKey) => _withString(value, (nativeValue) => _setSetting(_library, nativeKey, nativeValue))));
 
   @override
-  void dispose() => _close(_library);
+  void dispose() {
+    _close(_library);
+    calloc.free(_status);
+  }
 }

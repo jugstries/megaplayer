@@ -4,9 +4,13 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
 import '../../core/models.dart';
+import '../../player/library_browser.dart';
 import '../../player/megasound.dart';
 import '../../player/player_controller.dart';
 import '../knob_control.dart';
+
+part 'modern_library.dart';
+part 'modern_lists.dart';
 
 // Skin moderna: scura, minimale, angoli arrotondati, accenti a gradiente.
 
@@ -51,54 +55,112 @@ TextStyle _mono(double size, {Color color = _muted, double weight = 400}) => Tex
 
 TextStyle _label() => _sora(11, weight: 600, color: _faint, spacing: 0.9);
 
-class ModernSkin extends StatelessWidget {
+/// Le sezioni che si scelgono dalla barra laterale.
+enum _Section { nowPlaying, library, playlist }
+
+class ModernSkin extends StatefulWidget {
   const ModernSkin({super.key, required this.controller});
 
   final PlayerController controller;
 
   @override
+  State<ModernSkin> createState() => _ModernSkinState();
+}
+
+class _ModernSkinState extends State<ModernSkin> {
+  _Section _section = _Section.nowPlaying;
+  int? _playlist;
+
+  void _show(_Section section, {int? playlist}) => setState(() {
+        _section = section;
+        _playlist = playlist;
+      });
+
+  @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: _background,
-      body: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _Header(controller: controller),
-            if (controller.error != null) ...[
-              const SizedBox(height: 12),
-              _ErrorBanner(message: controller.error!),
-            ],
-            const SizedBox(height: 20),
-            Expanded(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  if (constraints.maxWidth >= 1180) {
+    final controller = widget.controller;
+    // Una playlist appena cancellata non c'è più: si torna a quello che suona.
+    final playlist = controller.playlists.where((p) => p.id == _playlist).firstOrNull;
+    final section = _section == _Section.playlist && playlist == null ? _Section.nowPlaying : _section;
+
+    return Theme(
+      data: _theme,
+      child: Scaffold(
+        backgroundColor: _background,
+        body: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _Header(controller: controller),
+              if (controller.error != null) ...[
+                const SizedBox(height: 12),
+                _ErrorBanner(message: controller.error!),
+              ],
+              const SizedBox(height: 20),
+              Expanded(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final wide = constraints.maxWidth >= 1180;
                     return Row(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        SizedBox(width: 232, child: _Sidebar(controller: controller)),
+                        SizedBox(
+                          width: wide ? 232 : 216,
+                          child: _Sidebar(
+                            controller: controller,
+                            section: section,
+                            playlist: playlist?.id,
+                            onShow: _show,
+                          ),
+                        ),
                         const SizedBox(width: 20),
-                        Expanded(child: _MainColumn(controller: controller, fill: true)),
-                        const SizedBox(width: 20),
-                        SizedBox(width: 320, child: _Aside(controller: controller, fill: true)),
+                        Expanded(child: _content(section, playlist, wide)),
+                        if (wide) ...[
+                          const SizedBox(width: 20),
+                          SizedBox(
+                            width: 320,
+                            child: _Aside(controller: controller, fill: true, details: section == _Section.nowPlaying),
+                          ),
+                        ],
                       ],
                     );
-                  }
-                  return ListView(
-                    children: [
-                      _MainColumn(controller: controller, fill: false),
-                      const SizedBox(height: 20),
-                      _Aside(controller: controller, fill: false),
-                    ],
-                  );
-                },
+                  },
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
+    );
+  }
+
+  /// Quello che sta tra la barra laterale e la coda. Stretta, la finestra
+  /// mette la coda sotto a quello che suona, e nella libreria non c'è.
+  Widget _content(_Section section, PlaylistInfo? playlist, bool wide) {
+    final controller = widget.controller;
+    void showLibrary() => _show(_Section.library);
+    if (section == _Section.nowPlaying) {
+      if (wide) return _MainColumn(controller: controller, fill: true, onShowLibrary: showLibrary);
+      return ListView(
+        children: [
+          _MainColumn(controller: controller, fill: false, onShowLibrary: showLibrary),
+          const SizedBox(height: 20),
+          _Aside(controller: controller, fill: false, details: true),
+        ],
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _MiniPlayer(controller: controller, onOpen: () => _show(_Section.nowPlaying)),
+        const SizedBox(height: 20),
+        Expanded(
+          child: section == _Section.library
+              ? _LibraryPanel(controller: controller)
+              : _PlaylistPanel(key: ValueKey(playlist!.id), controller: controller, playlist: playlist),
+        ),
+      ],
     );
   }
 }
@@ -247,29 +309,87 @@ class _Panel extends StatelessWidget {
 }
 
 class _Sidebar extends StatelessWidget {
-  const _Sidebar({required this.controller});
+  const _Sidebar({required this.controller, required this.section, required this.playlist, required this.onShow});
 
   final PlayerController controller;
+  final _Section section;
+  final int? playlist;
+  final void Function(_Section section, {int? playlist}) onShow;
 
   @override
   Widget build(BuildContext context) {
+    final library = controller.library;
+
+    Future<void> newPlaylist() async {
+      final name = await _askName(context, title: 'Nuova playlist', action: 'Crea');
+      if (name == null) return;
+      final id = controller.createPlaylist(name);
+      if (id != null) onShow(_Section.playlist, playlist: id);
+    }
+
     return _Panel(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Padding(padding: const EdgeInsets.only(left: 12, bottom: 8), child: Text('LIBRERIA', style: _label())),
-          const _NavItem(icon: Icons.album_rounded, label: 'In riproduzione', active: true),
+          Padding(padding: const EdgeInsets.only(left: 12, bottom: 8), child: Text('ASCOLTA', style: _label())),
+          _NavItem(
+            icon: Icons.album_rounded,
+            label: 'In riproduzione',
+            active: section == _Section.nowPlaying,
+            onTap: () => onShow(_Section.nowPlaying),
+          ),
+          if (library.available)
+            _NavItem(
+              icon: Icons.library_music_rounded,
+              label: 'Libreria',
+              active: section == _Section.library,
+              onTap: () => onShow(_Section.library),
+              trailing: library.scanning
+                  ? const SizedBox(
+                      width: 12,
+                      height: 12,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: _orange),
+                    )
+                  : null,
+            ),
           _NavItem(icon: Icons.folder_open_rounded, label: 'Apri file…', onTap: controller.openFiles),
-          const SizedBox(height: 24),
-          Padding(padding: const EdgeInsets.only(left: 12, bottom: 8), child: Text('FORMATI', style: _label())),
-          const _FormatItem(color: _orange, label: 'Amiga'),
-          const _FormatItem(color: _pink, label: 'Moduli tracker'),
-          const _FormatItem(color: _violet, label: 'C64 SID'),
-          const _FormatItem(color: Color(0xFFB58CFF), label: 'Console'),
-          const _FormatItem(color: Color(0xFFC9A6FF), label: 'PC / DOS'),
-          const _FormatItem(color: Color(0xFFD9C2FF), label: 'File audio'),
-          const Spacer(),
+          if (controller.store != null) ...[
+            const SizedBox(height: 24),
+            Row(
+              children: [
+                Expanded(
+                  child: Padding(padding: const EdgeInsets.only(left: 12), child: Text('PLAYLIST', style: _label())),
+                ),
+                _SmallIconButton(icon: Icons.add_rounded, tooltip: 'Nuova playlist', size: 32, onPressed: newPlaylist),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Expanded(
+              child: controller.playlists.isEmpty
+                  ? Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      child: Text(
+                        'Nessuna playlist. Creane una col +, o salva la coda.',
+                        style: _sora(13, color: _faint, height: 1.4),
+                      ),
+                    )
+                  : ListView(
+                      children: [
+                        for (final item in controller.playlists)
+                          _NavItem(
+                            icon: Icons.queue_music_rounded,
+                            label: item.name,
+                            active: section == _Section.playlist && playlist == item.id,
+                            onTap: () => onShow(_Section.playlist, playlist: item.id),
+                            trailing: Text(_number(item.count), style: _mono(12, color: _faint)),
+                          ),
+                      ],
+                    ),
+            ),
+          ] else
+            const Spacer(),
+          const SizedBox(height: 12),
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
@@ -307,59 +427,43 @@ class _Sidebar extends StatelessWidget {
 }
 
 class _NavItem extends StatelessWidget {
-  const _NavItem({required this.icon, required this.label, this.active = false, this.onTap});
+  const _NavItem({required this.icon, required this.label, this.active = false, this.onTap, this.trailing});
 
   final IconData icon;
   final String label;
   final bool active;
   final VoidCallback? onTap;
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        height: 44,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        decoration: BoxDecoration(
-          color: active ? _selected : Colors.transparent,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, size: 18, color: active ? _orange : _textSoft),
-            const SizedBox(width: 12),
-            Text(label, style: _sora(14, weight: active ? 600 : 400, color: active ? _text : _textSoft)),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _FormatItem extends StatelessWidget {
-  const _FormatItem({required this.color, required this.label});
-
-  final Color color;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 44,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        child: Row(
-          children: [
-            Container(
-              width: 10,
-              height: 10,
-              decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(3)),
-            ),
-            const SizedBox(width: 12),
-            Text(label, style: _sora(14, color: _textSoft)),
-          ],
+    return Semantics(
+      selected: active,
+      button: true,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          height: 44,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            color: active ? _selected : Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            children: [
+              Icon(icon, size: 18, color: active ? _orange : _textSoft),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  label,
+                  style: _sora(14, weight: active ? 600 : 400, color: active ? _text : _textSoft),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (trailing != null) ...[const SizedBox(width: 8), trailing!],
+            ],
+          ),
         ),
       ),
     );
@@ -367,10 +471,11 @@ class _FormatItem extends StatelessWidget {
 }
 
 class _MainColumn extends StatelessWidget {
-  const _MainColumn({required this.controller, required this.fill});
+  const _MainColumn({required this.controller, required this.fill, required this.onShowLibrary});
 
   final PlayerController controller;
   final bool fill;
+  final VoidCallback onShowLibrary;
 
   @override
   Widget build(BuildContext context) {
@@ -385,7 +490,7 @@ class _MainColumn extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _NowPlaying(controller: controller),
+        _NowPlaying(controller: controller, onShowLibrary: onShowLibrary),
         const SizedBox(height: 20),
         if (fill) Expanded(child: bottom) else SizedBox(height: 300, child: bottom),
       ],
@@ -394,9 +499,10 @@ class _MainColumn extends StatelessWidget {
 }
 
 class _NowPlaying extends StatelessWidget {
-  const _NowPlaying({required this.controller});
+  const _NowPlaying({required this.controller, required this.onShowLibrary});
 
   final PlayerController controller;
+  final VoidCallback onShowLibrary;
 
   @override
   Widget build(BuildContext context) {
@@ -420,7 +526,7 @@ class _NowPlaying extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.all(28),
               child: track == null
-                  ? _EmptyState(controller: controller)
+                  ? _EmptyState(controller: controller, onShowLibrary: onShowLibrary)
                   : Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
@@ -465,9 +571,10 @@ class _Glow extends StatelessWidget {
 }
 
 class _EmptyState extends StatelessWidget {
-  const _EmptyState({required this.controller});
+  const _EmptyState({required this.controller, required this.onShowLibrary});
 
   final PlayerController controller;
+  final VoidCallback onShowLibrary;
 
   @override
   Widget build(BuildContext context) {
@@ -483,7 +590,16 @@ class _EmptyState extends StatelessWidget {
             style: _sora(15, color: _textSoft),
           ),
           const SizedBox(height: 24),
-          _PillButton(icon: Icons.folder_open_rounded, label: 'Apri file…', onPressed: controller.openFiles),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _PillButton(icon: Icons.folder_open_rounded, label: 'Apri file…', onPressed: controller.openFiles),
+              if (controller.library.available) ...[
+                const SizedBox(width: 12),
+                _PillButton(icon: Icons.library_music_rounded, label: 'Sfoglia la libreria', onPressed: onShowLibrary),
+              ],
+            ],
+          ),
         ],
       ),
     );
@@ -747,6 +863,15 @@ class _Transport extends StatelessWidget {
                 tooltip: 'Sottobrano successivo',
                 onPressed: () => controller.selectSubsong(status.subsong + 1),
               ),
+              if (controller.store != null)
+                _MenuIconButton(
+                  icon: Icons.playlist_add_rounded,
+                  tooltip: status.subsongCount > 1
+                      ? 'Aggiungi a una playlist questo sottobrano'
+                      : 'Aggiungi a una playlist',
+                  size: 44,
+                  children: _playlistMenuItems(context, controller, () => [controller.playingEntry!]),
+                ),
             ],
           ),
         ),
@@ -1203,10 +1328,11 @@ class _KnobPainter extends CustomPainter {
 }
 
 class _Aside extends StatelessWidget {
-  const _Aside({required this.controller, required this.fill});
+  const _Aside({required this.controller, required this.fill, required this.details});
 
   final PlayerController controller;
   final bool fill;
+  final bool details;
 
   @override
   Widget build(BuildContext context) {
@@ -1215,114 +1341,11 @@ class _Aside extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (fill) Expanded(child: queue) else queue,
-        const SizedBox(height: 20),
-        _DetailsPanel(controller: controller),
-      ],
-    );
-  }
-}
-
-class _QueuePanel extends StatelessWidget {
-  const _QueuePanel({required this.controller, required this.scrollable});
-
-  final PlayerController controller;
-  final bool scrollable;
-
-  @override
-  Widget build(BuildContext context) {
-    final tracks = controller.tracks;
-    final rows = [
-      for (var i = 0; i < tracks.length; i++)
-        _QueueRow(
-          index: i,
-          track: tracks[i],
-          current: i == controller.currentIndex,
-          onTap: () => controller.playIndex(i),
-        ),
-    ];
-
-    return _Panel(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Coda', style: _sora(18, weight: 600)),
-                const SizedBox(height: 4),
-                Text(
-                  tracks.isEmpty ? 'Vuota' : '${tracks.length} ${tracks.length == 1 ? 'brano' : 'brani'}',
-                  style: _sora(13, color: _muted),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          if (scrollable)
-            Expanded(child: ListView(children: rows))
-          else
-            ...rows,
+        if (details) ...[
+          const SizedBox(height: 20),
+          _DetailsPanel(controller: controller),
         ],
-      ),
-    );
-  }
-}
-
-class _QueueRow extends StatelessWidget {
-  const _QueueRow({required this.index, required this.track, required this.current, required this.onTap});
-
-  final int index;
-  final Track track;
-  final bool current;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
-        child: Container(
-          constraints: const BoxConstraints(minHeight: 56),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: current ? _selected : Colors.transparent,
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: Row(
-            children: [
-              SizedBox(
-                width: 28,
-                child: current
-                    ? const _PlayingBars()
-                    : Text((index + 1).toString().padLeft(2, '0'), style: _mono(12, color: _faint)),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      track.fileName,
-                      style: _sora(14, weight: current ? 600 : 500),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    if (track.location.isNotEmpty)
-                      Text(
-                        track.location,
-                        style: _sora(12, color: current ? _textSoft : _muted),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+      ],
     );
   }
 }

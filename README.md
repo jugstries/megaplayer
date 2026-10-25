@@ -333,10 +333,24 @@ Per aprire subito dei file, da un'app già compilata:
 open app/build/macos/Build/Products/Debug/megaplayer.app --args /percorso/Stormlord.lha
 ```
 
+Nella skin moderna la barra laterale porta a quello che suona, alla libreria
+e alle playlist. La libreria chiede la cartella della musica la prima volta,
+la legge in background e a ogni avvio guarda solo i file nuovi o cambiati
+(«Aggiorna» lo fa a richiesta). Si sfoglia per cartelle, archivi compresi, o
+si cerca e si filtra per piattaforma e formato da una cartella in giù. Un
+clic su un brano lo suona; il + lo mette in coda, l'altra icona in una
+playlist, e dei brani con più sottobrani si apre l'elenco per sceglierne uno.
+Coda e playlist si riordinano trascinando le voci dal loro numero; dal menu
+di ogni voce si sceglie il sottobrano o la si toglie. «Riproduci» mette una
+playlist al posto della coda; dal lettore si aggiunge a una playlist il
+sottobrano che suona.
+
 Test: `flutter test` in `app/`. `test/skin_screenshots_test.dart` disegna le
-due skin con un core finto e salva le immagini in `app/build/screenshots`;
-`test/ffi_core_test.dart` prova i binding con la libreria vera se
-`MEGAPLAYER_CORE` e `STORMLORD_LHA` indicano libreria e archivio di prova.
+skin con un core e un database finti e salva le immagini in
+`app/build/screenshots`; `test/modern_skin_test.dart` usa libreria, coda e
+playlist con clic e menu; `test/ffi_core_test.dart` prova i binding con la
+libreria vera se `MEGAPLAYER_CORE` indica `libmegaplayer.dylib` (la parte
+che suona vuole anche `STORMLORD_LHA`, un archivio di prova).
 
 Limiti attuali:
 
@@ -346,10 +360,10 @@ Limiti attuali:
   bundle (i replayer con `mp_set_uade_data_dir()`);
 - gli oscilloscopi mostrano i canali sinistro e destro dell'uscita: i quattro
   canali Paula separati richiedono lavoro nel core;
-- niente trascinamento dei file sulla finestra;
-- coda, skin, volume e manopola si ricordano da un avvio all'altro, e il
-  controller sa gestire le playlist, ma l'interfaccia per sfogliare la
-  libreria e per le playlist non c'è ancora.
+- niente trascinamento dei file sulla finestra, né dalla libreria alle
+  playlist, e niente import o export M3U;
+- libreria e playlist ci sono solo nella skin moderna: la retrò ha la coda
+  com'era.
 
 ## Struttura
 

@@ -207,6 +207,54 @@ void main() {
       expect(controller.playlists.map((p) => p.name), ['I miei preferiti']);
     });
 
+    test('dalla libreria: suona subito, in coda, sottobrani', () {
+      controller.addPaths([FakeCore.archive]);
+      controller.playIndex(1);
+      final nebula = libraryItem('Amiga', 'nebula.mod', subsongs: 3, durations: [60, null, 30]);
+      store.items.add(nebula);
+
+      // Suona subito: dopo la voce corrente; se c'è già, da dov'è.
+      controller.playNow(nebula.toTrack(subsong: 2));
+      expect(controller.currentIndex, 2);
+      expect(controller.currentTrack!.subsong, 2);
+      expect(core.calls.last, 'play nebula.mod');
+      controller.playNow(controller.tracks[0]);
+      expect(controller.currentIndex, 0);
+      expect(controller.tracks, hasLength(7));
+
+      expect(controller.enqueue([nebula.toTrack(), nebula.toTrack(subsong: 2)]), 1);
+      expect(controller.tracks.last.subsong, isNull);
+      expect(reopen().tracks, hasLength(8));
+
+      expect(controller.subsongsOf(nebula.toTrack()), [60, null, 30]);
+      // Fuori dalla libreria i sottobrani si sanno solo da quello che suona.
+      controller.playIndex(4); // jt.ingame, cinque sottobrani
+      expect(controller.subsongsOf(controller.tracks[4]), hasLength(5));
+      expect(controller.subsongsOf(controller.tracks[5]), isNull);
+      core.subsong = 3;
+      controller.refresh();
+      expect(controller.playingEntry!.subsong, 3);
+    });
+
+    test('caricare una playlist da una voce', () {
+      controller.addPaths([FakeCore.archive]);
+      final id = controller.saveQueueAsPlaylist('Stormlord')!;
+      controller.clearQueue();
+      controller.loadPlaylist(id, start: 3);
+      expect(controller.tracks, hasLength(6));
+      expect(controller.currentIndex, 3);
+    });
+
+    test('la libreria segue la scansione dal timer del player', () {
+      store.rootPath = '/Musica';
+      final next = reopen();
+      expect(next.library.scanning, isTrue);
+      store.finishScan([libraryItem('', 'giro.sid')]);
+      next.refresh();
+      expect(next.library.scanning, isFalse);
+      expect(next.library.items.single.name, 'giro.sid');
+    });
+
     test('senza database tutto funziona e niente resta', () {
       final alone = PlayerController(FakeCore())..restore();
       alone.addPaths([FakeCore.archive]);

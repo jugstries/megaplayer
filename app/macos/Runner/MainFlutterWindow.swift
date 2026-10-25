@@ -35,8 +35,8 @@ private enum IconChannel {
   }
 }
 
-// Canale "megaplayer/files": la finestra di apertura file di macOS e i file
-// passati da riga di comando, che Flutter da solo non offre.
+// Canale "megaplayer/files": le finestre di macOS per aprire file e scegliere
+// cartelle, e i file passati da riga di comando, che Flutter da solo non offre.
 private enum FilesChannel {
   static func register(with messenger: FlutterBinaryMessenger, window: NSWindow) {
     let channel = FlutterMethodChannel(name: "megaplayer/files", binaryMessenger: messenger)
@@ -50,6 +50,20 @@ private enum FilesChannel {
         panel.message = "Scegli moduli, brani o archivi"
         panel.beginSheetModal(for: window) { response in
           result(response == .OK ? panel.urls.map { $0.path } : [String]())
+        }
+      case "openFolder":
+        // La cartella della libreria; si parte da quella di prima, se c'è.
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.message = "Scegli la cartella con la tua musica"
+        panel.prompt = "Scegli"
+        if let start = call.arguments as? String, !start.isEmpty {
+          panel.directoryURL = URL(fileURLWithPath: start)
+        }
+        panel.beginSheetModal(for: window) { response in
+          result(response == .OK ? panel.url?.path : nil)
         }
       case "initialFiles":
         // Solo percorsi assoluti: Xcode aggiunge argomenti suoi al lancio.

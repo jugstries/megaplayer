@@ -7,20 +7,30 @@ import 'package:flutter/services.dart';
 import '../core/library_store.dart';
 import '../core/models.dart';
 import '../core/player_core.dart';
+import 'library_browser.dart';
 
 enum Skin { modern, retro }
 
 /// Stato e comandi del player, condivisi dalle due skin: la coda, il brano
-/// corrente, le playlist e quello che il core riporta a ogni aggiornamento.
+/// corrente, le playlist, la libreria e quello che il core riporta a ogni
+/// aggiornamento.
 ///
 /// Con uno [store], coda, playlist, skin, volume e manopola restano da un
-/// avvio all'altro; senza, l'app funziona lo stesso e non ricorda niente.
+/// avvio all'altro e c'è la libreria; senza, l'app funziona lo stesso e non
+/// ricorda niente.
 class PlayerController extends ChangeNotifier {
-  PlayerController(this.core, {this.store}) : backends = core.backends();
+  PlayerController(this.core, {this.store})
+      : backends = core.backends(),
+        library = LibraryBrowser(store) {
+    library.addListener(notifyListeners);
+  }
 
   final PlayerCore core;
   final LibraryStore? store;
   final List<Backend> backends;
+
+  /// La cartella della musica, con ricerca e filtri.
+  final LibraryBrowser library;
 
   /// La coda: quello che suona, in ordine.
   final List<Track> tracks = [];
@@ -51,11 +61,17 @@ class PlayerController extends ChangeNotifier {
 
   Timer? _timer;
   int? _queueId;
+  final Map<int, List<Track>> _playlistEntries = {};
 
   Track? get currentTrack => currentIndex == null ? null : tracks[currentIndex!];
 
+  /// Quello che suona come voce di playlist: il sottobrano che si sente, se
+  /// il file ne ha più d'uno, altrimenti il file intero.
+  Track? get playingEntry => currentTrack?.withSubsong(status.subsongCount > 1 ? status.subsong : null);
+
   /// Riprende coda, brano corrente (senza farlo partire), playlist, skin,
-  /// volume e manopola dall'ultima volta. Prima di [start].
+  /// volume e manopola dall'ultima volta, e aggiorna la libreria. Prima di
+  /// [start].
   void restore() {
     _withStore((store) {
       _queueId = store.queueId();
@@ -69,6 +85,7 @@ class PlayerController extends ChangeNotifier {
       megaSound = double.tryParse(store.setting(_megaSoundKey))?.clamp(0.0, 1.0) ?? megaSound;
       playlists = store.playlists();
     });
+    library.restore();
   }
 
   /// Avvia gli aggiornamenti periodici dello stato (circa 30 al secondo).
@@ -81,6 +98,7 @@ class PlayerController extends ChangeNotifier {
   /// Legge lo stato dal core. A fine sottobrano, per una voce col file
   /// intero si passa al sottobrano successivo; altrimenti alla voce dopo.
   void refresh() {
+    library.poll();
     status = core.status();
     scope = status.isPlaying ? core.scope(scopeFrames) : _flatten(scope);
     if (status.state == PlaybackState.ended) {
@@ -123,31 +141,56 @@ class PlayerController extends ChangeNotifier {
     addPaths(paths);
   }
 
+  /// La finestra di macOS per scegliere la cartella della musica; null se
+  /// si annulla.
+  Future<String?> chooseFolder() => _files.invokeMethod<String>('openFolder', library.root);
+
   /// I file passati da riga di comando all'avvio.
   Future<void> openInitialFiles() async {
     final paths = await _files.invokeListMethod<String>('initialFiles') ?? const [];
     addPaths(paths);
   }
 
-  /// Aggiunge file e archivi alla coda, senza le voci che ci sono già; se non
-  /// sta suonando nulla parte il primo brano aggiunto.
+  /// Aggiunge file e archivi alla coda, come [enqueue].
   void addPaths(List<String> paths) {
-    final firstNew = tracks.length;
+    final entries = <Track>[];
     final problems = <String>[];
     for (final path in paths) {
       try {
-        _addEntries(tracks, core.collect(path));
+        entries.addAll(core.collect(path));
       } on CoreException catch (e) {
         problems.add('${path.split('/').last}: $e');
       }
     }
     error = problems.isEmpty ? null : problems.join('\n');
-    if (tracks.length > firstNew) _saveQueue();
-    if (currentIndex == null && tracks.length > firstNew) {
+    enqueue(entries);
+  }
+
+  /// Mette in fondo alla coda le voci che non ci sono già, e quante sono; se
+  /// non sta suonando nulla parte la prima.
+  int enqueue(List<Track> entries) {
+    final firstNew = tracks.length;
+    _addEntries(tracks, entries);
+    final added = tracks.length - firstNew;
+    if (added > 0) _saveQueue();
+    if (currentIndex == null && added > 0) {
       playIndex(firstNew);
     } else {
       notifyListeners();
     }
+    return added;
+  }
+
+  /// Suona subito una voce: dov'è, se è già in coda, altrimenti dopo quella
+  /// corrente.
+  void playNow(Track entry) {
+    var index = tracks.indexWhere(entry.sameEntry);
+    if (index < 0) {
+      index = currentIndex == null ? tracks.length : currentIndex! + 1;
+      tracks.insert(index, entry);
+      _saveQueue();
+    }
+    playIndex(index);
   }
 
   void playIndex(int index) {
@@ -250,6 +293,17 @@ class PlayerController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// I sottobrani di una voce, con la durata dove si sa; null se quanti sono
+  /// si scopre solo suonandola.
+  List<double?>? subsongsOf(Track entry) {
+    final item = library.lookup(entry.ref);
+    if (item != null && item.subsongs > 0) {
+      return [for (var i = 0; i < item.subsongs; i++) i < item.durations.length ? item.durations[i] : null];
+    }
+    if (currentTrack?.ref == entry.ref && status.subsongCount > 0) return List.filled(status.subsongCount, null);
+    return null;
+  }
+
   /// Sceglie il sottobrano di una voce (null per il file intero). false se
   /// la stessa voce c'è già.
   bool setTrackSubsong(int index, int? subsong) {
@@ -263,6 +317,7 @@ class PlayerController extends ChangeNotifier {
 
   void refreshPlaylists() {
     playlists = _withStore((store) => store.playlists()) ?? playlists;
+    _playlistEntries.clear();
     notifyListeners();
   }
 
@@ -288,7 +343,10 @@ class PlayerController extends ChangeNotifier {
     refreshPlaylists();
   }
 
-  List<Track> playlistTracks(int id) => _withStore((store) => store.entries(id)) ?? const [];
+  /// Le voci di una playlist, lette una volta e poi tenute finché la si
+  /// cambia: le skin le chiedono a ogni disegno.
+  List<Track> playlistTracks(int id) =>
+      _playlistEntries[id] ??= List.unmodifiable(_withStore((store) => store.entries(id)) ?? const <Track>[]);
 
   /// Aggiunge in fondo, senza le voci che ci sono già: quante ne entrano.
   int addToPlaylist(int id, List<Track> entries) {
@@ -317,8 +375,8 @@ class PlayerController extends ChangeNotifier {
   /// Salva la coda così com'è in una nuova playlist.
   int? saveQueueAsPlaylist(String name) => createPlaylist(name, entries: tracks);
 
-  /// Mette la playlist al posto della coda e fa partire la prima voce.
-  void loadPlaylist(int id) {
+  /// Mette la playlist al posto della coda e fa partire la voce [start].
+  void loadPlaylist(int id, {int start = 0}) {
     final entries = _withStore((store) => store.entries(id));
     if (entries == null) return;
     core.stop();
@@ -330,7 +388,7 @@ class PlayerController extends ChangeNotifier {
     status = CoreStatus.idle;
     _saveQueue();
     if (tracks.isNotEmpty) {
-      playIndex(0);
+      playIndex(start.clamp(0, tracks.length - 1));
     } else {
       notifyListeners();
     }
@@ -404,8 +462,11 @@ class PlayerController extends ChangeNotifier {
 
   /// Aggiunge a [list] le voci che non ci sono già; restituisce [list].
   static List<Track> _addEntries(List<Track> list, Iterable<Track> entries) {
+    // Con una cartella intera sono migliaia: niente confronti uno a uno.
+    String key(Track track) => '${track.subsong}\t${track.ref}';
+    final present = {for (final track in list) key(track)};
     for (final entry in entries) {
-      if (!list.any(entry.sameEntry)) list.add(entry);
+      if (present.add(key(entry))) list.add(entry);
     }
     return list;
   }
@@ -429,6 +490,7 @@ class PlayerController extends ChangeNotifier {
   @override
   void dispose() {
     _timer?.cancel();
+    library.dispose();
     core.dispose();
     store?.dispose();
     super.dispose();

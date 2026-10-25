@@ -66,4 +66,38 @@ void main() {
     expect(store.setting('app.skin'), 'retro');
     expect(() => store.renamePlaylist(id + 100, 'x'), throwsA(isA<CoreException>()));
   }, skip: library == null ? 'MEGAPLAYER_CORE non impostata' : null);
+
+  test('scansione, ricerca, filtri e cartelle con il database vero', () async {
+    final directory = Directory.systemTemp.createTempSync('megaplayer-ffi');
+    addTearDown(() => directory.deleteSync(recursive: true));
+    final music = '${directory.path}/Musica';
+    Directory('$music/Archivio/Toni').createSync(recursive: true);
+    File('../tests/data/tono.flac').copySync('$music/Archivio/Toni/tono.flac');
+    File('../tests/data/tono.wav').copySync('$music/tono.wav');
+    final store = FfiLibraryStore.open(path: '${directory.path}/library.db');
+    addTearDown(store.dispose);
+
+    expect(store.root(), isEmpty);
+    expect(store.startScan, throwsA(isA<CoreException>()));
+    store.setRoot(music);
+    store.startScan();
+    var status = store.scanStatus();
+    for (var i = 0; status.running && i < 1000; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      status = store.scanStatus();
+    }
+    expect(status.running, isFalse);
+    expect(status.error, isNull);
+    expect(status.tracksFound, 2);
+
+    expect(store.search(const LibraryQuery()).total, 2);
+    expect(store.folders(const LibraryQuery()).map((f) => (f.name, f.count)), [('Archivio', 1)]);
+    expect(store.search(const LibraryQuery(subfolders: false)).items.single.name, 'tono.wav');
+    final flac = store.search(const LibraryQuery(formats: {'FLAC'}, folder: 'Archivio')).items.single;
+    expect(flac.folder, 'Archivio/Toni');
+    expect(flac.platformName, 'File audio');
+    expect(store.facets(const LibraryQuery(text: 'tono')).formats.map((f) => f.id), containsAll(['FLAC', 'WAV']));
+    expect(store.track(flac.ref)!.durations, hasLength(1));
+    expect(store.track('/non/esiste'), isNull);
+  }, skip: library == null ? 'MEGAPLAYER_CORE non impostata' : null);
 }

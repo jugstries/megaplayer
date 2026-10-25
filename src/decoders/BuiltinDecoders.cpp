@@ -14,6 +14,9 @@
 #ifdef MP_WITH_ADPLUG
 #include "AdplugDecoder.h"
 #endif
+#ifdef MP_WITH_ATARI
+#include "AtariAudioDecoder.h"
+#endif
 #ifdef MP_WITH_GME
 #include "GmeDecoder.h"
 #endif
@@ -37,6 +40,9 @@ void registerBuiltinDecoders(DecoderRegistry& registry)
 #endif
 #ifdef MP_WITH_SID
     registry.add(std::make_unique<SidDecoderFactory>());
+#endif
+#ifdef MP_WITH_ATARI
+    registry.add(std::make_unique<AtariAudioDecoderFactory>());
 #endif
 #ifdef MP_WITH_88EMU
     registry.add(std::make_unique<Emu88DecoderFactory>());

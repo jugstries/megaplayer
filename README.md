@@ -12,6 +12,7 @@ Flutter (per ora macOS) con due skin: moderna e retrò.
 | `miniaudio` | miniaudio, stb_vorbis | file audio: MP3 (e MP1/MP2), FLAC, WAV, Ogg Vorbis, con titolo e autore dai tag |
 | `sid`     | libsidplayfp 3.1.1, libresidfp 1.2.3 | Commodore 64: PSID e RSID, con l'emulazione reSIDfp del chip SID (6581 e 8580) |
 | `gme`     | game-music-emu 0.6.5  | console: NES (NSF, NSFE), SNES (SPC), Game Boy (GBS), Master System e Mega Drive (VGM, VGZ, GYM), PC Engine (HES), MSX (KSS), ZX Spectrum (AY), Atari (SAP) |
+| `atariaudio` | AtariAudio 1.26 | Atari ST: SNDH, con il replayer originale su un 68000 emulato (YM2149, timer, DAC dell'STE, blitter), e YM (YM2–YM6, Digimix, YM Tracker), anche compressi con ICE! o LHA |
 | `88emu`   | 88emu di gearmulator (commit del 10 ottobre 2026) | gli stessi MIDI sui moduli Roland: Sound Canvas (SC-55, SC-55mkII, SC-88, SC-88VL, SC-88 Pro, SC-8850, ...) e MT-32/CM-32L, emulati facendo girare il loro firmware. Servono le ROM dell'utente |
 | `fluidsynth` | FluidSynth 2.6.1, GeneralUser GS 2.0.3 | gli stessi MIDI su un SoundFont General MIDI e GS a campioni, per chi non ha le ROM: di serie GeneralUser GS, che viaggia con le app |
 | `adlmidi` | libADLMIDI 1.6.2.1    | MIDI (MID, RMI) e i suoi parenti dei giochi DOS: XMI, MUS di Doom, HMI/HMP, GMF, su quattro chip FM OPL3 emulati (Nuked OPL3) |
@@ -31,7 +32,9 @@ restano su disco e non solo in memoria perché alcuni formati Amiga sono divisi
 in più file, che UADE cerca uno accanto all'altro. I nomi in Latin-1 (archivi
 Amiga, CD) si convertono in UTF-8, e un file che non si riesce a estrarre si
 salta senza perdere il resto dell'archivio. libarchive non legge gli archivi
-LZX dell'Amiga.
+LZX dell'Amiga. Fanno eccezione i `.ym` dell'Atari ST, quasi tutti compressi
+con LHA: un archivio con dentro il solo brano, che AtariAudio suona così
+com'è.
 
 I replayer di questi formati in due file ricavano il nome del secondo dal
 primo, con la convenzione dell'Amiga: `mdat.Brano` cerca `smpl.Brano`. Le
@@ -44,7 +47,9 @@ La metà con i campioni, scelta da sola, viene saltata.
 I brani da console e del C64 spesso girano per sempre. gme li chiude alla
 durata indicata nel file, o dopo due giri del ritornello, o dopo due minuti e
 mezzo; i SID, che non dicono mai quanto durano, dopo tre minuti. Sempre con
-una dissolvenza. Per i SID non servono le ROM del C64: libsidplayfp ha un
+una dissolvenza. I SNDH dell'Atari ST finiscono alla durata del file, o a
+quella dell'archivio di durate di AtariAudio; se nessuno dei due la sa, dopo
+tre minuti con la dissolvenza, come i SID. Per i SID non servono le ROM del C64: libsidplayfp ha un
 kernal sostitutivo, che basta quasi sempre (le ROM originali sono protette da
 copyright).
 
@@ -94,7 +99,7 @@ ctest --test-dir build
 
 `scripts/build-deps.sh` scarica a versioni fissate i sorgenti di UADE,
 libzakalwe, bencode-tools, ancient, miniaudio, game-music-emu, libsidplayfp,
-libresidfp, libADLMIDI, AdPlug, libbinio e SQLite in `third_party/src` (di
+libresidfp, libADLMIDI, AdPlug, libbinio, AtariAudio e SQLite in `third_party/src` (di
 libsidplayfp, libresidfp e SQLite gli archivi di rilascio, con la verifica
 dello SHA-256), gearmulator a un commit fissato con i soli sottomoduli che
 servono a 88emu, FluidSynth e il SoundFont GeneralUser GS (con lo SHA-256), e
@@ -201,6 +206,7 @@ per uno o da mettere in solo (`Decoder::channels()` e `setChannelMuted()`):
 | uade     | le 4 voci di Paula (1 e 4 a sinistra, 2 e 3 a destra) | una maschera nel mixer di Paula ([patches/uade-voice-mask.patch](patches/uade-voice-mask.patch)): l'emulazione va avanti |
 | gme      | le voci del chip («Square 1», «Noise», «DSP 3»…) | il mute di gme, che con canali zittiti non chiude più il brano sul silenzio |
 | sid      | 3 voci per chip e i campioni digitalizzati | il mute di libsidplayfp, che filtra i registri; la patch ([patches/libsidplayfp-instant-mute.patch](patches/libsidplayfp-instant-mute.patch)) lo applica subito invece che alla nota dopo |
+| atariaudio | le 3 voci del YM2149 e, nei SNDH, il DAC dell'STE (nei YM Digimix e YM Tracker i campioni) | il mute di AtariAudio, rimesso a ogni cambio di sottobrano |
 | 88emu, fluidsynth | i 16 canali MIDI (nei file per SC-88 sulle due porte) | le note del canale non partono più e quelle accese si spengono (pedale, All Notes Off, All Sound Off) |
 | adlmidi  | i 16 canali MIDI | i canali spenti del sequencer, che rilascia le note |
 | adplug   | i canali OPL che suonano note | niente note nuove, quelle accese rilasciate e operatori al minimo (-47 dB) |
@@ -597,7 +603,9 @@ UADE è GPL-2.0 (il motore UAE) con parti LGPL; i replayer in
 `share/uade/players` hanno licenze e autori diversi. libopenmpt è BSD-3,
 ancient e libarchive BSD-2, miniaudio e stb_vorbis public domain / MIT-0,
 game-music-emu LGPL-2.1 (con l'emulatore Nuked del YM2612, anche lui LGPL),
-libsidplayfp e libresidfp GPL-2.0, AdPlug e libbinio LGPL-2.1; gearmulator
+libsidplayfp e libresidfp GPL-2.0, AdPlug e libbinio LGPL-2.1, AtariAudio
+MIT (con il 68000 di Musashi, MIT, e i decompressori ICE!, di pubblico
+dominio, e LHA di Haruhiko Okumura); gearmulator
 (88emu) GPL-3.0, con parti derivate da Nuked-SC55 e Nuked-MT32 sotto GPL-2.0
 o successiva; FluidSynth LGPL-2.1 o successiva; LAME LGPL-2.0 o successiva; il SoundFont GeneralUser GS
 (S. Christian Collins) ha la sua licenza, che ne permette l'uso nei

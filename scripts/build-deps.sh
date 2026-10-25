@@ -3,8 +3,8 @@
 # Scarica, a versioni fissate, i sorgenti delle dipendenze che compila
 # direttamente CMake (UADE con libzakalwe e bencode-tools, ancient, miniaudio,
 # game-music-emu, libsidplayfp con libresidfp, libADLMIDI, AdPlug con libbinio,
-# SQLite, gearmulator per 88emu, i moduli Roland emulati, e FluidSynth con il
-# SoundFont GeneralUser GS, per i MIDI senza le ROM)
+# SQLite, gearmulator per 88emu, i moduli Roland emulati, FluidSynth con il
+# SoundFont GeneralUser GS, per i MIDI senza le ROM, e AtariAudio per l'Atari ST)
 # e applica a UADE le patch per farlo girare nel processo del player e per
 # zittirne le voci, a libsidplayfp quella per zittirle subito e a gearmulator
 # quelle per compilarlo con MinGW.
@@ -37,6 +37,7 @@ LIBSIDPLAYFP_SHA256=12b79190593bf480b2d11481b5c2de62bac07f344437a66cd8d887329875
 # perché l'interfaccia C di 88lib non è ancora in una release abbastanza vecchia.
 GEARMULATOR_COMMIT=a8a9ae99a8f7fc05152fa641a5ec1fed0fd88164
 FLUIDSYNTH_REF=v2.6.1
+ATARIAUDIO_REF=1.26
 # GeneralUser GS 2.0.3 (S. Christian Collins), il SoundFont General MIDI e GS
 # che viaggia con le app: non ha release, si prende da un commit preciso.
 GENERALUSER_COMMIT=684543d5e5efaef08d02be50dcda8d552478fa60
@@ -104,6 +105,7 @@ if [[ ! -f "$SRC/fluidsynth/gcem/CMakeLists.txt" ]]; then
 	git -C "$SRC/fluidsynth" submodule update -q --init --depth 1 gcem
 fi
 clone adplug       https://github.com/adplug/adplug.git               "$ADPLUG_REF"
+clone atariaudio   https://github.com/arnaud-carre/AtariAudio.git     "$ATARIAUDIO_REF"
 fetch libresidfp   "https://github.com/libsidplayfp/libresidfp/releases/download/v$LIBRESIDFP_VERSION/libresidfp-$LIBRESIDFP_VERSION.tar.gz" "$LIBRESIDFP_SHA256"
 fetch libsidplayfp "https://github.com/libsidplayfp/libsidplayfp/releases/download/v$LIBSIDPLAYFP_VERSION/libsidplayfp-$LIBSIDPLAYFP_VERSION.tar.gz" "$LIBSIDPLAYFP_SHA256"
 fetch sqlite       "https://sqlite.org/$SQLITE_YEAR/sqlite-autoconf-$SQLITE_VERSION.tar.gz" "$SQLITE_SHA256"

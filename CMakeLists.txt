@@ -24,6 +24,7 @@ option(MP_WITH_OPENMPT "Backend libopenmpt (moduli tracker)" ON)
 option(MP_WITH_UADE "Backend UADE (formati Amiga)" ON)
 option(MP_WITH_GME "Backend game-music-emu (console a 8 e 16 bit)" ON)
 option(MP_WITH_SID "Backend libsidplayfp (Commodore 64)" ON)
+option(MP_WITH_ATARI "Backend AtariAudio (Atari ST: SNDH e YM)" ON)
 option(MP_WITH_ADLMIDI "Backend libADLMIDI (MIDI su chip FM OPL3)" ON)
 option(MP_WITH_88EMU "Backend 88emu (MIDI su Roland Sound Canvas e MT-32 emulati, con le ROM dell'utente)" ON)
 option(MP_WITH_FLUIDSYNTH "Backend FluidSynth (MIDI su un SoundFont, per chi non ha le ROM)" ON)
@@ -185,6 +186,31 @@ if(MP_WITH_SID)
         target_compile_definitions(megaplayer_core PRIVATE MP_WITH_SID)
         target_link_libraries(megaplayer_core PUBLIC sidplayfp)
         set(MP_SID_ENABLED ON)
+    endif()
+endif()
+
+set(MP_ATARI_ENABLED OFF)
+if(MP_WITH_ATARI)
+    if(NOT EXISTS "${MP_THIRD_PARTY}/src/atariaudio/src/AtariAudio.h")
+        message(WARNING "AtariAudio non scaricato (scripts/build-deps.sh): backend atariaudio disattivato")
+    else()
+        # Nessuna dipendenza e nessun CMake suo: i sorgenti, con il 68000 di
+        # Musashi e i decompressori ICE! e LHA.
+        set(MP_ATARIAUDIO_DIR "${MP_THIRD_PARTY}/src/atariaudio/src")
+        file(GLOB MP_ATARIAUDIO_SOURCES
+            "${MP_ATARIAUDIO_DIR}/*.cpp"
+            "${MP_ATARIAUDIO_DIR}/external/*.cpp"
+            "${MP_ATARIAUDIO_DIR}/external/Musashi/*.cpp")
+        add_library(atariaudio STATIC ${MP_ATARIAUDIO_SOURCES})
+        target_include_directories(atariaudio SYSTEM PUBLIC "${MP_ATARIAUDIO_DIR}")
+        set_target_properties(atariaudio PROPERTIES CXX_VISIBILITY_PRESET hidden)
+        if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+            target_compile_options(atariaudio PRIVATE -w) # codice di terzi
+        endif()
+        target_sources(megaplayer_core PRIVATE src/decoders/AtariAudioDecoder.cpp)
+        target_compile_definitions(megaplayer_core PRIVATE MP_WITH_ATARI)
+        target_link_libraries(megaplayer_core PUBLIC atariaudio)
+        set(MP_ATARI_ENABLED ON)
     endif()
 endif()
 
@@ -517,6 +543,22 @@ if(MP_GME_ENABLED)
         PASS_REGULAR_EXPRESSION "Packer: +gzip.*Backend: +gme.*Durata: +1:37.*Scritti 1:37")
 endif()
 
+# I brani d'esempio di AtariAudio: un SNDH compresso con ICE!, che arriva
+# già decompresso da ancient, con più sottobrani, e un YM compresso con LHA,
+# da suonare com'è e non come un archivio (sarebbe "... > SYNTHD7.BIN").
+if(MP_ATARI_ENABLED)
+    set(MP_ATARI_SONGS "${MP_THIRD_PARTY}/src/atariaudio/example/AtariAudio2Wav/musics")
+    add_test(NAME cli_render_sndh
+        COMMAND megaplayer render -s 3 -t 5 -o "${CMAKE_BINARY_DIR}/test-sndh.wav" "${MP_ATARI_SONGS}/Enchanted_Land.sndh")
+    set_tests_properties(cli_render_sndh PROPERTIES
+        PASS_REGULAR_EXPRESSION "Packer: +ICE.*Backend: +atariaudio.*Sottobrano: 3 di 11.*Scritti 0:05")
+    add_test(NAME cli_render_ym
+        COMMAND megaplayer render -o "${CMAKE_BINARY_DIR}/test-ym.wav" "${MP_ATARI_SONGS}/synthdream7.ym")
+    set_tests_properties(cli_render_ym PROPERTIES
+        PASS_REGULAR_EXPRESSION "Backend: +atariaudio.*Formato: +YM 5.*Durata: +1:03.*Scritti 1:03"
+        FAIL_REGULAR_EXPRESSION " > ")
+endif()
+
 # Un PSID costruito dal test stesso, poi esportato dalla CLI.
 if(MP_SID_ENABLED)
     add_executable(sid_decoder_test tests/SidDecoderTest.cpp)
@@ -647,6 +689,9 @@ endif()
 if(MP_SID_ENABLED)
     list(APPEND MP_CHANNELS_TEST_ARGS "sid=${CMAKE_BINARY_DIR}/test.sid")
     list(APPEND MP_CHANNELS_FIXTURES test_sid)
+endif()
+if(MP_ATARI_ENABLED)
+    list(APPEND MP_CHANNELS_TEST_ARGS "atariaudio=${MP_ATARI_SONGS}/Enchanted_Land.sndh")
 endif()
 if(MP_ADLMIDI_ENABLED)
     list(APPEND MP_CHANNELS_TEST_ARGS "adlmidi=${CMAKE_BINARY_DIR}/test.mid")

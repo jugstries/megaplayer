@@ -10,11 +10,13 @@
 #include <archive_entry.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cstdint>
 #include <fstream>
 #include <memory>
 #include <random>
 #include <stdexcept>
+#include <string_view>
 #endif
 
 namespace mp {
@@ -103,10 +105,31 @@ std::string lastError(archive* a)
     return message ? message : "errore sconosciuto";
 }
 
+// I .ym dell'Atari ST si distribuiscono compressi con LHA: un archivio con
+// dentro il solo brano, che AtariAudio suona così com'è se l'intestazione è
+// di livello 0. Estratto, il brano si chiamerebbe come dentro l'archivio
+// (spesso un nome di DOS qualsiasi) e starebbe in una cartella in più.
+bool isLhaPackedYm(const std::filesystem::path& path)
+{
+    std::string extension = path.extension().string();
+    std::transform(extension.begin(), extension.end(), extension.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    if (extension != ".ym")
+        return false;
+    std::ifstream in(path, std::ios::binary);
+    char header[0x15] = {};
+    if (!in.read(header, sizeof header))
+        return false;
+    return header[0] != 0 && std::string_view(header + 2, 5) == "-lh5-" && header[0x14] == 0;
+}
+
 } // namespace
 
 std::optional<ExtractedArchive> openArchive(const std::filesystem::path& path, const std::optional<std::string>& folder)
 {
+    if (isLhaPackedYm(path))
+        return std::nullopt;
+
     std::unique_ptr<archive, ArchiveDeleter> reader(archive_read_new());
     archive_read_support_filter_all(reader.get());
     archive_read_support_format_all(reader.get());

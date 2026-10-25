@@ -72,6 +72,14 @@ void main() {
     await shoot(tester, playingTitle()..setMegaSound(0.7), 'moderna');
   });
 
+  testWidgets('skin moderna, canali zittiti e in solo', (tester) async {
+    final controller = playingTitle()
+      ..toggleChannelMute(1)
+      ..toggleChannelSolo(2)
+      ..toggleChannelSolo(3);
+    await shoot(tester, controller, 'moderna-canali');
+  });
+
   testWidgets('skin moderna, confronto A/B', (tester) async {
     final controller = playingTitle()
       ..setMegaSound(0.45)
@@ -158,6 +166,15 @@ void main() {
   testWidgets('skin retrò, finestra stretta con la libreria', (tester) async {
     final controller = withLibrary(FakeLibraryStore())..setSkin(Skin.retro);
     await shoot(tester, controller, 'retro-stretta', taps: ['LIBRERIA'], size: const Size(1000, 760));
+  });
+
+  testWidgets('skin retrò, canali zittiti e in solo', (tester) async {
+    final controller = playingTitle()
+      ..setSkin(Skin.retro)
+      ..toggleChannelMute(1)
+      ..toggleChannelSolo(2)
+      ..toggleChannelSolo(3);
+    await shoot(tester, controller, 'retro-canali');
   });
 
   testWidgets('skin retrò, sottobrani', (tester) async {

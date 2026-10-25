@@ -11,6 +11,7 @@ import '../../player/player_controller.dart';
 import '../knob_control.dart';
 import '../skin_text.dart';
 
+part 'retro_channels.dart';
 part 'retro_library.dart';
 part 'retro_lists.dart';
 
@@ -644,6 +645,10 @@ class _NowPlayingWindow extends StatelessWidget {
                 ),
               ],
             ),
+            if (controller.channels.isNotEmpty) ...[
+              const SizedBox(height: 14),
+              _ChannelStrip(controller: controller),
+            ],
           ],
         ),
       ),

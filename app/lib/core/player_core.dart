@@ -21,6 +21,9 @@ abstract interface class PlayerCore {
   /// La manopola MegaSound, da 0 (spenta) a 1 (tutti gli effetti).
   void setMegaSound(double amount);
 
+  /// Zittisce o riaccende un canale del brano ([TrackDetails.channels]).
+  /// Vale fino al brano dopo.
+  void setChannelMuted(int channel, bool muted);
 
   CoreStatus status();
   TrackDetails details();

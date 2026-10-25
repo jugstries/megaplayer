@@ -141,4 +141,25 @@ void main() {
     await choose(tester, find.text('Togli dalla coda'));
     expect(controller.tracks, hasLength(5));
   });
+
+  testWidgets('canali: zittire, solo e tutti di nuovo', (tester) async {
+    controller.addPaths([FakeCore.archive]);
+    await open(tester, tab: 'CODA');
+    core.calls.clear();
+    await tester.tap(find.byTooltip('Voce 2 · destra · clic per zittirlo'));
+    await tester.pump();
+    expect(core.calls, ['mute 1']);
+    expect(find.byTooltip('Voce 2 · destra · clic per riaccenderlo'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Senti solo questo canale (con gli altri in solo)').at(3));
+    await tester.pump();
+    expect(controller.soloChannels, {3});
+    expect([for (var i = 0; i < 4; i++) controller.channelAudible(i)], [false, false, false, true]);
+
+    await tester.tap(find.text('TUTTI'));
+    await tester.pump();
+    expect(controller.mutedChannels, isEmpty);
+    expect(controller.soloChannels, isEmpty);
+    expect(core.calls.where((c) => c.startsWith('unmute')), hasLength(3));
+  });
 }

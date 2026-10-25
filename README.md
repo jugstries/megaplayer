@@ -374,10 +374,15 @@ nome, formato e durata: il triangolino apre i sottobrani, piattaforma e
 formato si scelgono da menu a comparsa con la spunta. Gli avvisi («Aggiunto
 alla coda») li dà la mascotte nella finestra «Ciao!».
 
+In tutte e due le skin, sotto i comandi di riproduzione c'è la fila dei
+canali del brano: un clic sul numero zittisce il canale, la S lo mette in
+solo (con quelli in solo si sentono solo loro), «Tutti» li riaccende.
+
 Test: `flutter test` in `app/`. `test/skin_screenshots_test.dart` disegna le
 skin con un core e un database finti e salva le immagini in
 `app/build/screenshots`; `test/modern_skin_test.dart` e
-`test/retro_skin_test.dart` usano libreria, coda e playlist con clic e menu; `test/ffi_core_test.dart` prova i binding con la
+`test/retro_skin_test.dart` usano libreria, coda, playlist e canali con clic
+e menu; `test/ffi_core_test.dart` prova i binding con la
 libreria vera se `MEGAPLAYER_CORE` indica `libmegaplayer.dylib` (la parte
 che suona vuole anche `STORMLORD_LHA`, un archivio di prova).
 
@@ -387,8 +392,9 @@ Limiti attuali:
   libarchive di Homebrew e ai replayer di UADE in `build/uade-data`: l'app
   gira solo su questa macchina di sviluppo. Per distribuirla vanno messi nel
   bundle (i replayer con `mp_set_uade_data_dir()`);
-- gli oscilloscopi mostrano i canali sinistro e destro dell'uscita: i quattro
-  canali Paula separati richiedono lavoro nel core;
+- gli oscilloscopi mostrano i canali sinistro e destro dell'uscita: per le
+  voci separate (quelle di Paula ora si zittiscono una per una) il core
+  dovrebbe darne l'audio a parte;
 - niente trascinamento dei file sulla finestra, né dalla libreria alle
   playlist, e niente import o export M3U.
 

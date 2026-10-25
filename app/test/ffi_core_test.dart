@@ -31,6 +31,16 @@ void main() {
     expect(status.state, PlaybackState.playing);
     expect(status.position, greaterThan(1.0));
     expect(core.details().player, 'Jeroen Tel');
+    expect(core.details().channels, hasLength(4), reason: 'le quattro voci di Paula');
+    for (var voice = 0; voice < 4; voice++) {
+      core.setChannelMuted(voice, true);
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 800));
+    final muted = core.scope(4096);
+    expect(muted.map((v) => v.abs()).reduce((a, b) => a > b ? a : b), lessThan(0.01));
+    for (var voice = 0; voice < 4; voice++) {
+      core.setChannelMuted(voice, false);
+    }
     expect(core.scope(512), hasLength(1024));
 
     core.seek(30);

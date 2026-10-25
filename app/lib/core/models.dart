@@ -283,6 +283,7 @@ class TrackDetails {
     required this.author,
     required this.subsongCount,
     required this.duration,
+    this.channels = const [],
   });
 
   factory TrackDetails.fromJson(Map<String, dynamic> json) => TrackDetails(
@@ -295,6 +296,7 @@ class TrackDetails {
         author: json['author'] as String,
         subsongCount: json['subsongCount'] as int,
         duration: (json['duration'] as num?)?.toDouble(),
+        channels: (json['channels'] as List? ?? const []).cast<String>(),
       );
 
   final String file;
@@ -306,6 +308,11 @@ class TrackDetails {
   final String author;
   final int subsongCount;
   final double? duration;
+
+  /// I canali che si possono zittire (voci del chip, canali del tracker o
+  /// del MIDI), con il loro nome; "" se non ne hanno uno. Vuoto per i file
+  /// audio.
+  final List<String> channels;
 
   /// Il formato da mostrare: quello dichiarato, altrimenti il replayer.
   String get formatLabel => format.isNotEmpty ? format : player;

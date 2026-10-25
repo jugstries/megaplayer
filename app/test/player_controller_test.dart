@@ -88,6 +88,36 @@ void main() {
     expect(core.calls.where((c) => c.startsWith('subsong')), ['subsong 4']);
   });
 
+  test('mute e solo dei canali arrivano al core, e il brano dopo riparte con tutti', () {
+    controller.addPaths([FakeCore.archive]);
+    expect(controller.channels, hasLength(4));
+    core.calls.clear();
+
+    controller.toggleChannelMute(1);
+    expect(controller.channelAudible(1), isFalse);
+    expect(core.calls, ['mute 1']);
+
+    // In solo si sentono solo quelli in solo, anche se zittiti.
+    core.calls.clear();
+    controller.toggleChannelSolo(1);
+    controller.toggleChannelSolo(3);
+    expect([for (var i = 0; i < 4; i++) controller.channelAudible(i)], [false, true, false, true]);
+    expect(core.calls, ['mute 0', 'unmute 1', 'mute 2', 'mute 3', 'unmute 3']);
+
+    core.calls.clear();
+    controller.resetChannels();
+    expect(core.calls, ['unmute 0', 'unmute 2']);
+    expect(controller.mutedChannels, isEmpty);
+
+    controller.toggleChannelMute(0);
+    controller.toggleChannelMute(9); // non c'è
+    controller.selectSubsong(0);
+    expect(controller.channelAudible(0), isFalse, reason: 'il mute resta cambiando sottobrano');
+    controller.next();
+    expect(controller.mutedChannels, isEmpty);
+    expect(controller.channelAudible(0), isTrue);
+  });
+
   test("in pausa l'oscilloscopio si appiattisce piano piano, poi riparte", () {
     controller.addPaths([FakeCore.archive]);
     controller.refresh();

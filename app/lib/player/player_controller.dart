@@ -51,6 +51,14 @@ class PlayerController extends ChangeNotifier {
   /// Le playlist salvate (la coda non c'è).
   List<PlaylistInfo> playlists = const [];
 
+  /// I canali del brano zittiti, e quelli in solo: se ce n'è almeno uno in
+  /// solo si sentono solo loro. Valgono fino al brano dopo.
+  Set<int> mutedChannels = const {};
+  Set<int> soloChannels = const {};
+
+  /// Quello che il core sta zittendo, per mandargli solo i cambi.
+  List<bool> _silenced = const [];
+
   static const _files = MethodChannel('megaplayer/files');
   static const scopeFrames = 1024;
 
@@ -197,11 +205,16 @@ class PlayerController extends ChangeNotifier {
     if (index < 0 || index >= tracks.length) return;
     currentIndex = index;
     final track = tracks[index];
+    // Un brano nuovo parte con tutti i canali.
+    mutedChannels = const {};
+    soloChannels = const {};
+    _silenced = const [];
     try {
       core.play(track.ref);
       final subsong = track.subsong;
       if (subsong != null && subsong < core.status().subsongCount) core.selectSubsong(subsong);
       details = core.details();
+      _silenced = List.filled(channels.length, false);
       error = null;
     } on CoreException catch (e) {
       details = null;
@@ -248,6 +261,46 @@ class PlayerController extends ChangeNotifier {
     core.selectSubsong(index);
     refresh();
   }
+
+  // --- I canali ---
+
+  /// I canali del brano corrente che si possono zittire, con il loro nome.
+  List<String> get channels => details?.channels ?? const [];
+
+  /// Se il canale si sente, con mute e solo.
+  bool channelAudible(int channel) =>
+      soloChannels.isNotEmpty ? soloChannels.contains(channel) : !mutedChannels.contains(channel);
+
+  void toggleChannelMute(int channel) {
+    if (channel < 0 || channel >= channels.length) return;
+    mutedChannels = _toggle(mutedChannels, channel);
+    _applyChannels();
+  }
+
+  void toggleChannelSolo(int channel) {
+    if (channel < 0 || channel >= channels.length) return;
+    soloChannels = _toggle(soloChannels, channel);
+    _applyChannels();
+  }
+
+  /// Tutti i canali di nuovo, senza mute né solo.
+  void resetChannels() {
+    mutedChannels = const {};
+    soloChannels = const {};
+    _applyChannels();
+  }
+
+  void _applyChannels() {
+    for (var i = 0; i < _silenced.length; i++) {
+      final silenced = !channelAudible(i);
+      if (silenced != _silenced[i]) core.setChannelMuted(i, silenced);
+    }
+    _silenced = [for (var i = 0; i < _silenced.length; i++) !channelAudible(i)];
+    notifyListeners();
+  }
+
+  static Set<int> _toggle(Set<int> values, int value) =>
+      values.contains(value) ? ({...values}..remove(value)) : {...values, value};
 
   // --- La coda ---
 

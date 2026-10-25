@@ -125,4 +125,29 @@ void main() {
     await tester.pumpAndSettle();
     expect(controller.tracks, hasLength(5));
   });
+
+  testWidgets('canali: zittire, solo e tutti di nuovo', (tester) async {
+    controller.addPaths([FakeCore.archive]);
+    // I canali stanno in «In riproduzione», la vista di partenza.
+    tester.view.physicalSize = const Size(1440, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(MegaplayerApp(controller: controller));
+    core.calls.clear();
+    await tester.tap(find.byTooltip('Voce 2 · destra · clic per zittirlo'));
+    await tester.pump();
+    expect(core.calls, ['mute 1']);
+    expect(find.byTooltip('Voce 2 · destra · clic per riaccenderlo'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Senti solo questo canale (con gli altri in solo)').at(3));
+    await tester.pump();
+    expect(controller.soloChannels, {3});
+    expect([for (var i = 0; i < 4; i++) controller.channelAudible(i)], [false, false, false, true]);
+
+    await tester.tap(find.text('Tutti'));
+    await tester.pump();
+    expect(controller.mutedChannels, isEmpty);
+    expect(controller.soloChannels, isEmpty);
+    expect(core.calls.where((c) => c.startsWith('unmute')), hasLength(3));
+  });
 }

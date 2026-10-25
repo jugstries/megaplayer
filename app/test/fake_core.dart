@@ -77,6 +77,9 @@ class FakeCore implements PlayerCore {
   void setMegaSound(double amount) => calls.add('megasound ${(amount * 100).round()}');
 
   @override
+  void setChannelMuted(int channel, bool muted) => calls.add('${muted ? 'mute' : 'unmute'} $channel');
+
+  @override
   CoreStatus status() => CoreStatus(
         state: state,
         position: position,
@@ -96,6 +99,7 @@ class FakeCore implements PlayerCore {
         author: '',
         subsongCount: _subsongs,
         duration: _isTitle ? 184.48 : null,
+        channels: const ['Voce 1 · sinistra', 'Voce 2 · destra', 'Voce 3 · destra', 'Voce 4 · sinistra'],
       );
 
   @override

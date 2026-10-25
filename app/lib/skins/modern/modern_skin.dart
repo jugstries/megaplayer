@@ -10,6 +10,7 @@ import '../../player/player_controller.dart';
 import '../knob_control.dart';
 import '../skin_text.dart';
 
+part 'modern_channels.dart';
 part 'modern_library.dart';
 part 'modern_lists.dart';
 
@@ -540,6 +541,10 @@ class _NowPlaying extends StatelessWidget {
                         _ProgressBar(status: status, onSeek: controller.seekTo),
                         const SizedBox(height: 20),
                         _Transport(controller: controller),
+                        if (controller.channels.isNotEmpty) ...[
+                          const SizedBox(height: 16),
+                          _ChannelStrip(controller: controller),
+                        ],
                       ],
                     ),
             ),
@@ -1121,17 +1126,22 @@ class _MegaSoundPanel extends StatelessWidget {
               children: [
                 Expanded(child: Center(child: AspectRatio(aspectRatio: 1, child: knob))),
                 const SizedBox(width: 16),
-                Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    for (var i = 0; i < megaSoundStages.length; i++)
-                      _StageRow(
-                        name: megaSoundStages[i].name,
-                        color: _stageColor(i / (megaSoundStages.length - 1)),
-                        level: bypassed ? 0 : megaSoundStages[i].level(amount),
-                      ),
-                  ],
+                // Con poco spazio in altezza (la fila dei canali) l'elenco
+                // si rimpicciolisce invece di uscire dal riquadro.
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      for (var i = 0; i < megaSoundStages.length; i++)
+                        _StageRow(
+                          name: megaSoundStages[i].name,
+                          color: _stageColor(i / (megaSoundStages.length - 1)),
+                          level: bypassed ? 0 : megaSoundStages[i].level(amount),
+                        ),
+                    ],
+                  ),
                 ),
               ],
             ),

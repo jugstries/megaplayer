@@ -74,6 +74,20 @@ private enum FilesChannel {
         panel.beginSheetModal(for: window) { response in
           result(response == .OK ? panel.url?.path : nil)
         }
+      case "saveFile":
+        // Dove salvare un file che l'app scrive (un brano esportato), con il
+        // nome proposto e l'estensione che deve avere.
+        let arguments = call.arguments as? [String: Any]
+        let panel = NSSavePanel()
+        panel.message = arguments?["message"] as? String ?? ""
+        panel.nameFieldStringValue = arguments?["name"] as? String ?? ""
+        panel.canCreateDirectories = true
+        if let extensions = arguments?["extensions"] as? [String] {
+          panel.allowedContentTypes = extensions.compactMap { UTType(filenameExtension: $0) }
+        }
+        panel.beginSheetModal(for: window) { response in
+          result(response == .OK ? panel.url?.path : nil)
+        }
       case "initialFiles":
         // Solo percorsi assoluti: Xcode aggiunge argomenti suoi al lancio.
         result(CommandLine.arguments.dropFirst().filter { $0.hasPrefix("/") })

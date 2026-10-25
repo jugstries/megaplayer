@@ -106,3 +106,22 @@ String rolandChoice(String name, List<RolandDevice> soundCanvases) {
   if (name.isNotEmpty) return rolandName(name);
   return soundCanvases.isEmpty ? 'Automatico' : 'Automatico (${rolandName(soundCanvases.first.name)})';
 }
+
+// --- Esportazione ---
+
+/// "1:23", per l'avanzamento dell'esportazione.
+String formatClock(double seconds) {
+  final total = seconds.floor();
+  return '${total ~/ 60}:${(total % 60).toString().padLeft(2, '0')}';
+}
+
+/// "Esporto… 1:23 di 3:04".
+String exportProgress(double seconds, double? total) =>
+    'Esporto… ${formatClock(seconds)}${total == null ? '' : ' di ${formatClock(total)}'}';
+
+/// Cosa dice la finestra a esportazione finita, riuscita o no.
+String exportOutcome({required bool done, required bool cancelled, required String error, required String path}) {
+  if (done) return 'Salvato in $path';
+  if (cancelled) return 'Esportazione annullata.';
+  return 'Non è andata: $error.';
+}

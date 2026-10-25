@@ -14,6 +14,7 @@ import '../skin_text.dart';
 import '../update_text.dart';
 
 part 'retro_channels.dart';
+part 'retro_export.dart';
 part 'retro_library.dart';
 part 'retro_lists.dart';
 part 'retro_settings.dart';
@@ -206,6 +207,8 @@ class _MenuBar extends StatelessWidget {
           const SizedBox(width: 10),
           _MenuItem(label: 'Apri…', onTap: controller.openFiles),
           _MenuItem(label: 'Skin moderna', onTap: () => controller.setSkin(Skin.modern)),
+          if (controller.currentTrack != null)
+            _MenuItem(label: 'Esporta…', onTap: () => _showExport(context, controller)),
           if (controller.rolandSupported || controller.soundFontSupported)
             _MenuItem(
               label: 'Impostazioni…',
@@ -216,8 +219,16 @@ class _MenuBar extends StatelessWidget {
               label: updates.offer != null ? 'Aggiorna!' : 'Aggiornamenti…',
               onTap: () => _showUpdates(context, updates, check: updates.offer == null),
             ),
-          const Spacer(),
-          Text('$backends · 48 KHZ', style: _silk(12)),
+          // Con la finestra stretta cede lei, non i menu.
+          Expanded(
+            child: Text(
+              '$backends · 48 KHZ',
+              style: _silk(12),
+              textAlign: TextAlign.right,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
           const SizedBox(width: 14),
           Container(width: 2, height: 24, color: _ink),
           const SizedBox(width: 14),

@@ -13,6 +13,7 @@ import '../skin_text.dart';
 import '../update_text.dart';
 
 part 'modern_channels.dart';
+part 'modern_export.dart';
 part 'modern_library.dart';
 part 'modern_lists.dart';
 part 'modern_settings.dart';
@@ -894,6 +895,12 @@ class _Transport extends StatelessWidget {
                   size: 44,
                   children: _playlistMenuItems(context, controller, () => [controller.playingEntry!]),
                 ),
+              _SmallIconButton(
+                icon: Icons.file_download_rounded,
+                tooltip: 'Esporta in WAV o MP3',
+                size: 44,
+                onPressed: () => _showExport(context, controller),
+              ),
             ],
           ),
         ),

@@ -106,6 +106,39 @@ std::vector<std::string> Choose(HWND owner, bool folder,
   return paths;
 }
 
+// La finestra di Windows per scegliere dove salvare un file, con il nome
+// proposto e l'estensione che deve avere. "" se si annulla.
+std::string ChooseSaveFile(HWND owner, const std::string& name,
+                           const std::string& title,
+                           const std::vector<std::string>& extensions) {
+  ComPtr<IFileSaveDialog> dialog;
+  if (FAILED(::CoCreateInstance(CLSID_FileSaveDialog, nullptr,
+                                CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dialog)))) {
+    return std::string();
+  }
+  FILEOPENDIALOGOPTIONS options = 0;
+  dialog->GetOptions(&options);
+  dialog->SetOptions(options | FOS_FORCEFILESYSTEM | FOS_OVERWRITEPROMPT);
+  if (!title.empty()) {
+    dialog->SetTitle(Utf16FromUtf8(title).c_str());
+  }
+  if (!name.empty()) {
+    dialog->SetFileName(Utf16FromUtf8(name).c_str());
+  }
+  if (!extensions.empty()) {
+    const std::wstring extension = Utf16FromUtf8(extensions.front());
+    const std::wstring pattern = L"*." + extension;
+    const COMDLG_FILTERSPEC filter = {pattern.c_str(), pattern.c_str()};
+    dialog->SetFileTypes(1, &filter);
+    dialog->SetDefaultExtension(extension.c_str());
+  }
+  ComPtr<IShellItem> item;
+  if (FAILED(dialog->Show(owner)) || FAILED(dialog->GetResult(&item))) {
+    return std::string();
+  }
+  return PathOf(item.Get());
+}
+
 // Solo percorsi assoluti, come su macOS: "C:\..." o "\\server\...".
 bool IsAbsolute(const std::string& path) {
   if (path.size() >= 3 && std::isalpha(static_cast<unsigned char>(path[0])) &&
@@ -212,6 +245,11 @@ std::unique_ptr<Channel> CreateFilesChannel(flutter::BinaryMessenger* messenger,
                                     MapArgument(call, "message"));
           result->Success(paths.empty() ? EncodableValue()
                                         : EncodableValue(paths.front()));
+        } else if (method == "saveFile") {
+          const std::string path = ChooseSaveFile(
+              window, MapArgument(call, "name"), MapArgument(call, "message"),
+              ListArgument(call, "extensions"));
+          result->Success(path.empty() ? EncodableValue() : EncodableValue(path));
         } else if (method == "initialFiles") {
           std::vector<std::string> paths;
           for (const auto& argument : GetCommandLineArguments()) {

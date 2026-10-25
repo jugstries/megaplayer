@@ -240,4 +240,26 @@ void main() {
     final controller = withRoms(withLibrary(FakeLibraryStore()))..setSkin(Skin.retro);
     await shoot(tester, controller, 'retro-impostazioni', taps: ['Impostazioni…'], dialog: true);
   });
+
+  testWidgets('skin moderna, esportazione', (tester) async {
+    final controller = playingTitle()
+      ..setMegaSound(0.6)
+      ..toggleChannelMute(1);
+    tester.view.physicalSize = const Size(1440, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(MegaplayerApp(controller: controller));
+    await tester.tap(find.byTooltip('Esporta in WAV o MP3'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await expectLater(find.byType(MegaplayerApp), matchesGoldenFile('../build/screenshots/moderna-esporta.png'));
+  });
+
+  testWidgets('skin retrò, esportazione', (tester) async {
+    final controller = playingTitle()
+      ..setSkin(Skin.retro)
+      ..setMegaSound(0.6)
+      ..toggleChannelMute(1);
+    await shoot(tester, controller, 'retro-esporta', taps: ['Esporta…'], dialog: true);
+  });
 }

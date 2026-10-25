@@ -132,4 +132,24 @@ void main() {
     expect(core.soundFont(), isEmpty);
     core.setSoundFont(included);
   }, skip: library == null ? 'MEGAPLAYER_CORE non impostata' : null);
+
+  test('esportazione in WAV e MP3 con il core vero, con lo stato che arriva', () async {
+    final core = FfiPlayerCore.open();
+    addTearDown(core.dispose);
+    final tracks = core.collect(archive!);
+    final folder = Directory.systemTemp.createTempSync('megaplayer-export');
+    addTearDown(() => folder.deleteSync(recursive: true));
+    for (final extension in ['wav', if (core.canExportMp3) 'mp3']) {
+      final path = '${folder.path}/brano.$extension';
+      core.startExport(tracks.first.ref, subsong: 0, path: path, megaSound: 0.5, muted: const [1], title: 'Prova');
+      var status = core.exportStatus();
+      for (var i = 0; i < 600 && status.running; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        status = core.exportStatus();
+      }
+      expect(status.failed, isFalse, reason: status.error);
+      expect(status.seconds, greaterThan(1));
+      expect(File(path).lengthSync(), greaterThan(10000));
+    }
+  }, skip: skip);
 }

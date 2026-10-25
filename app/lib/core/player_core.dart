@@ -37,6 +37,28 @@ abstract interface class PlayerCore {
   void setSoundFont(String path);
   String soundFont();
 
+  /// Se il core sa esportare in MP3, oltre che in WAV.
+  bool get canExportMp3;
+
+  /// Esporta in [path] (.wav o .mp3) un brano come lo suona: il sottobrano,
+  /// i canali [muted] zittiti, la MegaSound a [megaSound]. Gira per conto
+  /// suo e ferma la riproduzione (UADE suona un brano per volta). Lancia
+  /// [CoreException].
+  void startExport(
+    String ref, {
+    required int subsong,
+    required String path,
+    required double megaSound,
+    required List<int> muted,
+    String title = '',
+    String artist = '',
+    String album = '',
+  });
+  ExportStatus exportStatus();
+
+  /// Si ferma e cancella il file.
+  void cancelExport();
+
   CoreStatus status();
   TrackDetails details();
 

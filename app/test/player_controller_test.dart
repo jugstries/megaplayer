@@ -328,4 +328,30 @@ void main() {
     PlayerController(again, store: store).restore();
     expect(again.currentSoundFont, '/SoundFont/Arachno.sf2');
   });
+
+  test('esportazione: il brano com\'è adesso, poi la riproduzione riprende da dov\'era', () {
+    controller.addPaths([FakeCore.archive]);
+    controller.playIndex(2);
+    core.position = 72;
+    controller
+      ..toggleChannelMute(1)
+      ..setMegaSound(0.6)
+      ..refresh();
+    controller.startExport('/Export/jt.title.mp3');
+    expect(core.exports, ['jt.title 0 /Export/jt.title.mp3 60 [1] "jt.title"']);
+    expect(controller.exporting, isTrue);
+
+    core.calls.clear();
+    core.exportState = const ExportStatus(seconds: 184, total: 184);
+    controller.refresh();
+    expect(controller.exporting, isFalse);
+    expect(controller.exportJob!.done, isTrue);
+    expect(core.calls, containsAllInOrder(['play jt.title', 'mute 1', 'seek 72']));
+    expect(controller.mutedChannels, {1});
+
+    // Senza MegaSound né canali, se non si vogliono.
+    controller.dismissExport();
+    controller.startExport('/Export/jt.title.wav', withMegaSound: false, withChannels: false);
+    expect(core.exports.last, 'jt.title 0 /Export/jt.title.wav 0 [] "jt.title"');
+  });
 }

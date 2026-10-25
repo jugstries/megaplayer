@@ -331,6 +331,27 @@ class Backend {
   final String description;
 }
 
+/// A che punto è l'esportazione di un brano.
+class ExportStatus {
+  const ExportStatus({
+    this.running = false,
+    this.failed = false,
+    this.cancelled = false,
+    this.seconds = 0,
+    this.total,
+    this.error = '',
+  });
+
+  final bool running;
+  final bool failed;
+  final bool cancelled;
+
+  /// Secondi scritti, su [total] se si sa.
+  final double seconds;
+  final double? total;
+  final String error;
+}
+
 /// Un modulo Roland emulato da 88emu, per i MIDI.
 class RolandDevice {
   const RolandDevice({required this.name, required this.la, required this.available});

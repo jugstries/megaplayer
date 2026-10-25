@@ -23,7 +23,26 @@ final class _MpStatus extends Struct {
   external double duration;
 }
 
+final class _MpExportStatus extends Struct {
+  @Int32()
+  external int running;
+  @Int32()
+  external int failed;
+  @Int32()
+  external int cancelled;
+  @Int32()
+  external int reserved;
+  @Double()
+  external double seconds;
+  @Double()
+  external double total;
+}
+
 typedef _Engine = Pointer<Void>;
+typedef _ExportNative = Int32 Function(_Engine, Pointer<Utf8>, Int32, Pointer<Utf8>, Float, Pointer<Int32>, Int32,
+    Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
+typedef _Export = int Function(
+    _Engine, Pointer<Utf8>, int, Pointer<Utf8>, double, Pointer<Int32>, int, Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
 
 /// La libreria del core: nel bundle dell'app su macOS (la copia
 /// scripts/embed-core-macos.sh), accanto all'eseguibile su Windows (la mette
@@ -113,6 +132,14 @@ class FfiPlayerCore implements PlayerCore {
             lib.lookupFunction<Void Function(Pointer<Utf8>), void Function(Pointer<Utf8>)>('mp_set_soundfont'),
         _soundFont =
             lib.lookupFunction<Pointer<Utf8> Function(_Engine), Pointer<Utf8> Function(_Engine)>('mp_engine_soundfont'),
+        canExportMp3 = lib.lookupFunction<Int32 Function(), int Function()>('mp_can_export_mp3')() != 0,
+        _export = lib.lookupFunction<_ExportNative, _Export>('mp_engine_export'),
+        _exportStatus = lib.lookupFunction<Void Function(_Engine, Pointer<_MpExportStatus>),
+            void Function(_Engine, Pointer<_MpExportStatus>)>('mp_engine_export_status'),
+        _exportError = lib.lookupFunction<Pointer<Utf8> Function(_Engine), Pointer<Utf8> Function(_Engine)>(
+            'mp_engine_export_error'),
+        _cancelExport =
+            lib.lookupFunction<Void Function(_Engine), void Function(_Engine)>('mp_engine_export_cancel'),
         _status = lib.lookupFunction<Void Function(_Engine, Pointer<_MpStatus>),
             void Function(_Engine, Pointer<_MpStatus>)>('mp_engine_status'),
         _trackInfo = lib.lookupFunction<Pointer<Utf8> Function(_Engine), Pointer<Utf8> Function(_Engine)>(
@@ -154,6 +181,13 @@ class FfiPlayerCore implements PlayerCore {
   final Pointer<Utf8> Function(_Engine) _rolandDevices;
   final void Function(Pointer<Utf8>) _setSoundFont;
   final Pointer<Utf8> Function(_Engine) _soundFont;
+  @override
+  final bool canExportMp3;
+  final _Export _export;
+  final void Function(_Engine, Pointer<_MpExportStatus>) _exportStatus;
+  final Pointer<Utf8> Function(_Engine) _exportError;
+  final void Function(_Engine) _cancelExport;
+  final Pointer<_MpExportStatus> _exportBuffer = calloc<_MpExportStatus>();
   final void Function(_Engine, Pointer<_MpStatus>) _status;
   final Pointer<Utf8> Function(_Engine) _trackInfo;
   final int Function(_Engine, Pointer<Float>, int) _scope;
@@ -231,6 +265,49 @@ class FfiPlayerCore implements PlayerCore {
   void setSoundFont(String path) => _withString(path, _setSoundFont);
 
   @override
+  void startExport(
+    String ref, {
+    required int subsong,
+    required String path,
+    required double megaSound,
+    required List<int> muted,
+    String title = '',
+    String artist = '',
+    String album = '',
+  }) {
+    final strings = [for (final text in [ref, path, title, artist, album]) text.toNativeUtf8()];
+    final channels = calloc<Int32>(muted.isEmpty ? 1 : muted.length);
+    for (var i = 0; i < muted.length; i++) {
+      channels[i] = muted[i];
+    }
+    try {
+      final result = _export(_engine, strings[0], subsong, strings[1], megaSound, channels, muted.length, strings[2],
+          strings[3], strings[4]);
+      if (result != 0) throw _error();
+    } finally {
+      strings.forEach(calloc.free);
+      calloc.free(channels);
+    }
+  }
+
+  @override
+  ExportStatus exportStatus() {
+    _exportStatus(_engine, _exportBuffer);
+    final raw = _exportBuffer.ref;
+    return ExportStatus(
+      running: raw.running != 0,
+      failed: raw.failed != 0,
+      cancelled: raw.cancelled != 0,
+      seconds: raw.seconds,
+      total: raw.total < 0 ? null : raw.total,
+      error: _exportError(_engine).toDartString(),
+    );
+  }
+
+  @override
+  void cancelExport() => _cancelExport(_engine);
+
+  @override
   String soundFont() => _soundFont(_engine).toDartString();
 
   @override
@@ -255,5 +332,6 @@ class FfiPlayerCore implements PlayerCore {
     _destroy(_engine);
     calloc.free(_statusBuffer);
     calloc.free(_scopeBuffer);
+    calloc.free(_exportBuffer);
   }
 }

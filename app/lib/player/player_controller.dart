@@ -12,6 +12,19 @@ import 'library_browser.dart';
 
 enum Skin { modern, retro }
 
+/// L'esportazione del brano: in corso, o l'ultima finita, finché la finestra
+/// non la toglie.
+class ExportJob {
+  ExportJob(this.path);
+
+  /// Il file, .wav o .mp3.
+  final String path;
+  ExportStatus status = const ExportStatus(running: true);
+
+  bool get running => status.running;
+  bool get done => !status.running && !status.failed && !status.cancelled;
+}
+
 /// Con che cosa suonano i MIDI quando non ci sono le ROM dei moduli Roland:
 /// il SoundFont incluso nell'app, uno scelto dall'utente, o i chip FM.
 enum SoundFontChoice { included, custom, fm }
@@ -146,6 +159,7 @@ class PlayerController extends ChangeNotifier {
   /// intero si passa al sottobrano successivo; altrimenti alla voce dopo.
   void refresh() {
     library.poll();
+    _pollExport();
     status = core.status();
     scope = status.isPlaying ? core.scope(scopeFrames) : _flatten(scope);
     if (status.state == PlaybackState.ended) {
@@ -179,6 +193,112 @@ class PlayerController extends ChangeNotifier {
     } else {
       core.stop();
       status = CoreStatus.idle;
+    }
+  }
+
+  // --- L'esportazione ---
+
+  ExportJob? exportJob;
+
+  /// Il brano da riprendere dopo l'esportazione, che ferma la riproduzione.
+  ({int index, int subsong, double position, bool playing})? _resume;
+
+  bool get exporting => exportJob?.running ?? false;
+
+  /// Se la MegaSound e i canali del brano cambierebbero il file esportato.
+  bool get megaSoundAudible => megaSound > 0 && !megaSoundBypassed;
+  bool get channelsChanged => [for (var i = 0; i < channels.length; i++) !channelAudible(i)].contains(true);
+
+  /// Il nome proposto per il file: il titolo o il nome del brano, con il
+  /// sottobrano se ce n'è più d'uno, senza i caratteri che i file non
+  /// ammettono.
+  String exportName() {
+    final track = currentTrack;
+    if (track == null) return 'megaplayer';
+    final title = details?.title;
+    var name = title != null && title.isNotEmpty ? title : track.fileName;
+    if (status.subsongCount > 1) name = '$name (sottobrano ${status.subsong + 1})';
+    return name.replaceAll(RegExp(r'[/\\:*?"<>|]'), '-').trim();
+  }
+
+  /// La finestra del sistema per scegliere dove salvare, poi l'esportazione.
+  Future<void> chooseExportFile({required bool mp3, bool withMegaSound = true, bool withChannels = true}) async {
+    final extension = mp3 ? 'mp3' : 'wav';
+    final path = await _files.invokeMethod<String>('saveFile', {
+      'name': '${exportName()}.$extension',
+      'message': 'Esporta il brano che suona',
+      'extensions': [extension],
+    });
+    if (path != null) startExport(path, withMegaSound: withMegaSound, withChannels: withChannels);
+  }
+
+  /// Esporta il brano che suona com'è adesso: il sottobrano, i canali che si
+  /// sentono, la MegaSound. La riproduzione si ferma e alla fine riprende da
+  /// dov'era.
+  void startExport(String path, {bool withMegaSound = true, bool withChannels = true}) {
+    final track = currentTrack;
+    if (track == null || exporting) return;
+    final playing = status.isPlaying;
+    final active = status.state != PlaybackState.idle && status.state != PlaybackState.ended;
+    _resume = active
+        ? (index: currentIndex!, subsong: status.subsong, position: status.position, playing: playing)
+        : null;
+    try {
+      core.startExport(
+        track.ref,
+        subsong: active ? status.subsong : (track.subsong ?? 0),
+        path: path,
+        megaSound: withMegaSound && megaSoundAudible ? megaSound : 0,
+        muted: withChannels ? [for (var i = 0; i < channels.length; i++) if (!channelAudible(i)) i] : const [],
+        title: details?.title.isNotEmpty == true ? details!.title : track.fileName,
+        artist: details?.author ?? '',
+        album: track.location,
+      );
+      exportJob = ExportJob(path)..status = core.exportStatus();
+      error = null;
+    } on CoreException catch (e) {
+      _resume = null;
+      error = 'esportazione: $e';
+    }
+    status = core.status();
+    notifyListeners();
+  }
+
+  void cancelExport() => core.cancelExport();
+
+  /// La finestra dell'esportazione si chiude.
+  void dismissExport() {
+    if (exporting) return;
+    exportJob = null;
+    notifyListeners();
+  }
+
+  void _pollExport() {
+    final job = exportJob;
+    if (job == null || !job.running) return;
+    job.status = core.exportStatus();
+    if (!job.running) _resumeAfterExport();
+  }
+
+  // Lo stesso brano, sottobrano e punto, con i canali e la MegaSound di
+  // prima (playIndex li azzererebbe).
+  void _resumeAfterExport() {
+    final resume = _resume;
+    _resume = null;
+    if (resume == null || resume.index != currentIndex) return;
+    try {
+      core.play(tracks[resume.index].ref);
+      if (resume.subsong > 0 && resume.subsong < core.status().subsongCount) core.selectSubsong(resume.subsong);
+      details = core.details();
+      _silenced = List.filled(channels.length, false);
+      for (var i = 0; i < channels.length; i++) {
+        if (!channelAudible(i)) core.setChannelMuted(i, true);
+      }
+      _silenced = [for (var i = 0; i < channels.length; i++) !channelAudible(i)];
+      if (resume.position > 1) core.seek(resume.position);
+      if (!resume.playing) core.setPaused(true);
+    } on CoreException catch (e) {
+      error = '${tracks[resume.index].fileName}: $e';
     }
   }
 

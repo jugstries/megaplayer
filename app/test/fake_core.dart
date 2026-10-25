@@ -86,6 +86,36 @@ class FakeCore implements PlayerCore {
   String rolandDevice = '';
   String romsIn = '/Roms/Roland';
 
+  /// Le esportazioni chieste, e lo stato che il core finto riporta.
+  final List<String> exports = [];
+  ExportStatus exportState = const ExportStatus();
+
+  @override
+  bool get canExportMp3 => true;
+
+  @override
+  void startExport(
+    String ref, {
+    required int subsong,
+    required String path,
+    required double megaSound,
+    required List<int> muted,
+    String title = '',
+    String artist = '',
+    String album = '',
+  }) {
+    // Come quello vero, si ferma la riproduzione.
+    state = PlaybackState.idle;
+    exports.add('${ref.split('/').last} $subsong $path ${(megaSound * 100).round()} $muted "$title"');
+    exportState = const ExportStatus(running: true, total: 184);
+  }
+
+  @override
+  ExportStatus exportStatus() => exportState;
+
+  @override
+  void cancelExport() => exportState = const ExportStatus(cancelled: true, error: 'esportazione annullata');
+
   /// Il SoundFont in uso; all'avvio quello "incluso".
   String currentSoundFont = '/App/soundfonts/GeneralUser-GS.sf2';
 

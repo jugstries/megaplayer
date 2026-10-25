@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:megaplayer/app.dart';
+import 'package:megaplayer/core/models.dart';
 import 'package:megaplayer/player/player_controller.dart';
 import 'package:megaplayer/update/updates.dart';
 
@@ -277,5 +278,44 @@ void main() {
     await tester.pump();
     expect(core.currentSoundFont, '/App/soundfonts/GeneralUser-GS.sf2');
     expect(store.settings['midi.soundfont'], 'included');
+  });
+
+  testWidgets('esportazione: formato, MegaSound, finestra Salva e avanzamento', (tester) async {
+    
+    Object? asked;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(const MethodChannel('megaplayer/files'), (call) async {
+      asked = call.arguments;
+      return call.method == 'saveFile' ? '/Export/brano.mp3' : null;
+    });
+    addTearDown(() => tester.binding.defaultBinaryMessenger
+        .setMockMethodCallHandler(const MethodChannel('megaplayer/files'), null));
+    controller.addPaths([FakeCore.archive]);
+    controller.playIndex(2);
+    controller.setMegaSound(0.5);
+    tester.view.physicalSize = const Size(1440, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(MegaplayerApp(controller: controller));
+    await tester.tap(find.byTooltip('Esporta in WAV o MP3'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('MP3, alta qualità (VBR)'), findsOneWidget);
+    await tester.tap(find.text('Con la MegaSound al 50%'));
+    await tester.pump();
+    await tester.tap(find.text('Esporta…').last);
+    await tester.pump();
+    expect((asked as Map)['name'], 'jt.title.mp3');
+    expect(core.exports.single, 'jt.title 0 /Export/brano.mp3 0 [] "jt.title"');
+    expect(find.text('Esporto… 0:00 di 3:04'), findsOneWidget);
+
+    core.exportState = const ExportStatus(seconds: 184, total: 184);
+    controller.refresh();
+    await tester.pump();
+    expect(find.text('Salvato in /Export/brano.mp3'), findsOneWidget);
+    await tester.tap(find.text('Fatto'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('Esporta il brano'), findsNothing);
+    expect(controller.exportJob, isNull);
   });
 }

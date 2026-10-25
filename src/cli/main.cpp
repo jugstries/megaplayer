@@ -61,6 +61,9 @@ Opzioni della libreria:
   -p, --platform ID    solo questa piattaforma, es. amiga, pc, c64, nes
                        (si può ripetere)
   -f, --format NOME    solo questo formato (si può ripetere)
+  -d, --folder PERCORSO
+                       solo in questa cartella della libreria e sotto,
+                       es. Amiga/Jesper\ Kyd
   -n, --limit N        quanti risultati mostrare (default 50)
 
 FILE può essere un archivio (LHA, ZIP, 7z, tar, ...): si suonano i brani che
@@ -87,6 +90,7 @@ struct Options {
     std::string database;
     std::vector<std::string> platforms;
     std::vector<std::string> formats;
+    std::string folder;
     int limit = 50;
 };
 
@@ -137,6 +141,8 @@ Options parseArgs(int argc, char** argv)
             options.platforms.push_back(value(i));
         } else if (arg == "-f" || arg == "--format") {
             options.formats.push_back(value(i));
+        } else if (arg == "-d" || arg == "--folder") {
+            options.folder = value(i);
         } else if (arg == "-n" || arg == "--limit") {
             options.limit = parseNumber(arg, value(i), 1, 100000);
         } else if (arg.size() > 1 && arg[0] == '-') {
@@ -542,6 +548,7 @@ int runLibrarySearch(const Library& library, const Options& options)
         query.text += (i > 1 ? " " : "") + options.files[i];
     query.platforms = options.platforms;
     query.formats = options.formats;
+    query.folder = options.folder;
     query.limit = options.limit;
     const LibraryPage page = library.search(query);
     for (const LibraryTrack& track : page.tracks) {
@@ -571,6 +578,7 @@ int runLibraryStats(const Library& library, const Options& options)
     LibraryQuery query;
     query.platforms = options.platforms;
     query.formats = options.formats;
+    query.folder = options.folder;
     const LibraryFacets facets = library.facets(query);
     std::cout << "Piattaforme:\n";
     for (const LibraryFacet& facet : facets.platforms)

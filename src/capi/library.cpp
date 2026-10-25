@@ -41,6 +41,7 @@ struct mp_library {
     std::string rootText;
     std::string searchJson;
     std::string facetsJson;
+    std::string foldersJson;
     std::string trackJson;
     std::string playlistsJson;
     std::string entriesJson;
@@ -67,12 +68,13 @@ std::vector<std::string> lines(const char* text)
     return values;
 }
 
-mp::LibraryQuery makeQuery(const char* text, const char* platforms, const char* formats)
+mp::LibraryQuery makeQuery(const char* text, const char* platforms, const char* formats, const char* folder)
 {
     mp::LibraryQuery query;
     query.text = text ? text : "";
     query.platforms = lines(platforms);
     query.formats = lines(formats);
+    query.folder = folder ? folder : "";
     return query;
 }
 
@@ -243,10 +245,11 @@ void mp_library_scan_status(mp_library* library, mp_scan_status* out)
 }
 
 const char* mp_library_search(mp_library* library, const char* text, const char* platforms, const char* formats,
-                              int32_t offset, int32_t limit)
+                              const char* folder, int32_t subfolders, int32_t offset, int32_t limit)
 {
     try {
-        mp::LibraryQuery query = makeQuery(text, platforms, formats);
+        mp::LibraryQuery query = makeQuery(text, platforms, formats, folder);
+        query.subfolders = subfolders != 0;
         query.offset = offset;
         query.limit = limit;
         const mp::LibraryPage page = library->library.search(query);
@@ -261,10 +264,11 @@ const char* mp_library_search(mp_library* library, const char* text, const char*
     return library->searchJson.c_str();
 }
 
-const char* mp_library_facets(mp_library* library, const char* text, const char* platforms, const char* formats)
+const char* mp_library_facets(mp_library* library, const char* text, const char* platforms, const char* formats,
+                              const char* folder)
 {
     try {
-        const mp::LibraryFacets facets = library->library.facets(makeQuery(text, platforms, formats));
+        const mp::LibraryFacets facets = library->library.facets(makeQuery(text, platforms, formats, folder));
         std::string json = "{\"platforms\":[";
         for (size_t i = 0; i < facets.platforms.size(); ++i) {
             const mp::LibraryFacet& facet = facets.platforms[i];
@@ -284,6 +288,25 @@ const char* mp_library_facets(mp_library* library, const char* text, const char*
         library->facetsJson = "{\"platforms\":[],\"formats\":[]}";
     }
     return library->facetsJson.c_str();
+}
+
+const char* mp_library_folders(mp_library* library, const char* text, const char* platforms, const char* formats,
+                               const char* folder)
+{
+    try {
+        const std::vector<mp::LibraryFacet> folders =
+            library->library.folders(makeQuery(text, platforms, formats, folder));
+        std::string json = "[";
+        for (size_t i = 0; i < folders.size(); ++i) {
+            json += (i == 0 ? "{" : ",{") + std::string("\"name\":") + mp::json::string(folders[i].value)
+                + ",\"count\":" + std::to_string(folders[i].count) + "}";
+        }
+        library->foldersJson = json + "]";
+    } catch (const std::exception& e) {
+        library->error = e.what();
+        library->foldersJson = "[]";
+    }
+    return library->foldersJson.c_str();
 }
 
 const char* mp_library_track(mp_library* library, const char* ref)

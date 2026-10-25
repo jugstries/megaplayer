@@ -182,13 +182,15 @@ Una cartella radice con tutta la musica, indicizzata in un database SQLite
 dentro gli archivi, formato, piattaforma, titolo, autore e sottobrani con le
 durate. Si cerca per parole (in titolo, autore, nome del file e cartella) e si
 filtra per piattaforma e formato; i conteggi di ogni filtro tengono conto
-dell'altro.
+dell'altro. Si naviga anche per cartelle, con gli archivi che fanno da
+cartella, e la ricerca vale da una cartella in giù.
 
 ```bash
 build/megaplayer library scan ~/Musica/Moduli    # sceglie la cartella e la indicizza
 build/megaplayer library scan                    # aggiorna: legge solo i file nuovi o cambiati
 build/megaplayer library search jeroen tel       # cerca
 build/megaplayer library search -p amiga -f TFMX-Pro
+build/megaplayer library search -d "TFMX Professional" apidya
 build/megaplayer library stats                   # brani per piattaforma e formato
 ```
 

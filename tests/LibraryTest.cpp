@@ -1,7 +1,7 @@
 // Verifica la libreria con i toni di prova di tests/data, copiati in una
 // cartella con sottocartelle, un file nascosto, un file di testo e (se c'è
 // libarchive) uno zip: prima scansione, scansione senza novità, file cambiati
-// e spariti, ricerca, filtri, conteggi, cambio di radice, interruzione,
+// e spariti, ricerca, filtri, conteggi, cartelle, cambio di radice, interruzione,
 // playlist, coda e impostazioni, l'API C con la scansione in background, e
 // come TrackCollector riapre per ref i brani negli archivi.
 // Uso: library_test DIR DATI [CMAKE]   (CMAKE serve a creare lo zip)
@@ -145,6 +145,29 @@ void testLibrary(const fs::path& root, const fs::path& database, bool withArchiv
           "piattaforme contate con il filtro sul formato");
     check(facets.formats.size() == 3, "formati contati senza il proprio filtro: " + std::to_string(facets.formats.size()));
 
+    // Cartelle: tono.wav e tono.mp3 nella radice, tono.flac in
+    // Archivio/Toni, zippato.wav in toni.zip/dentro.
+    query = {};
+    const std::vector<mp::LibraryFacet> top = library.folders(query);
+    check(top.size() == (withArchive ? 2 : 1) && top[0].value == "Archivio" && top[0].count == 1
+              && (!withArchive || (top[1].value == "toni.zip" && top[1].count == 1)),
+          "cartelle della radice: " + std::to_string(top.size()));
+    query.folder = "Archivio";
+    const std::vector<mp::LibraryFacet> inner = library.folders(query);
+    check(inner.size() == 1 && inner[0].value == "Toni" && inner[0].count == 1, "sottocartelle");
+    check(library.search(query).total == 1, "ricerca in una cartella e sotto");
+    check(library.facets(query).formats.size() == 1, "conteggi in una cartella");
+    query.subfolders = false;
+    check(library.search(query).total == 0, "solo i brani della cartella");
+    query.folder.clear();
+    check(library.search(query).total == 2, "i brani della radice");
+    query = {};
+    query.folder = "Archiv";
+    check(library.search(query).total == 0, "una cartella non vale come prefisso");
+    query = {};
+    query.formats = {"MP3"};
+    check(library.folders(query).empty(), "cartelle senza brani della ricerca");
+
     // Interrotta prima di cominciare: niente si toglie.
     fs::remove(root / "tono.mp3");
     mp::ScanProgress progress;
@@ -253,13 +276,17 @@ void testCApi(const fs::path& root, const fs::path& database)
     check(!status.running && !status.failed && status.files_read == status.files_found && status.tracks_found > 0,
           "scansione in background");
 
-    const std::string json = mp_library_search(library, "prova", "audio", "WAV\nFLAC", 0, 10);
+    const std::string json = mp_library_search(library, "prova", "audio", "WAV\nFLAC", "", 1, 0, 10);
     check(json.find("\"total\":") != std::string::npos && json.find("\"format\":\"FLAC\"") != std::string::npos
               && json.find("\"platformName\":\"File audio\"") != std::string::npos,
           "mp_library_search: " + json.substr(0, 120));
-    const std::string facets = mp_library_facets(library, "", "", "");
+    const std::string facets = mp_library_facets(library, "", "", "", "");
     check(facets.find("{\"id\":\"audio\",\"name\":\"File audio\",\"count\":") != std::string::npos,
           "mp_library_facets: " + facets);
+    const std::string folders = mp_library_folders(library, "", "", "", "Archivio");
+    check(folders == "[{\"name\":\"Toni\",\"count\":1}]", "mp_library_folders: " + folders);
+    const std::string direct = mp_library_search(library, "", "", "", "Archivio/Toni", 0, 0, 10);
+    check(direct.find("\"total\":1,") != std::string::npos, "mp_library_search in una cartella: " + direct.substr(0, 60));
     const std::string ref = (root / "Archivio" / "Toni" / "tono.flac").string();
     const std::string track = mp_library_track(library, ref.c_str());
     check(track.find("\"durations\":[1.000]") != std::string::npos, "mp_library_track: " + track);

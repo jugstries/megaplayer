@@ -141,21 +141,30 @@ MP_API void mp_library_scan_status(mp_library* library, mp_scan_status* out);
 /*
  * Ricerca: le parole di `text` in titolo, autore, nome e cartella;
  * `platforms` e `formats` separati da '\n', vuoti per non filtrare.
+ * `folder` limita la ricerca a una cartella rispetto alla radice ("" per
+ * tutta la libreria), con le sottocartelle se `subfolders` non è 0.
  * {"total": 120, "tracks": [{"ref": "...", "name": "...", "folder": "...",
  *   "backend": "...", "format": "...", "player": "...", "platform": "amiga",
  *   "platformName": "Amiga", "title": "...", "author": "...", "subsongs": 1,
  *   "startSubsong": 0, "duration": 61.2 | null, ...}]}
  */
 MP_API const char* mp_library_search(mp_library* library, const char* text, const char* platforms,
-                                     const char* formats, int32_t offset, int32_t limit);
+                                     const char* formats, const char* folder, int32_t subfolders, int32_t offset,
+                                     int32_t limit);
 /*
- * Quanti brani per piattaforma e per formato, contati con il testo e con il
- * filtro dell'altro gruppo:
+ * Quanti brani per piattaforma e per formato, contati con il testo, la
+ * cartella (sottocartelle comprese) e il filtro dell'altro gruppo:
  * {"platforms": [{"id": "amiga", "name": "Amiga", "count": 12}],
  *  "formats": [{"name": "ProTracker", "count": 3}]}
  */
 MP_API const char* mp_library_facets(mp_library* library, const char* text, const char* platforms,
-                                     const char* formats);
+                                     const char* formats, const char* folder);
+/*
+ * Le sottocartelle di `folder` con brani della ricerca, e quanti ne hanno
+ * in tutto: [{"name": "Jesper Kyd", "count": 12}, ...].
+ */
+MP_API const char* mp_library_folders(mp_library* library, const char* text, const char* platforms,
+                                      const char* formats, const char* folder);
 /* Un brano, con "durations": la durata di ogni sottobrano (null se non si sa). "" se non c'è. */
 MP_API const char* mp_library_track(mp_library* library, const char* ref);
 

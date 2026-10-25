@@ -8,8 +8,10 @@
 #include <sqlite3.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cstdint>
 #include <cstdlib>
+#include <map>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -302,6 +304,21 @@ struct Filter {
             parameters.push_back(values[i]);
         }
         where += ")";
+    }
+
+    // La cartella, e con `subfolders` tutto quello che sta sotto: i nomi
+    // tra "CARTELLA/" e "CARTELLA0" ('0' viene subito dopo '/').
+    void inFolder(const std::string& folder, bool subfolders)
+    {
+        if (folder.empty() && subfolders)
+            return;
+        if (!subfolders) {
+            where += " AND folder = ?";
+            parameters.push_back(folder);
+            return;
+        }
+        where += " AND (folder = ? OR (folder >= ? AND folder < ?))";
+        parameters.insert(parameters.end(), {folder, folder + "/", folder + "0"});
     }
 
     void bindTo(Statement& statement) const
@@ -657,6 +674,7 @@ LibraryPage Library::search(const LibraryQuery& query) const
     filter.text(query.text);
     filter.oneOf("platform", query.platforms);
     filter.oneOf("format", query.formats);
+    filter.inFolder(query.folder, query.subfolders);
 
     const std::lock_guard lock(mutex_);
     LibraryPage page;
@@ -684,15 +702,54 @@ LibraryFacets Library::facets(const LibraryQuery& query) const
     Filter byPlatform;
     byPlatform.text(query.text);
     byPlatform.oneOf("format", query.formats);
+    byPlatform.inFolder(query.folder, query.subfolders);
     Filter byFormat;
     byFormat.text(query.text);
     byFormat.oneOf("platform", query.platforms);
+    byFormat.inFolder(query.folder, query.subfolders);
 
     const std::lock_guard lock(mutex_);
     LibraryFacets facets;
     facets.platforms = countBy(db_, "platform", byPlatform, "COUNT(*) DESC, platform");
     facets.formats = countBy(db_, "format", byFormat, "format COLLATE NOCASE");
     return facets;
+}
+
+std::vector<LibraryFacet> Library::folders(const LibraryQuery& query) const
+{
+    Filter filter;
+    filter.text(query.text);
+    filter.oneOf("platform", query.platforms);
+    filter.oneOf("format", query.formats);
+    if (query.folder.empty()) {
+        filter.where += " AND folder <> ''";
+    } else {
+        filter.where += " AND folder >= ? AND folder < ?";
+        filter.parameters.insert(filter.parameters.end(), {query.folder + "/", query.folder + "0"});
+    }
+
+    // Le cartelle con brani, anche molto più in basso: di ognuna conta il
+    // primo pezzo dopo query.folder.
+    const size_t skip = query.folder.empty() ? 0 : query.folder.size() + 1;
+    std::map<std::string, int> counts;
+    {
+        const std::lock_guard lock(mutex_);
+        for (const LibraryFacet& facet : countBy(db_, "folder", filter, "folder")) {
+            const std::string rest = facet.value.substr(skip);
+            counts[rest.substr(0, rest.find('/'))] += facet.count;
+        }
+    }
+
+    std::vector<LibraryFacet> folders;
+    for (const auto& [name, count] : counts)
+        folders.push_back({name, count});
+    std::sort(folders.begin(), folders.end(), [](const LibraryFacet& a, const LibraryFacet& b) {
+        return std::lexicographical_compare(a.value.begin(), a.value.end(), b.value.begin(), b.value.end(),
+                                            [](unsigned char x, unsigned char y) {
+                                                return std::tolower(x) < std::tolower(y);
+                                            });
+    });
+    return folders;
 }
 
 std::optional<LibraryTrack> Library::track(const std::string& ref) const

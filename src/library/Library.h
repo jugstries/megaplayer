@@ -37,6 +37,10 @@ struct LibraryQuery {
     std::string text;                   // parole cercate in titolo, autore, nome e cartella
     std::vector<std::string> platforms; // vuoto: tutte
     std::vector<std::string> formats;   // vuoto: tutti
+    // La cartella in cui cercare, rispetto alla radice (archivi compresi,
+    // come LibraryTrack::folder); vuota per tutta la libreria.
+    std::string folder;
+    bool subfolders = true; // false: solo i brani che stanno proprio lì
     int offset = 0;
     int limit = 200;
 };
@@ -130,6 +134,9 @@ public:
     // Quanti brani per piattaforma e per formato, con il solo testo della
     // ricerca: i filtri si combinano guardando questi conteggi.
     LibraryFacets facets(const LibraryQuery& query) const;
+    // Le sottocartelle di query.folder che hanno brani della ricerca, con
+    // quanti ne hanno in tutto, in ordine di nome.
+    std::vector<LibraryFacet> folders(const LibraryQuery& query) const;
     std::optional<LibraryTrack> track(const std::string& ref) const;
     // La durata di ogni sottobrano, nullopt dove non si sa.
     std::vector<std::optional<double>> subsongDurations(const std::string& ref) const;

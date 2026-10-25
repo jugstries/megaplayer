@@ -47,15 +47,21 @@ class Updater {
         _httpClient = httpClient ?? HttpClient.new;
 
   /// L'updater di questa copia dell'app, o null se non si aggiorna da sola:
-  /// build di sviluppo, o piattaforma senza installer (per ora c'è solo
-  /// quello di Windows).
+  /// build di sviluppo, o piattaforma senza release (Linux).
   static Updater? forThisApp() {
-    if (appBuild == 0 || releasePublicKey.isEmpty || !Platform.isWindows) return null;
+    if (appBuild == 0 || releasePublicKey.isEmpty) return null;
+    final (platform, launch) = Platform.isWindows
+        ? ('windows', launchInstaller)
+        : Platform.isMacOS
+            ? ('macos', replaceAppBundle)
+            : (null, null);
+    if (platform == null || launch == null) return null;
     return Updater(
-      platform: 'windows',
+      platform: platform,
       currentBuild: appBuild,
       feed: Uri.parse(updatesUrl),
       publicKey: releasePublicKey,
+      launch: launch,
     );
   }
 
@@ -72,7 +78,8 @@ class Updater {
   /// Dove finiscono gli installer scaricati.
   final Directory downloads;
 
-  /// Avvia l'installer scaricato; poi l'app si chiude.
+  /// Avvia l'installazione di quello che è stato scaricato (l'installer su
+  /// Windows, lo zip dell'app su macOS); poi l'app si chiude.
   final Future<void> Function(File installer) launch;
 
   final HttpClient Function() _httpClient;
@@ -134,13 +141,13 @@ class Updater {
     return target;
   }
 
-  /// Toglie gli installer delle volte passate (il registro dell'ultima
-  /// installazione resta, per capire cosa è andato storto).
+  /// Toglie quello che è stato scaricato le volte passate (il registro
+  /// dell'ultima installazione resta, per capire cosa è andato storto).
   Future<void> cleanUp() async {
     try {
       if (!await downloads.exists()) return;
       await for (final entry in downloads.list()) {
-        if (entry is File && entry.path.toLowerCase().endsWith('.exe')) await entry.delete();
+        if (!entry.path.endsWith('.log')) await entry.delete(recursive: true);
       }
     } on FileSystemException {
       // Un installer ancora aperto: sarà per la prossima volta.
@@ -187,3 +194,65 @@ Future<void> launchInstaller(File installer) async {
     throw UpdateException('impossibile avviare l\'installer: ${e.message}');
   }
 }
+
+/// Su macOS: estrae l'app dallo zip scaricato e lascia il cambio a uno
+/// script, che aspetta la chiusura di questa copia, mette la nuova al suo
+/// posto (rimettendo la vecchia se qualcosa va storto) e la riapre. Chi
+/// chiama chiude l'app subito dopo.
+///
+/// [target] è l'app da sostituire (di solito questa), [waitFor] il processo
+/// da aspettare (questo); servono ai test, che non la riaprono
+/// ([relaunch]).
+Future<void> replaceAppBundle(File archive, {Directory? target, int? waitFor, bool relaunch = true}) async {
+  final app = target ?? File(Platform.resolvedExecutable).parent.parent.parent;
+  // Aperta senza spostarla da Download, macOS la fa girare da una copia
+  // temporanea in sola lettura.
+  if (app.path.contains('/AppTranslocation/')) {
+    throw const UpdateException('megaplayer gira da una cartella temporanea di macOS: '
+        'spostalo in Applicazioni, riaprilo e riprova');
+  }
+  final probe = File('${app.parent.path}/.megaplayer-aggiornamento');
+  try {
+    await probe.writeAsString('');
+    await probe.delete();
+  } on FileSystemException {
+    throw UpdateException('non posso scrivere in ${app.parent.path}: scarica la versione nuova dal sito');
+  }
+
+  final staging = Directory('${archive.parent.path}/nuova');
+  if (await staging.exists()) await staging.delete(recursive: true);
+  final unzip = await Process.run('/usr/bin/ditto', ['-x', '-k', archive.path, staging.path]);
+  final fresh = unzip.exitCode != 0
+      ? null
+      : (await staging.list().toList()).where((entry) => entry is Directory && entry.path.endsWith('.app')).firstOrNull;
+  if (fresh == null) throw const UpdateException('lo zip scaricato non contiene l\'app');
+
+  final script = File('${archive.parent.path}/aggiorna.sh');
+  await script.writeAsString(_swapScript);
+  await Process.start(
+    '/bin/sh',
+    [script.path, '${waitFor ?? pid}', fresh.path, app.path, '${archive.parent.path}/installazione.log', '$relaunch'],
+    mode: ProcessStartMode.detached,
+  );
+}
+
+const _swapScript = r"""
+# Aspetta che megaplayer si chiuda, mette la versione nuova al posto della
+# vecchia, che torna dov'era se qualcosa va storto, e la riapre.
+# Uso: aggiorna.sh PID NUOVA.app VECCHIA.app REGISTRO RIAPRI
+pid=$1 new=$2 target=$3 relaunch=$5
+exec >>"$4" 2>&1
+echo "$(date): aggiorno $target"
+while kill -0 "$pid" 2>/dev/null; do sleep 0.2; done
+rm -rf "$target.nuova" "$target.vecchia"
+if /usr/bin/ditto "$new" "$target.nuova" && mv "$target" "$target.vecchia" && mv "$target.nuova" "$target"; then
+  rm -rf "$target.vecchia"
+  echo "fatto"
+else
+  [ -d "$target" ] || mv "$target.vecchia" "$target"
+  rm -rf "$target.nuova"
+  echo "non riuscito: resta la versione di prima"
+fi
+[ "$relaunch" = true ] && open "$target"
+exit 0
+""";

@@ -397,11 +397,13 @@ che suona vuole anche `STORMLORD_LHA`, un archivio di prova).
 
 Limiti attuali:
 
-- su macOS la sandbox è disattivata, e la libreria punta a libopenmpt e
-  libarchive di Homebrew e ai replayer di UADE in `build/uade-data`: l'app
-  gira solo su questa macchina di sviluppo. Per distribuirla vanno messi nel
-  bundle (i replayer in `Contents/Resources/uade-data`, che l'app già cerca),
-  e solo allora potrà aggiornarsi da sola come quella Windows;
+- su macOS la sandbox è disattivata. Le build di sviluppo puntano a
+  libopenmpt e libarchive di Homebrew e ai replayer in `build/uade-data`;
+  quella delle release se li porta dentro
+  ([scripts/package-macos.sh](scripts/package-macos.sh)), ma con le librerie
+  di Homebrew del runner gira solo da macOS 15 in poi e su Apple Silicon. Ed è
+  firmata solo "ad hoc": la prima volta macOS la apre con «Apri comunque» in
+  Impostazioni di Sistema → Privacy e sicurezza;
 - l'installer di Windows non è firmato con un certificato: la prima volta
   SmartScreen avvisa che l'autore è sconosciuto («Ulteriori informazioni»,
   poi «Esegui comunque»). Gli aggiornamenti li scarica l'app, e non passano
@@ -414,13 +416,18 @@ Limiti attuali:
 
 ## Release e aggiornamenti
 
-L'app Windows si aggiorna da sola dal sito: qualche secondo dopo l'avvio
-legge `updates/windows.json` da
+L'app si aggiorna da sola dal sito: qualche secondo dopo l'avvio legge
+`updates/windows.json` o `updates/macos.json` da
 `https://www.claudiotassitano.it/projects/megaplayer/` e, se c'è una build
 più nuova, la annuncia con le novità (finestra della skin moderna, o avviso
 del Mac con la mascotte nella retrò). Si installa solo quando l'utente lo
-chiede: l'app scarica l'installer, ne controlla dimensione, SHA-256 e firma,
-lo lancia con `/SILENT` e si chiude; l'installer la riapre. Il manifesto è
+chiede: l'app scarica l'installer (Windows) o lo zip dell'app (macOS), ne
+controlla dimensione, SHA-256 e firma e si chiude. Su Windows lancia
+l'installer con `/SILENT`, che alla fine la riapre; su macOS estrae l'app e
+lascia a uno script il cambio del bundle (rimettendo la vecchia se qualcosa
+va storto) e la riapertura, per cui l'app deve stare in una cartella in cui
+può scrivere, come Applicazioni, e non girare dalla copia temporanea che
+macOS usa per le app aperte da Download. Il manifesto è
 firmato con Ed25519 ([app/lib/update](app/lib/update)): l'app accetta solo
 quello che è firmato con la chiave privata, che sta nel Portachiavi del Mac
 di chi pubblica (servizio `megaplayer-update-key`) e non va mai in CI né nel
@@ -434,13 +441,15 @@ Per pubblicare una versione:
 2. fare il commit e un tag annotato con le novità, che l'app mostra:
    `git tag -a v0.2.0 -m "• Prima novità"`, poi il push del tag;
 3. la CI ([.github/workflows/release.yml](.github/workflows/release.yml))
-   compila core e app per Windows e fa l'installer con Inno Setup
-   ([app/windows/installer/megaplayer.iss](app/windows/installer/megaplayer.iss));
-4. `scripts/publish-update.sh v0.2.0` scarica l'installer dalla CI, lo firma
-   e prepara `dist/site`: `index.html` (la pagina per scaricarlo),
-   `updates/windows.json` e l'installer;
-5. caricare `dist/site` in `projects/megaplayer/` sul sito, il manifesto per
-   ultimo.
+   compila core e app per Windows, con l'installer di Inno Setup
+   ([app/windows/installer/megaplayer.iss](app/windows/installer/megaplayer.iss)),
+   e per macOS, con lo zip dell'app;
+4. `scripts/publish-update.sh v0.2.0` scarica dalla CI le build del commit
+   del tag (anche quelle di un branch), le firma e prepara `dist/site`:
+   `index.html` (la pagina per scaricarle), i manifesti `updates/*.json`,
+   l'installer e lo zip;
+5. caricare `dist/site` in `projects/megaplayer/` sul sito, i manifesti per
+   ultimi.
 
 La chiave si crea una volta con `dart run tool/update_key.dart` in `app/`,
 che stampa la chiave pubblica da scrivere in
@@ -472,7 +481,8 @@ cmake/          build di UADE, libsidplayfp e AdPlug dai sorgenti, toolchain
                 di cross-compilazione
 patches/        modifiche alle dipendenze
 scripts/        download delle dipendenze, build WebAssembly, server di prova,
-                passo di build dell'app macOS, pubblicazione delle release
+                passo di build dell'app macOS, pacchetto dell'app macOS,
+                pubblicazione delle release
 .github/        CI per Linux, Windows e WebAssembly; build delle release
 ```
 

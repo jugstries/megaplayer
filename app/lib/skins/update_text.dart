@@ -21,7 +21,7 @@ String updateMessage(Updates updates) {
     UpdateStage.checking => 'Un attimo: guardo sul sito se c\'è una versione nuova.',
     UpdateStage.upToDate => 'Hai già l\'ultima versione, la ${updates.currentVersion}.',
     UpdateStage.downloading => 'Scarico l\'aggiornamento… ${(updates.progress * 100).floor()}%',
-    UpdateStage.installing => 'Parte l\'installer: megaplayer si chiude e si riapre da solo.',
+    UpdateStage.installing => 'Installo l\'aggiornamento: megaplayer si chiude e si riapre da solo.',
     UpdateStage.failed => 'Non è andata: ${updates.problem}.',
     _ when offer != null => 'Hai la ${updates.currentVersion}. La nuova è del ${formatDate(offer.date)} '
         'e pesa ${formatMegabytes(offer.size)}.',

@@ -148,12 +148,68 @@ void main() {
       }
     });
 
-    test('pulisce gli installer vecchi ma tiene il registro', () async {
+    test('pulisce quello che è stato scaricato ma tiene il registro', () async {
       File('${downloads.path}/vecchio-setup.exe').writeAsStringSync('x');
+      File('${downloads.path}/vecchia-macos.zip').writeAsStringSync('x');
+      Directory('${downloads.path}/nuova/megaplayer.app').createSync(recursive: true);
       File('${downloads.path}/installazione.log').writeAsStringSync('ok');
       await updater().cleanUp();
       expect(downloads.listSync().map((e) => e.uri.pathSegments.last), ['installazione.log']);
     });
+  });
+
+  group('cambio dell\'app su macOS', () {
+    late Directory work;
+    late Directory app;
+
+    setUp(() async {
+      work = await Directory.systemTemp.createTemp('megaplayer-mac-test');
+      app = Directory('${work.path}/Applicazioni/megaplayer.app/Contents')..createSync(recursive: true);
+      File('${app.path}/versione').writeAsStringSync('vecchia');
+      app = app.parent;
+    });
+
+    tearDown(() => work.delete(recursive: true));
+
+    /// Lo zip di un'app finta, come lo fa scripts/package-macos.sh.
+    Future<File> zipped(String version, {String name = 'megaplayer.app'}) async {
+      final contents = Directory('${work.path}/build/$name/Contents')..createSync(recursive: true);
+      File('${contents.path}/versione').writeAsStringSync(version);
+      final zip = File('${downloads.path}/megaplayer-macos.zip');
+      await Process.run('/usr/bin/ditto', ['-c', '-k', '--keepParent', contents.parent.path, zip.path]);
+      return zip;
+    }
+
+    test('aspetta la chiusura, mette la nuova al posto della vecchia', () async {
+      final running = await Process.start('/bin/sleep', ['1']);
+      await replaceAppBundle(await zipped('nuova'), target: app, waitFor: running.pid, relaunch: false);
+      final version = File('${app.path}/Contents/versione');
+      expect(version.readAsStringSync(), 'vecchia');
+      final deadline = DateTime.now().add(const Duration(seconds: 15));
+      while (version.readAsStringSync() != 'nuova' && DateTime.now().isBefore(deadline)) {
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
+      expect(version.readAsStringSync(), 'nuova');
+      expect(app.parent.listSync().map((e) => e.uri.pathSegments.where((s) => s.isNotEmpty).last), ['megaplayer.app']);
+      expect(File('${downloads.path}/installazione.log').readAsStringSync(), contains('fatto'));
+    }, skip: !Platform.isMacOS);
+
+    test('rifiuta una copia temporanea di macOS, una cartella in sola lettura, uno zip senza app', () async {
+      final zip = await zipped('nuova');
+      final translocated = Directory('${work.path}/AppTranslocation/X/d/megaplayer.app')..createSync(recursive: true);
+      await expectLater(replaceAppBundle(zip, target: translocated, relaunch: false), throwsA(isA<UpdateException>()));
+
+      Process.runSync('chmod', ['555', app.parent.path]);
+      addTearDown(() => Process.runSync('chmod', ['755', app.parent.path]));
+      await expectLater(replaceAppBundle(zip, target: app, relaunch: false), throwsA(isA<UpdateException>()));
+      Process.runSync('chmod', ['755', app.parent.path]);
+
+      File('${downloads.path}/vuoto.txt').writeAsStringSync('niente');
+      final empty = File('${downloads.path}/vuoto.zip');
+      await Process.run('/usr/bin/ditto', ['-c', '-k', '${downloads.path}/vuoto.txt', empty.path]);
+      await expectLater(replaceAppBundle(empty, target: app, relaunch: false), throwsA(isA<UpdateException>()));
+      expect(File('${app.path}/Contents/versione').readAsStringSync(), 'vecchia');
+    }, skip: !Platform.isMacOS);
   });
 
   group('stati per le skin', () {

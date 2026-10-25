@@ -1,9 +1,10 @@
 # Le release dell'app desktop: a ogni tag v* (o a mano) compila l'app per
-# Windows con il core, le DLL da cui dipende e i replayer di UADE, ne fa
-# l'installer e lo lascia come artefatto. scripts/publish-update.sh lo
-# scarica, lo firma e prepara la cartella da caricare sul sito. Gira anche
-# sui branch che toccano l'app Windows o questo file, per provarli prima di
-# una release (sui tag i percorsi non contano).
+# Windows e per macOS con il core, le librerie da cui dipende e i replayer
+# di UADE, e lascia come artefatti l'installer di Windows e lo zip dell'app
+# per Mac. scripts/publish-update.sh li scarica, li firma e prepara la
+# cartella da caricare sul sito. Gira anche sui branch che toccano le app
+# desktop o questo file, per provarli prima di una release (sui tag i
+# percorsi non contano).
 name: release
 
 on:
@@ -12,18 +13,22 @@ on:
     tags: ['v*']
     paths:
       - 'app/windows/**'
+      - 'app/macos/**'
+      - 'scripts/package-macos.sh'
       - '.github/workflows/release.yml'
   workflow_dispatch:
 
 jobs:
-  windows:
-    runs-on: windows-latest
+  version:
+    runs-on: ubuntu-24.04
+    outputs:
+      name: ${{ steps.version.outputs.name }}
+      build: ${{ steps.version.outputs.build }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Versione
         id: version
-        shell: bash
         run: |
           line=$(grep '^version:' app/pubspec.yaml)
           version=${line#version: }
@@ -33,6 +38,12 @@ jobs:
             echo "il tag $GITHUB_REF_NAME non è la versione di app/pubspec.yaml (${version%+*})" >&2
             exit 1
           fi
+
+  windows:
+    needs: version
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
 
       - uses: msys2/setup-msys2@v2
         with:
@@ -72,8 +83,8 @@ jobs:
         shell: pwsh
         run: |
           flutter build windows --release `
-            --dart-define=MEGAPLAYER_VERSION=${{ steps.version.outputs.name }} `
-            --dart-define=MEGAPLAYER_BUILD=${{ steps.version.outputs.build }}
+            --dart-define=MEGAPLAYER_VERSION=${{ needs.version.outputs.name }} `
+            --dart-define=MEGAPLAYER_BUILD=${{ needs.version.outputs.build }}
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $release = 'build\windows\x64\runner\Release'
           Copy-Item -Recurse -Force ..\dist\core\* $release
@@ -92,8 +103,8 @@ jobs:
           $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
           if (-not (Test-Path $iscc)) { choco install innosetup --no-progress -y }
           & $iscc `
-            /DAppVersion=${{ steps.version.outputs.name }} `
-            /DAppBuild=${{ steps.version.outputs.build }} `
+            /DAppVersion=${{ needs.version.outputs.name }} `
+            /DAppBuild=${{ needs.version.outputs.build }} `
             "/DSourceDir=$pwd\app\build\windows\x64\runner\Release" `
             "/DOutputDir=$pwd\dist" `
             app\windows\installer\megaplayer.iss
@@ -103,4 +114,45 @@ jobs:
         with:
           name: megaplayer-windows-setup
           path: dist/megaplayer-*-windows-setup.exe
+          if-no-files-found: error
+
+  macos:
+    needs: version
+    # Le librerie di Homebrew sono compilate per questo macOS: l'app gira da
+    # macOS 15 in poi, sui Mac con Apple Silicon.
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Dipendenze
+        run: brew install ninja pkg-config libopenmpt libarchive
+
+      - name: Core
+        run: |
+          scripts/build-deps.sh
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --target megaplayer_capi uade_data
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.7
+          channel: stable
+          cache: true
+
+      - name: App
+        working-directory: app
+        run: |
+          flutter build macos --release \
+            --dart-define=MEGAPLAYER_VERSION=${{ needs.version.outputs.name }} \
+            --dart-define=MEGAPLAYER_BUILD=${{ needs.version.outputs.build }}
+
+      - name: Pacchetto
+        run: |
+          scripts/package-macos.sh app/build/macos/Build/Products/Release/megaplayer.app \
+            dist/megaplayer-${{ needs.version.outputs.name }}-macos.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: megaplayer-macos
+          path: dist/megaplayer-*-macos.zip
           if-no-files-found: error

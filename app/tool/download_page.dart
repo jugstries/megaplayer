@@ -1,9 +1,10 @@
 // Scrive la pagina per scaricare megaplayer (index.html, da mettere in
-// projects/megaplayer sul sito) a partire dal manifesto firmato: versione,
-// data, dimensione e novità dell'ultima release. Pagina autonoma, senza
-// risorse esterne, con i colori della skin moderna.
+// projects/megaplayer sul sito) a partire dai manifesti firmati: versione,
+// data, dimensione e novità dell'ultima release, per Windows e per Mac.
+// Pagina autonoma, senza risorse esterne, con i colori della skin moderna.
 //
-// Uso (in app/): dart run tool/download_page.dart --manifest updates/windows.json --out index.html
+// Uso (in app/):
+//   dart run tool/download_page.dart [--windows updates/windows.json] [--macos updates/macos.json] --out index.html
 
 import 'dart:convert';
 import 'dart:io';
@@ -18,18 +19,37 @@ Future<void> main(List<String> arguments) async {
   }
   String option(String name) => options[name] ?? (throw ArgumentError('manca --$name'));
 
-  final manifest =
-      UpdateManifest.fromJson(jsonDecode(await File(option('manifest')).readAsString()) as Map<String, dynamic>);
-  await File(option('out')).writeAsString(page(manifest));
+  Future<UpdateManifest?> read(String platform) async {
+    final path = options[platform];
+    if (path == null) return null;
+    return UpdateManifest.fromJson(jsonDecode(await File(path).readAsString()) as Map<String, dynamic>);
+  }
+
+  final windows = await read('windows');
+  final macos = await read('macos');
+  if (windows == null && macos == null) throw ArgumentError('serve almeno --windows o --macos');
+  await File(option('out')).writeAsString(page(windows: windows, macos: macos));
 }
 
-String page(UpdateManifest windows) {
-  const escape = HtmlEscape();
-  final notes = windows.notes
+const _escape = HtmlEscape();
+
+String _download(String label, UpdateManifest manifest) => '''
+      <a class="download" href="updates/${_escape.convert(manifest.file)}">
+        $label
+        <small>versione ${_escape.convert(manifest.version)} · ${_escape.convert(formatDate(manifest.date))} · ${_escape.convert(formatMegabytes(manifest.size))}</small>
+      </a>''';
+
+String page({UpdateManifest? windows, UpdateManifest? macos}) {
+  final latest = windows ?? macos!;
+  final notes = latest.notes
       .split('\n')
       .where((line) => line.trim().isNotEmpty)
-      .map((line) => '<li>${escape.convert(line.replaceFirst(RegExp(r'^\s*[•\-*]\s*'), ''))}</li>')
+      .map((line) => '<li>${_escape.convert(line.replaceFirst(RegExp(r'^\s*[•\-*]\s*'), ''))}</li>')
       .join('\n          ');
+  final downloads = [
+    if (windows != null) _download('Scarica per Windows', windows),
+    if (macos != null) _download('Scarica per Mac', macos),
+  ].join('\n');
   return '''<!doctype html>
 <html lang="it">
 <head>
@@ -53,6 +73,7 @@ String page(UpdateManifest windows) {
     .logo { width: 52px; height: 52px; border-radius: 16px; background: var(--gradient); }
     h1 { margin: 0; font-size: 32px; letter-spacing: -0.5px; }
     .lead { color: var(--soft); font-size: 18px; margin: 18px 0 32px; }
+    .downloads { display: flex; flex-wrap: wrap; gap: 12px; }
     .download {
       display: inline-flex; flex-direction: column; padding: 16px 26px; border-radius: 16px;
       background: var(--gradient); color: var(--background); text-decoration: none; font-weight: 700;
@@ -74,26 +95,39 @@ String page(UpdateManifest windows) {
     <div class="brand"><div class="logo"></div><h1>megaplayer</h1></div>
     <p class="lead">Il player per i formati audio esotici: moduli Amiga, SID del Commodore 64, chip delle console,
       MIDI e AdLib, anche dentro archivi e immagini disco.</p>
-    <a class="download" href="updates/${escape.convert(windows.file)}">
-      Scarica per Windows
-      <small>versione ${escape.convert(windows.version)} · ${escape.convert(formatDate(windows.date))} · ${escape.convert(formatMegabytes(windows.size))}</small>
-    </a>
+    <div class="downloads">
+$downloads
+    </div>
     <section>
-      <h2>Novità della ${escape.convert(windows.version)}</h2>
+      <h2>Novità della ${_escape.convert(latest.version)}</h2>
       <ul>
           $notes
       </ul>
     </section>
-    <section>
-      <h2>Come si installa</h2>
-      <p>Serve Windows 10 o 11 a 64 bit. L'installer non chiede i diritti di amministratore e mette megaplayer nel
-        menu Start.</p>
-      <p>L'app non è ancora firmata da un'autorità riconosciuta, quindi Windows può avvisare che proviene da un
-        autore sconosciuto: clicca <b>Ulteriori informazioni</b> e poi <b>Esegui comunque</b>.</p>
-      <p>Poi megaplayer si aggiorna da solo: quando esce una versione nuova te la propone all'avvio.</p>
+${windows == null ? '' : _windowsHelp}${macos == null ? '' : _macosHelp}    <section>
+      <h2>Aggiornamenti</h2>
+      <p>megaplayer si aggiorna da solo: quando esce una versione nuova te la propone all'avvio.</p>
     </section>
   </main>
 </body>
 </html>
 ''';
 }
+
+const _windowsHelp = '''    <section>
+      <h2>Come si installa su Windows</h2>
+      <p>Serve Windows 10 o 11 a 64 bit. L'installer non chiede i diritti di amministratore e mette megaplayer nel
+        menu Start.</p>
+      <p>L'app non è ancora firmata da un'autorità riconosciuta, quindi Windows può avvisare che proviene da un
+        autore sconosciuto: clicca <b>Ulteriori informazioni</b> e poi <b>Esegui comunque</b>.</p>
+    </section>
+''';
+
+const _macosHelp = '''    <section>
+      <h2>Come si installa sul Mac</h2>
+      <p>Serve un Mac con Apple Silicon e macOS 15 o successivo. Apri lo zip e trascina megaplayer nella cartella
+        Applicazioni, poi aprilo da lì: solo così può aggiornarsi da solo.</p>
+      <p>L'app non è ancora verificata da Apple, quindi la prima volta macOS non la apre: vai in <b>Impostazioni di
+        Sistema → Privacy e sicurezza</b>, scorri in fondo e clicca <b>Apri comunque</b>.</p>
+    </section>
+''';

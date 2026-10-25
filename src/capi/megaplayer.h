@@ -46,6 +46,18 @@ typedef struct mp_status {
  */
 MP_API void mp_set_uade_data_dir(const char* path);
 
+/*
+ * I moduli Roland emulati da 88emu, per i MIDI. Le ROM le fornisce l'utente:
+ * mp_add_roland_rom_dir aggiunge una cartella in cui cercarle (con le
+ * sottocartelle; quella di 88emuPlayer c'è già), mp_set_roland_device sceglie
+ * il Sound Canvas per i MIDI General MIDI e GS ("" o NULL: il primo con le
+ * ROM; i brani per MT-32 vanno comunque a un modulo della sua famiglia).
+ * Valgono per tutto il processo, anche per la libreria. Senza 88emu nella
+ * build non fanno niente.
+ */
+MP_API void mp_add_roland_rom_dir(const char* path);
+MP_API void mp_set_roland_device(const char* name);
+
 /* Apre il dispositivo audio. NULL se non ci riesce. */
 MP_API mp_engine* mp_engine_create(int32_t sample_rate);
 MP_API void mp_engine_destroy(mp_engine* engine);
@@ -55,6 +67,13 @@ MP_API const char* mp_engine_last_error(mp_engine* engine);
 
 /* [{"name": "uade", "description": "..."}, ...] */
 MP_API const char* mp_engine_backends(mp_engine* engine);
+
+/*
+ * I moduli Roland che la build conosce, in ordine di preferenza, e se le loro
+ * ROM ci sono: [{"name": "SC-55mkII", "family": "gs", "available": true},
+ * {"name": "MT-32 1.x (experimental)", "family": "la", ...}, ...]
+ */
+MP_API const char* mp_engine_roland_devices(mp_engine* engine);
 
 /*
  * Brani contenuti in un file, un archivio o "ARCHIVIO/percorso/interno":

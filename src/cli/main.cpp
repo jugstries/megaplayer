@@ -56,6 +56,10 @@ Opzioni:
   -o, --output FILE    file WAV di uscita (render)
   -m, --megasound N    manopola MegaSound da 0 a 100 (play e render)
   -M, --mute LISTA     zittisce questi canali, es. 1,3 o 2-4 (da 1)
+  --roms CARTELLA      dove cercare le ROM dei moduli Roland per i MIDI
+                       (backend 88emu; si può ripetere)
+  --roland NOME        il Sound Canvas per i MIDI GS e GM, es. SC-88Pro
+                       (vedi megaplayer backends)
   -h, --help           questo messaggio
 
 Opzioni della libreria:
@@ -90,6 +94,8 @@ struct Options {
     std::string output;
     int megaSound = 0; // posizione della manopola, 0..100
     std::vector<int> mute; // canali da zittire, da 1 come li scrive l'utente
+    std::vector<std::string> romDirectories; // ROM dei moduli Roland
+    std::string roland;
     // Libreria.
     std::string database;
     std::vector<std::string> platforms;
@@ -161,6 +167,10 @@ Options parseArgs(int argc, char** argv)
             options.megaSound = parseNumber(arg, value(i), 0, 100);
         } else if (arg == "-M" || arg == "--mute") {
             options.mute = parseChannels(arg, value(i));
+        } else if (arg == "--roms") {
+            options.romDirectories.push_back(value(i));
+        } else if (arg == "--roland") {
+            options.roland = value(i);
         } else if (arg == "--db") {
             options.database = value(i);
         } else if (arg == "-p" || arg == "--platform") {
@@ -304,6 +314,16 @@ int runBackends(const DecoderRegistry& registry)
         std::cout << "Nessun backend compilato.\n";
     for (const auto& factory : registry.factories())
         std::cout << "  " << factory->name() << "\t" << factory->description() << "\n";
+    // I moduli di 88emu con le ROM trovate, i nomi da usare con --roland.
+    const std::vector<RolandDevice> devices = rolandDevices();
+    if (!devices.empty()) {
+        std::string found;
+        for (const RolandDevice& device : devices) {
+            if (device.available)
+                found += (found.empty() ? "" : ", ") + device.name;
+        }
+        std::cout << "\nModuli Roland con le ROM: " << (found.empty() ? "nessuno (--roms CARTELLA)" : found) << "\n";
+    }
     return 0;
 }
 
@@ -695,6 +715,9 @@ int main(int argc, char** argv)
 
     DecoderRegistry registry;
     registerBuiltinDecoders(registry);
+    for (const std::string& directory : options.romDirectories)
+        addRolandRomDirectory(directory);
+    setRolandDevice(options.roland);
     cli::installInterruptHandler();
 
     try {

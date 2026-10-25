@@ -1,6 +1,7 @@
 #include "AdlMidiDecoder.h"
 
 #include "AudioTags.h"
+#include "MidiFormats.h"
 #include "core/Platform.h"
 
 #include <adlmidi.h>
@@ -10,6 +11,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace mp {
@@ -32,25 +34,17 @@ struct Family {
 
 std::optional<Family> family(const std::vector<uint8_t>& data)
 {
-    auto at = [&](size_t offset, const char* signature) {
-        const size_t size = std::strlen(signature);
-        return data.size() >= offset + size && std::memcmp(data.data() + offset, signature, size) == 0;
-    };
-    if (at(0, "MThd"))
-        return Family{"MIDI", "DMXOPL3"};
-    if (at(0, "RIFF") && at(8, "RMID"))
-        return Family{"RMI", "DMXOPL3"};
-    if (at(0, "GMF\x01"))
-        return Family{"GMF", "DMXOPL3"};
-    if (at(0, "FORM") && at(8, "XDIR"))
-        return Family{"XMI", "default AIL"};
-    if (at(0, "MUS\x1a"))
-        return Family{"MUS", "Bobby Prince v2"};
-    if (at(0, "HMI-MIDISONG06"))
-        return Family{"HMI", "HMI (Descent, Asterix)"};
-    if (at(0, "HMIMIDIP"))
-        return Family{"HMP", "HMI (Descent, Asterix)"};
-    return std::nullopt;
+    const char* format = midiFormat(data);
+    if (format == nullptr)
+        return std::nullopt;
+    const std::string_view name = format;
+    if (name == "XMI")
+        return Family{format, "default AIL"};
+    if (name == "MUS")
+        return Family{format, "Bobby Prince v2"};
+    if (name == "HMI" || name == "HMP")
+        return Family{format, "HMI (Descent, Asterix)"};
+    return Family{format, "DMXOPL3"};
 }
 
 int findBank(const char* wanted)

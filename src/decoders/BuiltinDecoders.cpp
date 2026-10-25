@@ -2,6 +2,9 @@
 
 #include "MiniaudioDecoder.h"
 
+#ifdef MP_WITH_88EMU
+#include "Emu88Decoder.h"
+#endif
 #ifdef MP_WITH_ADLMIDI
 #include "AdlMidiDecoder.h"
 #endif
@@ -32,6 +35,9 @@ void registerBuiltinDecoders(DecoderRegistry& registry)
 #ifdef MP_WITH_SID
     registry.add(std::make_unique<SidDecoderFactory>());
 #endif
+#ifdef MP_WITH_88EMU
+    registry.add(std::make_unique<Emu88DecoderFactory>());
+#endif
 #ifdef MP_WITH_ADLMIDI
     registry.add(std::make_unique<AdlMidiDecoderFactory>());
 #endif
@@ -52,6 +58,33 @@ void setUadeDataDirectory(const std::string& path)
     UadeDecoderFactory::setDataDirectory(path);
 #else
     (void)path;
+#endif
+}
+
+void addRolandRomDirectory(const std::string& path)
+{
+#ifdef MP_WITH_88EMU
+    emu88::addRomDirectory(path);
+#else
+    (void)path;
+#endif
+}
+
+void setRolandDevice(const std::string& name)
+{
+#ifdef MP_WITH_88EMU
+    emu88::setPreferredDevice(name);
+#else
+    (void)name;
+#endif
+}
+
+std::vector<RolandDevice> rolandDevices()
+{
+#ifdef MP_WITH_88EMU
+    return emu88::devices();
+#else
+    return {};
 #endif
 }
 

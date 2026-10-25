@@ -2,7 +2,7 @@
 // di prova per ciascuno: senza mute si sente, con tutti i canali zittiti è
 // silenzio (dall'inizio, a metà brano e dopo un cambio di sottobrano), e
 // riaccesi si sente di nuovo. Un file audio non ha canali.
-// Uso: channels_test BACKEND=FILE...
+// Uso: channels_test BACKEND=FILE...   (roms=CARTELLA dà le ROM a 88emu)
 
 #include "core/DecoderRegistry.h"
 #include "core/SourceFile.h"
@@ -127,7 +127,9 @@ int main(int argc, char** argv)
         const std::string backend = arg.substr(0, equals);
         const std::string path = arg.substr(equals + 1);
         try {
-            if (backend == "nessuno") {
+            if (backend == "roms") {
+                mp::addRolandRomDirectory(path);
+            } else if (backend == "nessuno") {
                 const mp::SourceFile source = mp::loadSourceFile(path);
                 check(registry.open(source, {kRate})->channels().empty(), path + ": un file audio ha canali");
             } else {

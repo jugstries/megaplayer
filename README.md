@@ -12,6 +12,7 @@ Flutter (per ora macOS) con due skin: moderna e retrò.
 | `miniaudio` | miniaudio, stb_vorbis | file audio: MP3 (e MP1/MP2), FLAC, WAV, Ogg Vorbis, con titolo e autore dai tag |
 | `sid`     | libsidplayfp 3.1.1, libresidfp 1.2.3 | Commodore 64: PSID e RSID, con l'emulazione reSIDfp del chip SID (6581 e 8580) |
 | `gme`     | game-music-emu 0.6.5  | console: NES (NSF, NSFE), SNES (SPC), Game Boy (GBS), Master System e Mega Drive (VGM, VGZ, GYM), PC Engine (HES), MSX (KSS), ZX Spectrum (AY), Atari (SAP) |
+| `88emu`   | 88emu di gearmulator (commit del 10 ottobre 2026) | gli stessi MIDI sui moduli Roland: Sound Canvas (SC-55, SC-55mkII, SC-88, SC-88VL, SC-88 Pro, SC-8850, ...) e MT-32/CM-32L, emulati facendo girare il loro firmware. Servono le ROM dell'utente |
 | `adlmidi` | libADLMIDI 1.6.2.1    | MIDI (MID, RMI) e i suoi parenti dei giochi DOS: XMI, MUS di Doom, HMI/HMP, GMF, su quattro chip FM OPL3 emulati (Nuked OPL3) |
 | `adplug`  | AdPlug 2.4, libbinio 1.5 | una cinquantina di formati AdLib dei giochi e dei tracker DOS (RAD, HSC, D00, A2M, CMF, IMF/WLF, DRO, ROL, LDS, SA2, AMD, XAD, Westwood ADL, ...) e i VGM per i chip OPL, su Nuked OPL3 |
 | `openmpt` | libopenmpt            | moduli tracker: MOD, XM, S3M, IT, MED, OKT, ...                |
@@ -46,7 +47,9 @@ una dissolvenza. Per i SID non servono le ROM del C64: libsidplayfp ha un
 kernal sostitutivo, che basta quasi sempre (le ROM originali sono protette da
 copyright).
 
-Il MIDI suona come su una Sound Blaster: libADLMIDI usa i banchi di timbri FM
+Con le ROM dei moduli Roland il MIDI suona come lo sentivano i compositori,
+su un Sound Canvas o un MT-32 (vedi sotto, «MIDI sui moduli Roland»). Senza,
+suona come su una Sound Blaster: libADLMIDI usa i banchi di timbri FM
 dei giochi, scelti secondo il formato. I giochi con la libreria Miles (XMI)
 usavano il banco AIL, Doom (MUS) quello DMX di Bobby Prince, i giochi con la
 libreria HMI il suo; per il MIDI generico c'è il banco General MIDI DMXOPL3.
@@ -89,9 +92,10 @@ ctest --test-dir build
 libzakalwe, bencode-tools, ancient, miniaudio, game-music-emu, libsidplayfp,
 libresidfp, libADLMIDI, AdPlug, libbinio e SQLite in `third_party/src` (di
 libsidplayfp, libresidfp e SQLite gli archivi di rilascio, con la verifica
-dello SHA-256) e applica le patch di `patches/`: due a UADE (l'emulatore nel
-processo del player, vedi sotto, e le voci di Paula da zittire) e una a
-libsidplayfp (il mute di una voce subito). Tutto il resto lo fa CMake: compila
+dello SHA-256), gearmulator a un commit fissato con i soli sottomoduli che
+servono a 88emu, e applica le patch di `patches/`: due a UADE (l'emulatore nel
+processo del player, vedi sotto, e le voci di Paula da zittire), una a
+libsidplayfp (il mute di una voce subito) e due a gearmulator (MinGW). Tutto il resto lo fa CMake: compila
 UADE senza il suo script di configurazione (che funziona solo su UNIX, vedi
 [cmake/UadeInProcess.cmake](cmake/UadeInProcess.cmake)) e copia replayer e
 configurazione in `build/uade-data`. La CLI e i test li cercano lì; le app li
@@ -166,6 +170,7 @@ build/megaplayer play Stormlord.lha            # tutti i brani dell'archivio
 build/megaplayer info -b uade mod.enigma       # formato, backend, metadati
 build/megaplayer render -s 2 -o out.wav Stormlord.lha/Stormlord/jt.ingame   # esporta in WAV
 build/megaplayer play -m 60 Stormlord.lha      # con MegaSound al 60%
+build/megaplayer play --roms ~/Roms/Roland --roland SC-88Pro brano.mid   # MIDI su un Sound Canvas
 build/megaplayer render -M 1,3 -o out.wav mod.enigma   # senza i canali 1 e 3
 build/megaplayer backends
 ```
@@ -196,6 +201,45 @@ I file audio non hanno canali. Il mute vale fino al brano dopo, anche
 cambiando sottobrano; nell'app si sente con il ritardo del buffer, circa tre
 decimi di secondo. Riaccesi, i canali OPL e SID ripartono dalla nota tenuta,
 quelli MIDI dalla nota dopo.
+
+## MIDI sui moduli Roland
+
+Il backend `88emu` suona i MIDI su 88emu di
+[The Usual Suspects](https://theusualsuspects.io/downloads/88emuplayer)
+([gearmulator](https://github.com/dsp56300/gearmulator)), che non campiona i
+moduli Roland ma ne fa girare il firmware originale su CPU e chip sonori
+emulati: Sound Canvas dall'SC-55 all'SC-8850, MT-32, CM-32L e parenti.
+megaplayer usa la sua libreria, 88lib, attraverso l'interfaccia C, e gli
+manda gli eventi con il sequencer di libADLMIDI, che legge anche XMI, MUS,
+HMI e HMP ([src/decoders/Emu88Decoder.cpp](src/decoders/Emu88Decoder.cpp)).
+
+Le ROM non sono incluse (sono di Roland) e non si copiano: le fornisce ogni
+utente, da una cartella che indica (nell'app in «Impostazioni», da riga di
+comando con `--roms CARTELLA`). 88emu le riconosce dal contenuto, non dal
+nome, anche dentro le sottocartelle, e guarda già da solo nella cartella di
+88emuPlayer (`~/Documents/The Usual Suspects/88emuPlayer` e simili). Senza le
+ROM il backend non riconosce niente e i MIDI restano ad `adlmidi`.
+
+Il modulo si sceglie da solo: un brano che manda SysEx all'MT-32 (Roland,
+modello 16h, come i giochi Sierra e LucasArts) va a un modulo della sua
+famiglia, il resto al Sound Canvas scelto (`--roland SC-88Pro`, o
+nell'app), altrimenti al primo con le ROM: SC-55mkII, SC-88 Pro, SC-88VL,
+SC-88, SC-8850... `megaplayer backends` dice quali sono pronti. Il modulo si
+accende al primo audio (da mezzo secondo a poco più di uno, il tempo del suo
+avvio), così la libreria che legge le informazioni dei file non lo avvia mai,
+e resta acceso per il brano dopo con un reset. Su un Mac con Apple Silicon
+l'SC-55mkII va una quarantina di volte più veloce del tempo reale, l'SC-8850
+una quindicina. I sedici canali si zittiscono come quelli di libADLMIDI; le
+due porte dei file per SC-88 vanno alle due porte del modulo.
+
+gearmulator si compila a parte ([CMakeLists.txt](CMakeLists.txt), con
+`ExternalProject`), con il suo CMake e solo quello che serve a 88lib, in una
+libreria statica unica. Su Windows lo si compila con MinGW grazie a due
+piccole patch ([patches/gearmulator-mingw.patch](patches/gearmulator-mingw.patch),
+[patches/gearmulator-dsp56300-mingw.patch](patches/gearmulator-dsp56300-mingw.patch)).
+I test che suonano davvero vogliono le ROM: girano se
+`MEGAPLAYER_ROLAND_ROMS` indica la cartella che le contiene quando si
+configura CMake, e in CI no.
 
 ## Libreria
 
@@ -496,8 +540,11 @@ UADE è GPL-2.0 (il motore UAE) con parti LGPL; i replayer in
 `share/uade/players` hanno licenze e autori diversi. libopenmpt è BSD-3,
 ancient e libarchive BSD-2, miniaudio e stb_vorbis public domain / MIT-0,
 game-music-emu LGPL-2.1 (con l'emulatore Nuked del YM2612, anche lui LGPL),
-libsidplayfp e libresidfp GPL-2.0, AdPlug e libbinio LGPL-2.1; libADLMIDI ha
+libsidplayfp e libresidfp GPL-2.0, AdPlug e libbinio LGPL-2.1; gearmulator
+(88emu) GPL-3.0, con parti derivate da Nuked-SC55 e Nuked-MT32 sotto GPL-2.0
+o successiva; libADLMIDI ha
 parti LGPL, MIT e BSD, ma nel complesso è GPL-3.0 o successiva, e i suoi
 banchi di timbri hanno ciascuno le sue note. SQLite è di pubblico dominio.
 Finché il backend UADE è incluso, il binario risultante va distribuito sotto
-GPL.
+GPL (con 88emu e libADLMIDI, la GPL-3.0). Le ROM dei moduli Roland non sono
+incluse.

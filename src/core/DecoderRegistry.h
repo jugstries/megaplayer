@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Decoder.h"
+#include "decoders/RolandDevices.h"
 
 #include <memory>
 #include <string_view>
@@ -40,5 +41,14 @@ void registerBuiltinDecoders(DecoderRegistry& registry);
 // compilazione (un'app impacchettata, WebAssembly). Va impostata prima di
 // aprire o riconoscere file.
 void setUadeDataDirectory(const std::string& path);
+
+// I moduli Roland emulati da 88emu (backend "88emu"): una cartella in più in
+// cui cercare le ROM, oltre a quella di 88emuPlayer; il Sound Canvas con cui
+// suonare i MIDI General MIDI e GS ("" per sceglierlo da soli; i brani per
+// MT-32 vanno comunque a un modulo della sua famiglia); i moduli che la build
+// conosce, con le ROM trovate. Senza 88emu nella build non fanno niente.
+void addRolandRomDirectory(const std::string& path);
+void setRolandDevice(const std::string& name);
+std::vector<RolandDevice> rolandDevices();
 
 } // namespace mp

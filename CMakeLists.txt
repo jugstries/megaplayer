@@ -25,6 +25,7 @@ option(MP_WITH_UADE "Backend UADE (formati Amiga)" ON)
 option(MP_WITH_GME "Backend game-music-emu (console a 8 e 16 bit)" ON)
 option(MP_WITH_SID "Backend libsidplayfp (Commodore 64)" ON)
 option(MP_WITH_ADLMIDI "Backend libADLMIDI (MIDI su chip FM OPL3)" ON)
+option(MP_WITH_88EMU "Backend 88emu (MIDI su Roland Sound Canvas e MT-32 emulati, con le ROM dell'utente)" ON)
 option(MP_WITH_ADPLUG "Backend AdPlug (formati AdLib dei giochi DOS)" ON)
 option(MP_WITH_ARCHIVES "Apertura diretta degli archivi LHA/ZIP/7z/... (libarchive)" ON)
 option(MP_WITH_LIBRARY "Libreria musicale: indice SQLite di una cartella, con ricerca (non per WebAssembly)" ON)
@@ -77,6 +78,7 @@ add_library(megaplayer_core STATIC
     src/decoders/AudioTags.cpp
     src/decoders/BuiltinDecoders.cpp
     src/decoders/MiniaudioDecoder.cpp
+    src/decoders/RolandDevices.cpp
     src/decoders/TfmxFiles.cpp
     src/dsp/MegaSound.cpp)
 target_include_directories(megaplayer_core PUBLIC src)
@@ -183,6 +185,60 @@ if(MP_WITH_ADLMIDI)
     endif()
 endif()
 
+# 88emu di gearmulator (The Usual Suspects): i moduli Roland, emulati
+# facendo girare il loro firmware. Si compila a parte, con il suo CMake e solo
+# quello che serve a 88lib, in un'unica libreria statica (il target
+# 88emu_bundle) da usare con c_interface.h. Gli eventi li ordina il sequencer
+# di libADLMIDI. Le ROM le fornisce l'utente; senza, i MIDI restano ad adlmidi.
+set(MP_88EMU_ENABLED OFF)
+if(MP_WITH_88EMU AND MP_ADLMIDI_ENABLED AND NOT EMSCRIPTEN)
+    set(MP_GEARMULATOR "${MP_THIRD_PARTY}/src/gearmulator")
+    if(NOT EXISTS "${MP_GEARMULATOR}/CMakeLists.txt")
+        message(WARNING "gearmulator non scaricato (scripts/build-deps.sh): backend 88emu disattivato")
+    else()
+        include(ExternalProject)
+        set(MP_88EMU_BINARY "${CMAKE_BINARY_DIR}/gearmulator")
+        set(MP_88EMU_LIBRARY "${MP_88EMU_BINARY}/source/ronaldo/88emu/88lib/lib88emu.a")
+        set(MP_88EMU_ARGS -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF -DCMAKE_POSITION_INDEPENDENT_CODE=ON
+            -Dgearmulator_BUILD_JUCEPLUGIN=OFF -Dgearmulator_BUILD_JUCEPLUGIN_CLAP=OFF
+            -Dgearmulator_COMPONENT_DSPBRIDGE=OFF -Dgearmulator_SYNTH_88EMU=ON)
+        foreach(synth OSIRUS OSTIRUS VAVRA XENIA NODALRED2X JE8086)
+            list(APPEND MP_88EMU_ARGS -Dgearmulator_SYNTH_${synth}=OFF)
+        endforeach()
+        foreach(variable CMAKE_TOOLCHAIN_FILE CMAKE_C_COMPILER CMAKE_CXX_COMPILER CMAKE_MAKE_PROGRAM
+                CMAKE_OSX_DEPLOYMENT_TARGET CMAKE_OSX_ARCHITECTURES)
+            if(${variable})
+                list(APPEND MP_88EMU_ARGS "-D${variable}=${${variable}}")
+            endif()
+        endforeach()
+        ExternalProject_Add(gearmulator_88emu
+            SOURCE_DIR "${MP_GEARMULATOR}"
+            BINARY_DIR "${MP_88EMU_BINARY}"
+            DOWNLOAD_COMMAND ""
+            UPDATE_COMMAND ""
+            CMAKE_GENERATOR "${CMAKE_GENERATOR}"
+            CMAKE_ARGS ${MP_88EMU_ARGS}
+            BUILD_COMMAND "${CMAKE_COMMAND}" --build <BINARY_DIR> --target 88emu_bundle
+            BUILD_BYPRODUCTS "${MP_88EMU_LIBRARY}"
+            INSTALL_COMMAND "")
+        add_library(emu88 STATIC IMPORTED GLOBAL)
+        set_target_properties(emu88 PROPERTIES IMPORTED_LOCATION "${MP_88EMU_LIBRARY}")
+        target_include_directories(emu88 INTERFACE "${MP_GEARMULATOR}/source/ronaldo/88emu/88lib")
+        add_dependencies(emu88 gearmulator_88emu)
+        find_package(Threads REQUIRED)
+        target_link_libraries(emu88 INTERFACE Threads::Threads)
+        if(APPLE)
+            target_link_libraries(emu88 INTERFACE "-framework CoreFoundation")
+        endif()
+        target_sources(megaplayer_core PRIVATE src/decoders/Emu88Decoder.cpp)
+        # Il sequencer di libADLMIDI, compilato con un altro nome di classe.
+        target_include_directories(megaplayer_core PRIVATE "${MP_THIRD_PARTY}/src/libadlmidi/src")
+        target_compile_definitions(megaplayer_core PRIVATE MP_WITH_88EMU)
+        target_link_libraries(megaplayer_core PUBLIC emu88)
+        set(MP_88EMU_ENABLED ON)
+    endif()
+endif()
+
 set(MP_ADPLUG_ENABLED OFF)
 if(MP_WITH_ADPLUG)
     if(NOT EXISTS "${MP_THIRD_PARTY}/src/adplug/configure.ac" OR NOT EXISTS "${MP_THIRD_PARTY}/src/libbinio/configure.ac")
@@ -266,7 +322,7 @@ else()
     # --- Modulo WebAssembly con l'API C, per il browser (web/) ---
 
     set(MP_WEB_EXPORTS
-        _mp_set_uade_data_dir _mp_engine_create _mp_engine_destroy _mp_engine_last_error
+        _mp_set_uade_data_dir _mp_add_roland_rom_dir _mp_set_roland_device _mp_engine_roland_devices _mp_engine_create _mp_engine_destroy _mp_engine_last_error
         _mp_engine_backends _mp_engine_collect _mp_engine_play _mp_engine_stop _mp_engine_set_paused
         _mp_engine_seek _mp_engine_select_subsong _mp_engine_set_volume _mp_engine_set_megasound
         _mp_engine_set_channel_muted _mp_engine_status _mp_engine_track_info _mp_engine_scope _malloc _free)
@@ -446,6 +502,13 @@ if(Python3_FOUND)
 endif()
 
 # Il mute dei canali, con un brano di prova per ogni backend che lo permette.
+add_executable(roland_devices_test tests/RolandDevicesTest.cpp)
+target_link_libraries(roland_devices_test PRIVATE megaplayer_core)
+if(EMSCRIPTEN)
+    target_link_options(roland_devices_test PRIVATE ${MP_NODE_LINK_OPTIONS})
+endif()
+add_test(NAME roland_devices COMMAND roland_devices_test)
+
 add_executable(channels_test tests/ChannelsTest.cpp)
 target_link_libraries(channels_test PRIVATE megaplayer_core)
 if(EMSCRIPTEN)
@@ -474,6 +537,12 @@ endif()
 if(MP_ADPLUG_ENABLED)
     list(APPEND MP_CHANNELS_TEST_ARGS "adplug=${CMAKE_BINARY_DIR}/test.imf")
     list(APPEND MP_CHANNELS_FIXTURES test_opl)
+endif()
+# 88emu suona solo con le ROM, che non sono nel repo: si prova se
+# MEGAPLAYER_ROLAND_ROMS (o MP_TEST_ROLAND_ROMS) indica una cartella che le ha.
+set(MP_TEST_ROLAND_ROMS "$ENV{MEGAPLAYER_ROLAND_ROMS}" CACHE PATH "Cartella con le ROM dei moduli Roland per i test di 88emu")
+if(MP_88EMU_ENABLED AND MP_TEST_ROLAND_ROMS)
+    list(APPEND MP_CHANNELS_TEST_ARGS "roms=${MP_TEST_ROLAND_ROMS}" "88emu=${CMAKE_BINARY_DIR}/test.mid")
 endif()
 add_test(NAME channels COMMAND channels_test ${MP_CHANNELS_TEST_ARGS})
 if(MP_CHANNELS_FIXTURES)

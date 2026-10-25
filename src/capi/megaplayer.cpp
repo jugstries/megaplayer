@@ -28,6 +28,7 @@ struct mp_engine {
     std::string backendsJson;
     std::string collectJson;
     std::string infoJson;
+    std::string rolandJson;
 
     std::string currentFile;
     std::vector<std::string> currentPackers;
@@ -48,6 +49,16 @@ extern "C" {
 void mp_set_uade_data_dir(const char* path)
 {
     mp::setUadeDataDirectory(path ? path : "");
+}
+
+void mp_add_roland_rom_dir(const char* path)
+{
+    mp::addRolandRomDirectory(path ? path : "");
+}
+
+void mp_set_roland_device(const char* name)
+{
+    mp::setRolandDevice(name ? name : "");
 }
 
 mp_engine* mp_engine_create(int32_t sample_rate)
@@ -81,6 +92,19 @@ const char* mp_engine_backends(mp_engine* engine)
     }
     engine->backendsJson = json + "]";
     return engine->backendsJson.c_str();
+}
+
+const char* mp_engine_roland_devices(mp_engine* engine)
+{
+    std::string json = "[";
+    for (const mp::RolandDevice& device : mp::rolandDevices()) {
+        if (json.size() > 1)
+            json += ',';
+        json += "{\"name\":" + mp::json::string(device.name) + ",\"family\":\"" + (device.la ? "la" : "gs")
+            + "\",\"available\":" + (device.available ? "true" : "false") + "}";
+    }
+    engine->rolandJson = json + "]";
+    return engine->rolandJson.c_str();
 }
 
 const char* mp_engine_collect(mp_engine* engine, const char* path)

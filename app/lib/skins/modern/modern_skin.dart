@@ -8,6 +8,7 @@ import '../../player/library_browser.dart';
 import '../../player/megasound.dart';
 import '../../player/player_controller.dart';
 import '../knob_control.dart';
+import '../skin_text.dart';
 
 part 'modern_library.dart';
 part 'modern_lists.dart';
@@ -386,7 +387,7 @@ class _Sidebar extends StatelessWidget {
                             label: item.name,
                             active: section == _Section.playlist && playlist == item.id,
                             onTap: () => onShow(_Section.playlist, playlist: item.id),
-                            trailing: Text(_number(item.count), style: _mono(12, color: _faint)),
+                            trailing: Text(formatCount(item.count), style: _mono(12, color: _faint)),
                           ),
                       ],
                     ),

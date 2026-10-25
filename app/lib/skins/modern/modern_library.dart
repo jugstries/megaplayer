@@ -13,18 +13,6 @@ Color _platformColor(String id) => switch (id) {
       _ => const Color(0xFFD9C2FF),
     };
 
-const _archiveExtensions = {'lha', 'lzh', 'lzx', 'zip', '7z', 'rar', 'tar', 'gz', 'tgz', 'bz2', 'xz', 'iso'};
-
-bool _looksLikeArchive(String name) {
-  final dot = name.lastIndexOf('.');
-  return dot > 0 && _archiveExtensions.contains(name.substring(dot + 1).toLowerCase());
-}
-
-String _baseName(String path) {
-  final parts = path.split('/').where((part) => part.isNotEmpty);
-  return parts.isEmpty ? path : parts.last;
-}
-
 /// Il lettore compatto in cima alla libreria e alle playlist.
 class _MiniPlayer extends StatelessWidget {
   const _MiniPlayer({required this.controller, required this.onOpen});
@@ -197,7 +185,7 @@ class _LibraryPanelState extends State<_LibraryPanel> {
       final confirmed = await _confirm(
         context,
         title: 'Cambiare cartella?',
-        message: 'L\'indice di «${_baseName(root)}» si svuota e megaplayer legge «${_baseName(path)}». '
+        message: 'L\'indice di «${baseName(root)}» si svuota e megaplayer legge «${baseName(path)}». '
             'Playlist e coda restano come sono.',
         action: 'Cambia',
       );
@@ -421,10 +409,10 @@ class _LibraryPanelState extends State<_LibraryPanel> {
     final folders = library.folders.length;
     final summary = browsing
         ? [
-            if (folders > 0) '${_number(folders)} ${folders == 1 ? 'cartella' : 'cartelle'}',
-            if (library.total > 0 || folders == 0) _tracksLabel(library.total),
+            if (folders > 0) '${formatCount(folders)} ${folders == 1 ? 'cartella' : 'cartelle'}',
+            if (library.total > 0 || folders == 0) tracksLabel(library.total),
           ].join(' · ')
-        : '${_tracksLabel(library.total)} trovati';
+        : '${tracksLabel(library.total)} trovati';
     final empty = library.total == 0 && folders == 0;
 
     Widget crumb(String label, String? folder, {IconData? icon}) {
@@ -455,7 +443,7 @@ class _LibraryPanelState extends State<_LibraryPanel> {
         const SizedBox(width: 2),
         // La radice resta sempre in vista; il resto del percorso, se è lungo,
         // scorre e mostra la fine.
-        crumb(_baseName(library.root), path.isEmpty ? null : '', icon: Icons.home_rounded),
+        crumb(baseName(library.root), path.isEmpty ? null : '', icon: Icons.home_rounded),
         if (path.isNotEmpty) const Icon(Icons.chevron_right_rounded, size: 16, color: _faint),
         Expanded(
           // A sinistra il percorso tagliato sfuma; il margine tiene fuori
@@ -568,12 +556,12 @@ class _LibraryPanelState extends State<_LibraryPanel> {
     return _LibraryRowFrame(
       onTap: () => library.openSubfolder(folder.name),
       leading: Icon(
-        _looksLikeArchive(folder.name) ? Icons.inventory_2_rounded : Icons.folder_rounded,
+        looksLikeArchive(folder.name) ? Icons.inventory_2_rounded : Icons.folder_rounded,
         size: 20,
         color: _textSoft,
       ),
       title: folder.name,
-      subtitle: _tracksLabel(folder.count),
+      subtitle: tracksLabel(folder.count),
       trailing: [
         _SmallIconButton(
           icon: Icons.add_rounded,
@@ -706,7 +694,7 @@ class _LibraryPanelState extends State<_LibraryPanel> {
         padding: const EdgeInsets.symmetric(vertical: 16),
         child: Center(
           child: Text(
-            'Altri ${_number(library.total - library.items.length)} brani…',
+            'Altri ${formatCount(library.total - library.items.length)} brani…',
             style: _sora(13, color: _muted),
           ),
         ),
@@ -813,7 +801,7 @@ class _FilterChip extends StatelessWidget {
               Text(label, style: _sora(12, weight: selected ? 600 : 400, color: selected ? _text : _textSoft)),
               if (count != null) ...[
                 const SizedBox(width: 6),
-                Text(_number(count!), style: _mono(11, color: selected ? _textSoft : _faint)),
+                Text(formatCount(count!), style: _mono(11, color: selected ? _textSoft : _faint)),
               ],
             ],
           ),
@@ -835,9 +823,9 @@ class _ScanProgress extends StatelessWidget {
     final text = !scan.running
         ? 'Fermo la lettura…'
         : scan.walking
-            ? 'Conto i file della cartella… ${_number(total)}'
-            : 'File controllati: ${_number(scan.filesChecked)} di ${_number(total)} · '
-                'nuovi o cambiati: ${_number(scan.filesRead)} · brani trovati: ${_number(scan.tracksFound)}';
+            ? 'Conto i file della cartella… ${formatCount(total)}'
+            : 'File controllati: ${formatCount(scan.filesChecked)} di ${formatCount(total)} · '
+                'nuovi o cambiati: ${formatCount(scan.filesRead)} · brani trovati: ${formatCount(scan.tracksFound)}';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [

@@ -51,20 +51,6 @@ final _theme = ThemeData(
   scrollbarTheme: const ScrollbarThemeData(thumbColor: WidgetStatePropertyAll(_track)),
 );
 
-/// "1 brano", "3.701 brani".
-String _tracksLabel(int count) => '${_number(count)} ${count == 1 ? 'brano' : 'brani'}';
-
-/// Le migliaia col punto, come si scrivono in italiano.
-String _number(int value) {
-  final digits = value.abs().toString();
-  final grouped = StringBuffer();
-  for (var i = 0; i < digits.length; i++) {
-    if (i > 0 && (digits.length - i) % 3 == 0) grouped.write('.');
-    grouped.write(digits[i]);
-  }
-  return value < 0 ? '-$grouped' : grouped.toString();
-}
-
 void _notify(BuildContext context, String message) {
   ScaffoldMessenger.of(context)
     ..hideCurrentSnackBar()
@@ -72,40 +58,22 @@ void _notify(BuildContext context, String message) {
 }
 
 /// Mette in coda e lo dice.
-void _enqueue(BuildContext context, PlayerController controller, List<Track> entries) {
-  final added = controller.enqueue(entries);
-  _notify(
-    context,
-    added == 0
-        ? (entries.length == 1 ? 'È già in coda' : 'Sono già tutti in coda')
-        : added == 1
-            ? 'Aggiunto alla coda'
-            : 'Aggiunti alla coda ${_tracksLabel(added)}',
-  );
-}
+void _enqueue(BuildContext context, PlayerController controller, List<Track> entries) =>
+    _notify(context, enqueuedMessage(controller.enqueue(entries), entries.length));
 
 /// Aggiunge a una playlist e lo dice.
-void _addToPlaylist(BuildContext context, PlayerController controller, PlaylistInfo playlist, List<Track> entries) {
-  final added = controller.addToPlaylist(playlist.id, entries);
-  _notify(
-    context,
-    added == 0
-        ? (entries.length == 1 ? 'È già in «${playlist.name}»' : 'Sono già tutti in «${playlist.name}»')
-        : added == 1
-            ? 'Aggiunto a «${playlist.name}»'
-            : 'Aggiunti a «${playlist.name}» ${_tracksLabel(added)}',
-  );
-}
+void _addToPlaylist(BuildContext context, PlayerController controller, PlaylistInfo playlist, List<Track> entries) =>
+    _notify(
+      context,
+      addedToPlaylistMessage(playlist.name, controller.addToPlaylist(playlist.id, entries), entries.length),
+    );
 
 /// Crea una playlist con [entries] dentro, chiedendo il nome.
 Future<void> _newPlaylistWith(BuildContext context, PlayerController controller, List<Track> entries) async {
   final name = await _askName(context, title: 'Nuova playlist', action: 'Crea');
   if (name == null || !context.mounted) return;
   if (controller.createPlaylist(name, entries: entries) != null) {
-    _notify(
-      context,
-      entries.length == 1 ? 'Aggiunto a «$name»' : 'Playlist «$name» con ${_tracksLabel(entries.length)}',
-    );
+    _notify(context, createdPlaylistMessage(name, entries.length));
   }
 }
 
@@ -664,7 +632,7 @@ class _QueuePanel extends StatelessWidget {
                     children: [
                       Text('Coda', style: _sora(18, weight: 600)),
                       const SizedBox(height: 4),
-                      Text(tracks.isEmpty ? 'Vuota' : _tracksLabel(tracks.length), style: _sora(13, color: _muted)),
+                      Text(tracks.isEmpty ? 'Vuota' : tracksLabel(tracks.length), style: _sora(13, color: _muted)),
                     ],
                   ),
                 ),
@@ -784,7 +752,7 @@ class _PlaylistPanel extends StatelessWidget {
             child: Text(
               entries.isEmpty
                   ? 'Vuota: aggiungi brani dalla libreria, dalla coda o da quello che suona'
-                  : '${_tracksLabel(entries.length)} · «Riproduci» la mette al posto della coda',
+                  : '${tracksLabel(entries.length)} · «Riproduci» la mette al posto della coda',
               style: _sora(13, color: _muted),
             ),
           ),

@@ -206,7 +206,7 @@ class _MenuBar extends StatelessWidget {
           const SizedBox(width: 10),
           _MenuItem(label: 'Apri…', onTap: controller.openFiles),
           _MenuItem(label: 'Skin moderna', onTap: () => controller.setSkin(Skin.modern)),
-          if (controller.rolandSupported)
+          if (controller.rolandSupported || controller.soundFontSupported)
             _MenuItem(
               label: 'Impostazioni…',
               onTap: () => showDialog<void>(context: context, builder: (_) => _SettingsDialog(controller: controller)),

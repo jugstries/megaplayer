@@ -48,22 +48,34 @@ String? bundledUadeDataPath() {
   return bundled.existsSync() ? bundled.path : null;
 }
 
+/// Il SoundFont GeneralUser GS che viaggia con l'app, accanto ai replayer.
+/// Se non c'è, il core usa quello della cartella dei sorgenti, se l'ha.
+String? bundledSoundFontPath() {
+  final folder = File(Platform.resolvedExecutable).parent;
+  final bundled = Platform.isWindows
+      ? File('${folder.path}\\soundfonts\\GeneralUser-GS.sf2')
+      : File('${folder.parent.path}/Resources/soundfonts/GeneralUser-GS.sf2');
+  return bundled.existsSync() ? bundled.path : null;
+}
+
 DynamicLibrary? _coreLibrary;
 
 /// Carica la libreria del core, una volta sola, e le indica i replayer di
-/// UADE che viaggiano con l'app.
+/// UADE e il SoundFont che viaggiano con l'app.
 DynamicLibrary loadCoreLibrary() {
   final loaded = _coreLibrary;
   if (loaded != null) return loaded;
   final lib = DynamicLibrary.open(coreLibraryPath());
-  final uade = bundledUadeDataPath();
-  if (uade != null) {
-    final setUadeDataDir =
-        lib.lookupFunction<Void Function(Pointer<Utf8>), void Function(Pointer<Utf8>)>('mp_set_uade_data_dir');
-    final native = uade.toNativeUtf8();
-    setUadeDataDir(native);
+  void setPath(String symbol, String? path) {
+    if (path == null) return;
+    final set = lib.lookupFunction<Void Function(Pointer<Utf8>), void Function(Pointer<Utf8>)>(symbol);
+    final native = path.toNativeUtf8();
+    set(native);
     calloc.free(native);
   }
+
+  setPath('mp_set_uade_data_dir', bundledUadeDataPath());
+  setPath('mp_set_soundfont', bundledSoundFontPath());
   return _coreLibrary = lib;
 }
 
@@ -97,6 +109,10 @@ class FfiPlayerCore implements PlayerCore {
             lib.lookupFunction<Void Function(Pointer<Utf8>), void Function(Pointer<Utf8>)>('mp_set_roland_device'),
         _rolandDevices = lib.lookupFunction<Pointer<Utf8> Function(_Engine), Pointer<Utf8> Function(_Engine)>(
             'mp_engine_roland_devices'),
+        _setSoundFont =
+            lib.lookupFunction<Void Function(Pointer<Utf8>), void Function(Pointer<Utf8>)>('mp_set_soundfont'),
+        _soundFont =
+            lib.lookupFunction<Pointer<Utf8> Function(_Engine), Pointer<Utf8> Function(_Engine)>('mp_engine_soundfont'),
         _status = lib.lookupFunction<Void Function(_Engine, Pointer<_MpStatus>),
             void Function(_Engine, Pointer<_MpStatus>)>('mp_engine_status'),
         _trackInfo = lib.lookupFunction<Pointer<Utf8> Function(_Engine), Pointer<Utf8> Function(_Engine)>(
@@ -136,6 +152,8 @@ class FfiPlayerCore implements PlayerCore {
   final void Function(Pointer<Utf8>) _addRolandRomDir;
   final void Function(Pointer<Utf8>) _setRolandDevice;
   final Pointer<Utf8> Function(_Engine) _rolandDevices;
+  final void Function(Pointer<Utf8>) _setSoundFont;
+  final Pointer<Utf8> Function(_Engine) _soundFont;
   final void Function(_Engine, Pointer<_MpStatus>) _status;
   final Pointer<Utf8> Function(_Engine) _trackInfo;
   final int Function(_Engine, Pointer<Float>, int) _scope;
@@ -208,6 +226,12 @@ class FfiPlayerCore implements PlayerCore {
 
   @override
   void setRolandDevice(String name) => _withString(name, _setRolandDevice);
+
+  @override
+  void setSoundFont(String path) => _withString(path, _setSoundFont);
+
+  @override
+  String soundFont() => _soundFont(_engine).toDartString();
 
   @override
   List<RolandDevice> rolandDevices() => [

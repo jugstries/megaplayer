@@ -202,7 +202,10 @@ class _Header extends StatelessWidget {
           label: 'Apri file…',
           onPressed: controller.openFiles,
         ),
-        if (controller.rolandSupported) ...[const SizedBox(width: 12), _SettingsButton(controller: controller)],
+        if (controller.rolandSupported || controller.soundFontSupported) ...[
+          const SizedBox(width: 12),
+          _SettingsButton(controller: controller),
+        ],
         const SizedBox(width: 12),
         _SkinSwitch(controller: controller),
       ],

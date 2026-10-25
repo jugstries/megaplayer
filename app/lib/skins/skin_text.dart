@@ -76,15 +76,28 @@ const rolandIntro = 'megaplayer suona i MIDI sui Sound Canvas e sull\'MT-32 emul
 /// Il nome di un modulo come lo mostrano le skin.
 String rolandName(String name) => name.replaceAll('(experimental)', '(sperimentale)');
 
-/// Quali moduli hanno le ROM, o che senza i MIDI suonano in FM.
-String rolandSummary(List<RolandDevice> devices) {
+/// Quali moduli hanno le ROM, o con che cosa suonano i MIDI senza: il
+/// SoundFont [soundFont], o i chip FM se è ''.
+String rolandSummary(List<RolandDevice> devices, {String soundFont = ''}) {
   final ready = [
     for (final device in devices)
       if (device.available) rolandName(device.name),
   ];
-  return ready.isEmpty
+  if (ready.isNotEmpty) return 'Moduli pronti: ${ready.join(', ')}.';
+  return soundFont.isEmpty
       ? 'Nessuna ROM trovata: i MIDI suonano sui chip FM (libADLMIDI).'
-      : 'Moduli pronti: ${ready.join(', ')}.';
+      : 'Nessuna ROM trovata: i MIDI suonano con il SoundFont ${soundFontName(soundFont)}.';
+}
+
+/// Cosa sono le impostazioni dei MIDI senza le ROM.
+const soundFontIntro = 'Senza le ROM dei moduli Roland, i MIDI suonano su un SoundFont a campioni, General MIDI e '
+    'GS, oppure sui chip FM, come su una Sound Blaster.';
+
+/// Il nome di un SoundFont dal suo file: "GeneralUser GS".
+String soundFontName(String path) {
+  final name = baseName(path);
+  final dot = name.lastIndexOf('.');
+  return (dot > 0 ? name.substring(0, dot) : name).replaceAll('-', ' ').replaceAll('_', ' ');
 }
 
 /// Una scelta del Sound Canvas per i MIDI GS e GM; '' è «Automatico», con

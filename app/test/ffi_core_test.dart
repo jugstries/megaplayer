@@ -122,4 +122,14 @@ void main() {
     core.addRolandRomDirectory(roms);
     expect(core.rolandDevices().where((d) => d.available), isNotEmpty);
   }, skip: library == null ? 'MEGAPLAYER_CORE non impostata' : null);
+
+  test('il SoundFont dei MIDI senza ROM: di serie GeneralUser GS, e spento per l\'FM', () {
+    final core = FfiPlayerCore.open();
+    addTearDown(core.dispose);
+    final included = core.soundFont();
+    expect(included, endsWith('GeneralUser-GS.sf2'));
+    core.setSoundFont('');
+    expect(core.soundFont(), isEmpty);
+    core.setSoundFont(included);
+  }, skip: library == null ? 'MEGAPLAYER_CORE non impostata' : null);
 }

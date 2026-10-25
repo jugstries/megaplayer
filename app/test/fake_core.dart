@@ -29,6 +29,7 @@ class FakeCore implements PlayerCore {
   List<Backend> backends() => const [
         Backend(name: 'openmpt', description: 'libopenmpt'),
         Backend(name: 'uade', description: 'UADE'),
+        Backend(name: 'fluidsynth', description: 'FluidSynth'),
       ];
 
   @override
@@ -84,6 +85,15 @@ class FakeCore implements PlayerCore {
   final List<String> romDirectories = [];
   String rolandDevice = '';
   String romsIn = '/Roms/Roland';
+
+  /// Il SoundFont in uso; all'avvio quello "incluso".
+  String currentSoundFont = '/App/soundfonts/GeneralUser-GS.sf2';
+
+  @override
+  void setSoundFont(String path) => currentSoundFont = path;
+
+  @override
+  String soundFont() => currentSoundFont;
 
   @override
   void addRolandRomDirectory(String path) => romDirectories.add(path);

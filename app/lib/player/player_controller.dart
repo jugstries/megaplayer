@@ -12,6 +12,10 @@ import 'library_browser.dart';
 
 enum Skin { modern, retro }
 
+/// Con che cosa suonano i MIDI quando non ci sono le ROM dei moduli Roland:
+/// il SoundFont incluso nell'app, uno scelto dall'utente, o i chip FM.
+enum SoundFontChoice { included, custom, fm }
+
 /// Stato e comandi del player, condivisi dalle due skin: la coda, il brano
 /// corrente, le playlist, la libreria e quello che il core riporta a ogni
 /// aggiornamento.
@@ -23,6 +27,7 @@ class PlayerController extends ChangeNotifier {
   PlayerController(this.core, {this.store, this.updates})
       : backends = core.backends(),
         rolandDevices = core.rolandDevices(),
+        includedSoundFont = core.soundFont(),
         library = LibraryBrowser(store) {
     library.addListener(notifyListeners);
     updates?.addListener(notifyListeners);
@@ -74,6 +79,12 @@ class PlayerController extends ChangeNotifier {
   String romFolder = '';
   String rolandDevice = '';
 
+  /// Il SoundFont che viaggia con l'app ('' se il core non ne ha uno), la
+  /// scelta per i MIDI senza ROM e il SoundFont scelto dall'utente.
+  final String includedSoundFont;
+  SoundFontChoice soundFontChoice = SoundFontChoice.included;
+  String customSoundFont = '';
+
   static const _files = MethodChannel('megaplayer/files');
   static const scopeFrames = 1024;
 
@@ -83,6 +94,8 @@ class PlayerController extends ChangeNotifier {
   static const _currentKey = 'app.queue.current';
   static const _romFolderKey = 'midi.roms';
   static const _rolandKey = 'midi.roland';
+  static const _soundFontChoiceKey = 'midi.soundfont';
+  static const _customSoundFontKey = 'midi.soundfont.path';
 
   Timer? _timer;
   int? _queueId;
@@ -111,10 +124,13 @@ class PlayerController extends ChangeNotifier {
       playlists = store.playlists();
       romFolder = store.setting(_romFolderKey);
       rolandDevice = store.setting(_rolandKey);
+      soundFontChoice = SoundFontChoice.values.asNameMap()[store.setting(_soundFontChoiceKey)] ?? soundFontChoice;
+      customSoundFont = store.setting(_customSoundFontKey);
     });
     // Prima della libreria, che riconosce i MIDI con i moduli che ci sono.
     if (romFolder.isNotEmpty) core.addRolandRomDirectory(romFolder);
     core.setRolandDevice(rolandDevice);
+    _applySoundFont();
     rolandDevices = core.rolandDevices();
     library.restore();
   }
@@ -541,6 +557,42 @@ class PlayerController extends ChangeNotifier {
     _withStore((store) => store.setSetting(_rolandKey, name));
     notifyListeners();
   }
+
+  // --- Il SoundFont ---
+
+  /// Se il core sa suonare i MIDI su un SoundFont (FluidSynth).
+  bool get soundFontSupported => backends.any((backend) => backend.name == 'fluidsynth');
+
+  /// Il SoundFont con cui suonano adesso i MIDI senza ROM; '' per l'FM.
+  String get activeSoundFont => switch (soundFontChoice) {
+        SoundFontChoice.included => includedSoundFont,
+        SoundFontChoice.custom => customSoundFont.isEmpty ? includedSoundFont : customSoundFont,
+        SoundFontChoice.fm => '',
+      };
+
+  /// Vale dal prossimo MIDI che parte.
+  void setSoundFontChoice(SoundFontChoice choice) {
+    soundFontChoice = choice;
+    _applySoundFont();
+    _withStore((store) => store.setSetting(_soundFontChoiceKey, choice.name));
+    notifyListeners();
+  }
+
+  /// La finestra del sistema per scegliere un SoundFont (.sf2), che diventa
+  /// quello dei MIDI senza ROM.
+  Future<void> chooseSoundFont() async {
+    final paths = await _files.invokeListMethod<String>('openFiles', {
+      'message': 'Scegli un SoundFont per i MIDI',
+      'single': true,
+      'extensions': ['sf2'],
+    });
+    if (paths == null || paths.isEmpty) return;
+    customSoundFont = paths.first;
+    _withStore((store) => store.setSetting(_customSoundFontKey, customSoundFont));
+    setSoundFontChoice(SoundFontChoice.custom);
+  }
+
+  void _applySoundFont() => core.setSoundFont(activeSoundFont);
 
   // --- Salvataggio ---
 

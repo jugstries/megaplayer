@@ -1,5 +1,6 @@
 import Cocoa
 import FlutterMacOS
+import UniformTypeIdentifiers
 
 class MainFlutterWindow: NSWindow {
   override func awakeFromNib() {
@@ -43,11 +44,17 @@ private enum FilesChannel {
     channel.setMethodCallHandler { call, result in
       switch call.method {
       case "openFiles":
+        // Di solito brani e archivi, anche più d'uno; l'app può chiedere un
+        // file solo, di certe estensioni (un SoundFont), con il suo messaggio.
+        let arguments = call.arguments as? [String: Any]
         let panel = NSOpenPanel()
-        panel.allowsMultipleSelection = true
+        panel.allowsMultipleSelection = !(arguments?["single"] as? Bool ?? false)
         panel.canChooseDirectories = false
         panel.canChooseFiles = true
-        panel.message = "Scegli moduli, brani o archivi"
+        panel.message = arguments?["message"] as? String ?? "Scegli moduli, brani o archivi"
+        if let extensions = arguments?["extensions"] as? [String] {
+          panel.allowedContentTypes = extensions.compactMap { UTType(filenameExtension: $0) }
+        }
         panel.beginSheetModal(for: window) { response in
           result(response == .OK ? panel.urls.map { $0.path } : [String]())
         }

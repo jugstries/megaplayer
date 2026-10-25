@@ -229,7 +229,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.textContaining('Nessuna ROM trovata'), findsOneWidget);
 
-    await tester.tap(find.text('Scegli…'));
+    await tester.tap(find.text('Scegli…').first);
     await tester.pump();
     expect((asked as Map)['message'], contains('ROM'));
     expect(find.textContaining('Moduli pronti: SC-55mkII, SC-88Pro, MT-32 1.x (sperimentale)'), findsOneWidget);
@@ -244,5 +244,38 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.text('Impostazioni'), findsNothing);
+  });
+
+  testWidgets('impostazioni: i MIDI senza ROM sul SoundFont incluso, su uno scelto o in FM', (tester) async {
+    
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(const MethodChannel('megaplayer/files'), (call) async {
+      return call.method == 'openFiles' && (call.arguments as Map)['single'] == true ? ['/SoundFont/Arachno.sf2'] : null;
+    });
+    addTearDown(() => tester.binding.defaultBinaryMessenger
+        .setMockMethodCallHandler(const MethodChannel('megaplayer/files'), null));
+    tester.view.physicalSize = const Size(1440, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(MegaplayerApp(controller: controller));
+    await tester.tap(find.byTooltip('Impostazioni'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.textContaining('i MIDI suonano con il SoundFont GeneralUser GS'), findsOneWidget);
+
+    await tester.tap(find.text('Scegli…').last);
+    await tester.pump();
+    expect(core.currentSoundFont, '/SoundFont/Arachno.sf2');
+    expect(find.text('Il SoundFont Arachno'), findsOneWidget);
+    expect(store.settings['midi.soundfont'], 'custom');
+
+    await tester.tap(find.text('I chip FM, come una Sound Blaster'));
+    await tester.pump();
+    expect(core.currentSoundFont, '');
+    expect(find.textContaining('i MIDI suonano sui chip FM'), findsOneWidget);
+
+    await tester.tap(find.text('GeneralUser GS, incluso in megaplayer'));
+    await tester.pump();
+    expect(core.currentSoundFont, '/App/soundfonts/GeneralUser-GS.sf2');
+    expect(store.settings['midi.soundfont'], 'included');
   });
 }

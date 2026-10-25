@@ -310,4 +310,22 @@ void main() {
     expect(second.romFolder, '/Roms/Roland');
     expect(second.soundCanvases, hasLength(2));
   });
+
+  test('il SoundFont dei MIDI senza ROM: scelto, ricordato e dato al core al riavvio', () {
+    final store = FakeLibraryStore();
+    final first = PlayerController(core, store: store)..restore();
+    expect(first.soundFontSupported, isTrue);
+    expect(core.currentSoundFont, '/App/soundfonts/GeneralUser-GS.sf2');
+    first.setSoundFontChoice(SoundFontChoice.fm);
+    expect(core.currentSoundFont, '');
+
+    final restarted = FakeCore();
+    PlayerController(restarted, store: store).restore();
+    expect(restarted.currentSoundFont, '');
+    store.settings['midi.soundfont'] = 'custom';
+    store.settings['midi.soundfont.path'] = '/SoundFont/Arachno.sf2';
+    final again = FakeCore();
+    PlayerController(again, store: store).restore();
+    expect(again.currentSoundFont, '/SoundFont/Arachno.sf2');
+  });
 }

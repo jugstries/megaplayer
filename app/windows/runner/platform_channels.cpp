@@ -43,12 +43,13 @@ std::string PathOf(IShellItem* item) {
   return result;
 }
 
-// La finestra di Windows per scegliere file (anche più d'uno) o una
-// cartella, con il titolo `title` e a partire da `start` se c'è. Vuoto se si
-// annulla.
+// La finestra di Windows per scegliere file (anche più d'uno, se non è
+// `single`, e solo delle estensioni `extensions`, se ci sono) o una cartella,
+// con il titolo `title` e a partire da `start` se c'è. Vuoto se si annulla.
 std::vector<std::string> Choose(HWND owner, bool folder,
                                 const std::string& start,
-                                const std::string& title) {
+                                const std::string& title, bool single = false,
+                                const std::vector<std::string>& extensions = {}) {
   ComPtr<IFileOpenDialog> dialog;
   if (FAILED(::CoCreateInstance(CLSID_FileOpenDialog, nullptr,
                                 CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dialog)))) {
@@ -57,7 +58,10 @@ std::vector<std::string> Choose(HWND owner, bool folder,
   FILEOPENDIALOGOPTIONS options = 0;
   dialog->GetOptions(&options);
   options |= FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST;
-  options |= folder ? FOS_PICKFOLDERS : (FOS_ALLOWMULTISELECT | FOS_FILEMUSTEXIST);
+  options |= folder ? FOS_PICKFOLDERS : FOS_FILEMUSTEXIST;
+  if (!folder && !single) {
+    options |= FOS_ALLOWMULTISELECT;
+  }
   dialog->SetOptions(options);
   if (folder) {
     dialog->SetTitle(title.empty() ? L"Scegli una cartella"
@@ -71,7 +75,16 @@ std::vector<std::string> Choose(HWND owner, bool folder,
       dialog->SetFolder(initial.Get());
     }
   } else {
-    dialog->SetTitle(L"Scegli moduli, brani o archivi");
+    dialog->SetTitle(title.empty() ? L"Scegli moduli, brani o archivi"
+                                   : Utf16FromUtf8(title).c_str());
+  }
+  std::wstring pattern;
+  for (const auto& extension : extensions) {
+    pattern += (pattern.empty() ? L"*." : L";*.") + Utf16FromUtf8(extension);
+  }
+  if (!pattern.empty()) {
+    const COMDLG_FILTERSPEC filter = {pattern.c_str(), pattern.c_str()};
+    dialog->SetFileTypes(1, &filter);
   }
   // Show fallisce anche quando si annulla.
   ComPtr<IShellItemArray> items;
@@ -115,12 +128,51 @@ const std::string* TextArgument(const MethodCall<EncodableValue>& call) {
                           : nullptr;
 }
 
+const flutter::EncodableMap* MapArguments(
+    const MethodCall<EncodableValue>& call) {
+  return call.arguments()
+             ? std::get_if<flutter::EncodableMap>(call.arguments())
+             : nullptr;
+}
+
+// Un elenco di testi degli argomenti, se sono una mappa; vuoto se manca.
+std::vector<std::string> ListArgument(const MethodCall<EncodableValue>& call,
+                                      const char* key) {
+  std::vector<std::string> values;
+  const auto* map = MapArguments(call);
+  if (!map) {
+    return values;
+  }
+  const auto found = map->find(EncodableValue(key));
+  if (found == map->end()) {
+    return values;
+  }
+  if (const auto* list = std::get_if<EncodableList>(&found->second)) {
+    for (const auto& item : *list) {
+      if (const auto* text = std::get_if<std::string>(&item)) {
+        values.push_back(*text);
+      }
+    }
+  }
+  return values;
+}
+
+// Un sì o no degli argomenti, se sono una mappa; no se manca.
+bool FlagArgument(const MethodCall<EncodableValue>& call, const char* key) {
+  const auto* map = MapArguments(call);
+  if (!map) {
+    return false;
+  }
+  const auto found = map->find(EncodableValue(key));
+  const bool* flag =
+      found == map->end() ? nullptr : std::get_if<bool>(&found->second);
+  return flag && *flag;
+}
+
 // Un campo di testo degli argomenti, se sono una mappa; "" se manca.
 std::string MapArgument(const MethodCall<EncodableValue>& call,
                         const char* key) {
-  const auto* map = call.arguments()
-                        ? std::get_if<flutter::EncodableMap>(call.arguments())
-                        : nullptr;
+  const auto* map = MapArguments(call);
   if (!map) {
     return std::string();
   }
@@ -148,8 +200,11 @@ std::unique_ptr<Channel> CreateFilesChannel(flutter::BinaryMessenger* messenger,
                std::unique_ptr<MethodResult<EncodableValue>> result) {
         const std::string& method = call.method_name();
         if (method == "openFiles") {
-          result->Success(
-              List(Choose(window, false, std::string(), std::string())));
+          // Di solito brani e archivi, anche più d'uno; l'app può chiedere
+          // un file solo, di certe estensioni (un SoundFont).
+          result->Success(List(Choose(
+              window, false, std::string(), MapArgument(call, "message"),
+              FlagArgument(call, "single"), ListArgument(call, "extensions"))));
         } else if (method == "openFolder") {
           // Una cartella (della libreria, delle ROM): si parte da quella di
           // prima, se c'è, con il messaggio che dà l'app.

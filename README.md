@@ -457,7 +457,8 @@ alla coda») li dà la mascotte nella finestra «Ciao!».
 
 Nelle impostazioni (l'icona accanto ad «Apri file…» nella moderna, il menu
 «Impostazioni…» nella retrò) si sceglie la cartella con le ROM dei moduli
-Roland e il Sound Canvas per i MIDI; l'app se li ricorda.
+Roland e il Sound Canvas per i MIDI, e con che cosa suonano i MIDI senza le
+ROM: GeneralUser GS, un altro SoundFont o i chip FM. L'app se li ricorda.
 
 In tutte e due le skin, sotto i comandi di riproduzione c'è la fila dei
 canali del brano: un clic sul numero zittisce il canale, la S lo mette in

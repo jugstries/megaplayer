@@ -32,6 +32,11 @@ abstract interface class PlayerCore {
   void setRolandDevice(String name);
   List<RolandDevice> rolandDevices();
 
+  /// Il SoundFont per i MIDI senza le ROM ('' per l'FM di adlmidi), e quello
+  /// in uso: all'avvio GeneralUser GS, che viaggia con l'app.
+  void setSoundFont(String path);
+  String soundFont();
+
   CoreStatus status();
   TrackDetails details();
 

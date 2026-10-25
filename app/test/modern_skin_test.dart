@@ -3,6 +3,7 @@
 // database e il sito finti.
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:megaplayer/app.dart';
 import 'package:megaplayer/player/player_controller.dart';
@@ -208,5 +209,40 @@ void main() {
     await settle(tester);
     expect(find.text('Nessun aggiornamento'), findsNothing);
     expect(find.textContaining('Aggiorna a'), findsNothing);
+  });
+
+  testWidgets('impostazioni: la cartella delle ROM e il Sound Canvas per i MIDI', (tester) async {
+    
+    Object? asked;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(const MethodChannel('megaplayer/files'), (call) async {
+      asked = call.arguments;
+      return call.method == 'openFolder' ? '/Roms/Roland' : null;
+    });
+    addTearDown(() => tester.binding.defaultBinaryMessenger
+        .setMockMethodCallHandler(const MethodChannel('megaplayer/files'), null));
+    tester.view.physicalSize = const Size(1440, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(MegaplayerApp(controller: controller));
+    await tester.tap(find.byTooltip('Impostazioni'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.textContaining('Nessuna ROM trovata'), findsOneWidget);
+
+    await tester.tap(find.text('Scegli…'));
+    await tester.pump();
+    expect((asked as Map)['message'], contains('ROM'));
+    expect(find.textContaining('Moduli pronti: SC-55mkII, SC-88Pro, MT-32 1.x (sperimentale)'), findsOneWidget);
+    expect(find.text('Automatico (SC-55mkII)'), findsOneWidget);
+
+    await tester.tap(find.text('SC-88Pro'));
+    await tester.pump();
+    expect(core.rolandDevice, 'SC-88Pro');
+    expect(store.settings['midi.roland'], 'SC-88Pro');
+    expect(store.settings['midi.roms'], '/Roms/Roland');
+    await tester.tap(find.text('Fatto'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('Impostazioni'), findsNothing);
   });
 }

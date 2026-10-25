@@ -79,6 +79,29 @@ class FakeCore implements PlayerCore {
   @override
   void setChannelMuted(int channel, bool muted) => calls.add('${muted ? 'mute' : 'unmute'} $channel');
 
+  /// Le cartelle di ROM aggiunte e il modulo scelto; i moduli con le ROM
+  /// sono quelli di [romsIn], se una delle cartelle è quella.
+  final List<String> romDirectories = [];
+  String rolandDevice = '';
+  String romsIn = '/Roms/Roland';
+
+  @override
+  void addRolandRomDirectory(String path) => romDirectories.add(path);
+
+  @override
+  void setRolandDevice(String name) => rolandDevice = name;
+
+  @override
+  List<RolandDevice> rolandDevices() {
+    final found = romDirectories.contains(romsIn);
+    return [
+      RolandDevice(name: 'SC-55mkII', la: false, available: found),
+      RolandDevice(name: 'SC-88Pro', la: false, available: found),
+      const RolandDevice(name: 'SC-8850', la: false, available: false),
+      RolandDevice(name: 'MT-32 1.x (experimental)', la: true, available: found),
+    ];
+  }
+
   @override
   CoreStatus status() => CoreStatus(
         state: state,

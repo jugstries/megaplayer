@@ -110,4 +110,16 @@ void main() {
     expect(store.track(flac.ref)!.durations, hasLength(1));
     expect(store.track('/non/esiste'), isNull);
   }, skip: library == null ? 'MEGAPLAYER_CORE non impostata' : null);
+
+  test('i moduli Roland di 88emu, e con MEGAPLAYER_ROLAND_ROMS le ROM trovate', () {
+    final core = FfiPlayerCore.open();
+    addTearDown(core.dispose);
+    final devices = core.rolandDevices();
+    expect(devices.map((d) => d.name), containsAll(['SC-55mkII', 'SC-88Pro']));
+    expect(devices.where((d) => d.la), isNotEmpty);
+    final roms = Platform.environment['MEGAPLAYER_ROLAND_ROMS'];
+    if (roms == null) return;
+    core.addRolandRomDirectory(roms);
+    expect(core.rolandDevices().where((d) => d.available), isNotEmpty);
+  }, skip: library == null ? 'MEGAPLAYER_CORE non impostata' : null);
 }

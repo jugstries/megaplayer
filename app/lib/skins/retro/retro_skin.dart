@@ -16,6 +16,7 @@ import '../update_text.dart';
 part 'retro_channels.dart';
 part 'retro_library.dart';
 part 'retro_lists.dart';
+part 'retro_settings.dart';
 part 'retro_update.dart';
 
 // Skin retrò: il Mac a 1 bit degli anni '80, con pochi accenti pastello.
@@ -205,6 +206,11 @@ class _MenuBar extends StatelessWidget {
           const SizedBox(width: 10),
           _MenuItem(label: 'Apri…', onTap: controller.openFiles),
           _MenuItem(label: 'Skin moderna', onTap: () => controller.setSkin(Skin.modern)),
+          if (controller.rolandSupported)
+            _MenuItem(
+              label: 'Impostazioni…',
+              onTap: () => showDialog<void>(context: context, builder: (_) => _SettingsDialog(controller: controller)),
+            ),
           if (updates != null)
             _MenuItem(
               label: updates.offer != null ? 'Aggiorna!' : 'Aggiornamenti…',

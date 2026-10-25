@@ -15,6 +15,7 @@ import '../update_text.dart';
 part 'modern_channels.dart';
 part 'modern_library.dart';
 part 'modern_lists.dart';
+part 'modern_settings.dart';
 part 'modern_update.dart';
 
 // Skin moderna: scura, minimale, angoli arrotondati, accenti a gradiente.
@@ -201,6 +202,7 @@ class _Header extends StatelessWidget {
           label: 'Apri file…',
           onPressed: controller.openFiles,
         ),
+        if (controller.rolandSupported) ...[const SizedBox(width: 12), _SettingsButton(controller: controller)],
         const SizedBox(width: 12),
         _SkinSwitch(controller: controller),
       ],

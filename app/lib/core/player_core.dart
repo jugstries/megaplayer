@@ -25,6 +25,13 @@ abstract interface class PlayerCore {
   /// Vale fino al brano dopo.
   void setChannelMuted(int channel, bool muted);
 
+  /// I moduli Roland di 88emu per i MIDI: una cartella in più in cui cercare
+  /// le ROM dell'utente, il Sound Canvas per i MIDI GS e GM ('' per
+  /// sceglierlo da soli) e i moduli che il core conosce, con le ROM trovate.
+  void addRolandRomDirectory(String path);
+  void setRolandDevice(String name);
+  List<RolandDevice> rolandDevices();
+
   CoreStatus status();
   TrackDetails details();
 

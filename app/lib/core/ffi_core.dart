@@ -91,6 +91,12 @@ class FfiPlayerCore implements PlayerCore {
             'mp_engine_set_megasound'),
         _setChannelMuted = lib.lookupFunction<Void Function(_Engine, Int32, Int32), void Function(_Engine, int, int)>(
             'mp_engine_set_channel_muted'),
+        _addRolandRomDir =
+            lib.lookupFunction<Void Function(Pointer<Utf8>), void Function(Pointer<Utf8>)>('mp_add_roland_rom_dir'),
+        _setRolandDevice =
+            lib.lookupFunction<Void Function(Pointer<Utf8>), void Function(Pointer<Utf8>)>('mp_set_roland_device'),
+        _rolandDevices = lib.lookupFunction<Pointer<Utf8> Function(_Engine), Pointer<Utf8> Function(_Engine)>(
+            'mp_engine_roland_devices'),
         _status = lib.lookupFunction<Void Function(_Engine, Pointer<_MpStatus>),
             void Function(_Engine, Pointer<_MpStatus>)>('mp_engine_status'),
         _trackInfo = lib.lookupFunction<Pointer<Utf8> Function(_Engine), Pointer<Utf8> Function(_Engine)>(
@@ -127,6 +133,9 @@ class FfiPlayerCore implements PlayerCore {
   final void Function(_Engine, double) _setVolume;
   final void Function(_Engine, double) _setMegaSound;
   final void Function(_Engine, int, int) _setChannelMuted;
+  final void Function(Pointer<Utf8>) _addRolandRomDir;
+  final void Function(Pointer<Utf8>) _setRolandDevice;
+  final Pointer<Utf8> Function(_Engine) _rolandDevices;
   final void Function(_Engine, Pointer<_MpStatus>) _status;
   final Pointer<Utf8> Function(_Engine) _trackInfo;
   final int Function(_Engine, Pointer<Float>, int) _scope;
@@ -194,6 +203,18 @@ class FfiPlayerCore implements PlayerCore {
       subsongCount: raw.subsongCount,
     );
   }
+  @override
+  void addRolandRomDirectory(String path) => _withString(path, _addRolandRomDir);
+
+  @override
+  void setRolandDevice(String name) => _withString(name, _setRolandDevice);
+
+  @override
+  List<RolandDevice> rolandDevices() => [
+        for (final device in jsonDecode(_rolandDevices(_engine).toDartString()) as List)
+          RolandDevice.fromJson(device as Map<String, dynamic>),
+      ];
+
 
   @override
   TrackDetails details() =>

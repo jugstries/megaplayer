@@ -331,6 +331,26 @@ class Backend {
   final String description;
 }
 
+/// Un modulo Roland emulato da 88emu, per i MIDI.
+class RolandDevice {
+  const RolandDevice({required this.name, required this.la, required this.available});
+
+  factory RolandDevice.fromJson(Map<String, dynamic> json) => RolandDevice(
+        name: json['name'] as String,
+        la: json['family'] == 'la',
+        available: json['available'] as bool,
+      );
+
+  /// Come lo chiama 88emu, es. "SC-55mkII".
+  final String name;
+
+  /// Famiglia MT-32 (sintesi LA); altrimenti un Sound Canvas (GS).
+  final bool la;
+
+  /// Se le sue ROM ci sono.
+  final bool available;
+}
+
 class CoreException implements Exception {
   const CoreException(this.message);
 

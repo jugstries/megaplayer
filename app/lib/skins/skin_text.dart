@@ -66,3 +66,30 @@ String formatDate(String date) {
   final parsed = DateTime.tryParse(date);
   return parsed == null ? date : '${parsed.day} ${_months[parsed.month - 1]} ${parsed.year}';
 }
+
+// --- Moduli Roland ---
+
+/// Cosa sono le impostazioni dei moduli Roland, in cima alla loro sezione.
+const rolandIntro = 'megaplayer suona i MIDI sui Sound Canvas e sull\'MT-32 emulati da 88emu di The Usual '
+    'Suspects. Le ROM non sono incluse: indica la cartella dove tieni le tue, anche divise in sottocartelle.';
+
+/// Il nome di un modulo come lo mostrano le skin.
+String rolandName(String name) => name.replaceAll('(experimental)', '(sperimentale)');
+
+/// Quali moduli hanno le ROM, o che senza i MIDI suonano in FM.
+String rolandSummary(List<RolandDevice> devices) {
+  final ready = [
+    for (final device in devices)
+      if (device.available) rolandName(device.name),
+  ];
+  return ready.isEmpty
+      ? 'Nessuna ROM trovata: i MIDI suonano sui chip FM (libADLMIDI).'
+      : 'Moduli pronti: ${ready.join(', ')}.';
+}
+
+/// Una scelta del Sound Canvas per i MIDI GS e GM; '' è «Automatico», con
+/// quello che il core sceglierebbe.
+String rolandChoice(String name, List<RolandDevice> soundCanvases) {
+  if (name.isNotEmpty) return rolandName(name);
+  return soundCanvases.isEmpty ? 'Automatico' : 'Automatico (${rolandName(soundCanvases.first.name)})';
+}

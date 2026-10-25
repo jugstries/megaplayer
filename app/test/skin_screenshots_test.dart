@@ -218,4 +218,26 @@ void main() {
     await shoot(tester, playingTitle(updates: updates)..setSkin(Skin.retro), 'retro-aggiornamento',
         taps: ['Aggiorna!'], dialog: true);
   });
+
+  /// Con le ROM trovate e l'SC-88Pro scelto.
+  PlayerController withRoms(PlayerController controller) => controller
+    ..setRomFolder('/Roms/Roland')
+    ..setRolandDevice('SC-88Pro');
+
+  testWidgets('skin moderna, impostazioni dei moduli Roland', (tester) async {
+    final controller = withRoms(withLibrary(FakeLibraryStore()));
+    tester.view.physicalSize = const Size(1440, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(MegaplayerApp(controller: controller));
+    await tester.tap(find.byTooltip('Impostazioni'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await expectLater(find.byType(MegaplayerApp), matchesGoldenFile('../build/screenshots/moderna-impostazioni.png'));
+  });
+
+  testWidgets('skin retrò, impostazioni dei moduli Roland', (tester) async {
+    final controller = withRoms(withLibrary(FakeLibraryStore()))..setSkin(Skin.retro);
+    await shoot(tester, controller, 'retro-impostazioni', taps: ['Impostazioni…'], dialog: true);
+  });
 }

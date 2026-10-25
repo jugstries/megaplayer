@@ -22,6 +22,7 @@ enum Skin { modern, retro }
 class PlayerController extends ChangeNotifier {
   PlayerController(this.core, {this.store, this.updates})
       : backends = core.backends(),
+        rolandDevices = core.rolandDevices(),
         library = LibraryBrowser(store) {
     library.addListener(notifyListeners);
     updates?.addListener(notifyListeners);
@@ -64,6 +65,15 @@ class PlayerController extends ChangeNotifier {
   /// Quello che il core sta zittendo, per mandargli solo i cambi.
   List<bool> _silenced = const [];
 
+  /// I moduli Roland di 88emu per i MIDI, con le ROM trovate; vuoto se il
+  /// core non ha 88emu.
+  List<RolandDevice> rolandDevices;
+
+  /// La cartella con le ROM scelta dall'utente ('' se non l'ha scelta) e il
+  /// Sound Canvas per i MIDI GS e GM ('' per lasciarlo scegliere al core).
+  String romFolder = '';
+  String rolandDevice = '';
+
   static const _files = MethodChannel('megaplayer/files');
   static const scopeFrames = 1024;
 
@@ -71,6 +81,8 @@ class PlayerController extends ChangeNotifier {
   static const _volumeKey = 'app.volume';
   static const _megaSoundKey = 'app.megasound';
   static const _currentKey = 'app.queue.current';
+  static const _romFolderKey = 'midi.roms';
+  static const _rolandKey = 'midi.roland';
 
   Timer? _timer;
   int? _queueId;
@@ -97,7 +109,13 @@ class PlayerController extends ChangeNotifier {
       volume = double.tryParse(store.setting(_volumeKey))?.clamp(0.0, 1.0) ?? volume;
       megaSound = double.tryParse(store.setting(_megaSoundKey))?.clamp(0.0, 1.0) ?? megaSound;
       playlists = store.playlists();
+      romFolder = store.setting(_romFolderKey);
+      rolandDevice = store.setting(_rolandKey);
     });
+    // Prima della libreria, che riconosce i MIDI con i moduli che ci sono.
+    if (romFolder.isNotEmpty) core.addRolandRomDirectory(romFolder);
+    core.setRolandDevice(rolandDevice);
+    rolandDevices = core.rolandDevices();
     library.restore();
   }
 
@@ -156,7 +174,10 @@ class PlayerController extends ChangeNotifier {
 
   /// La finestra del sistema per scegliere la cartella della musica; null
   /// se si annulla.
-  Future<String?> chooseFolder() => _files.invokeMethod<String>('openFolder', library.root);
+  Future<String?> chooseFolder() => _files.invokeMethod<String>(
+        'openFolder',
+        {'start': library.root, 'message': 'Scegli la cartella con la tua musica'},
+      );
 
   /// I file passati da riga di comando all'avvio.
   Future<void> openInitialFiles() async {
@@ -481,6 +502,43 @@ class PlayerController extends ChangeNotifier {
   void setSkin(Skin value) {
     skin = value;
     _withStore((store) => store.setSetting(_skinKey, value.name));
+    notifyListeners();
+  }
+
+  // --- I moduli Roland ---
+
+  /// Se il core sa suonare i MIDI sui moduli Roland (88emu).
+  bool get rolandSupported => rolandDevices.isNotEmpty;
+
+  /// I Sound Canvas con le ROM, tra cui scegliere quello dei MIDI GS e GM.
+  List<RolandDevice> get soundCanvases => [
+        for (final device in rolandDevices)
+          if (device.available && !device.la) device,
+      ];
+
+  /// La finestra del sistema per scegliere la cartella delle ROM.
+  Future<void> chooseRomFolder() async {
+    final path = await _files.invokeMethod<String>(
+      'openFolder',
+      {'start': romFolder, 'message': 'Scegli la cartella con le ROM dei moduli Roland'},
+    );
+    if (path != null) setRomFolder(path);
+  }
+
+  /// Le ROM non si copiano: il core le cerca lì, sottocartelle comprese.
+  void setRomFolder(String path) {
+    romFolder = path;
+    core.addRolandRomDirectory(path);
+    rolandDevices = core.rolandDevices();
+    _withStore((store) => store.setSetting(_romFolderKey, path));
+    notifyListeners();
+  }
+
+  /// Vale dal prossimo MIDI che parte.
+  void setRolandDevice(String name) {
+    rolandDevice = name;
+    core.setRolandDevice(name);
+    _withStore((store) => store.setSetting(_rolandKey, name));
     notifyListeners();
   }
 

@@ -293,4 +293,21 @@ void main() {
       expect(alone.playlists, isEmpty);
     });
   });
+
+  test('cartella delle ROM e Sound Canvas: al core subito, e di nuovo al riavvio', () {
+    final store = FakeLibraryStore();
+    final first = PlayerController(core, store: store)..restore();
+    expect(first.soundCanvases, isEmpty);
+    first.setRomFolder('/Roms/Roland');
+    first.setRolandDevice('SC-88Pro');
+    expect(first.soundCanvases.map((d) => d.name), ['SC-55mkII', 'SC-88Pro']);
+    expect(core.rolandDevice, 'SC-88Pro');
+
+    final restarted = FakeCore();
+    final second = PlayerController(restarted, store: store)..restore();
+    expect(restarted.romDirectories, ['/Roms/Roland']);
+    expect(restarted.rolandDevice, 'SC-88Pro');
+    expect(second.romFolder, '/Roms/Roland');
+    expect(second.soundCanvases, hasLength(2));
+  });
 }

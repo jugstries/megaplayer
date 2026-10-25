@@ -44,9 +44,11 @@ std::string PathOf(IShellItem* item) {
 }
 
 // La finestra di Windows per scegliere file (anche più d'uno) o una
-// cartella, a partire da `start` se c'è. Vuoto se si annulla.
+// cartella, con il titolo `title` e a partire da `start` se c'è. Vuoto se si
+// annulla.
 std::vector<std::string> Choose(HWND owner, bool folder,
-                                const std::string& start) {
+                                const std::string& start,
+                                const std::string& title) {
   ComPtr<IFileOpenDialog> dialog;
   if (FAILED(::CoCreateInstance(CLSID_FileOpenDialog, nullptr,
                                 CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dialog)))) {
@@ -58,7 +60,8 @@ std::vector<std::string> Choose(HWND owner, bool folder,
   options |= folder ? FOS_PICKFOLDERS : (FOS_ALLOWMULTISELECT | FOS_FILEMUSTEXIST);
   dialog->SetOptions(options);
   if (folder) {
-    dialog->SetTitle(L"Scegli la cartella con la tua musica");
+    dialog->SetTitle(title.empty() ? L"Scegli una cartella"
+                                   : Utf16FromUtf8(title).c_str());
     dialog->SetOkButtonLabel(L"Scegli");
     ComPtr<IShellItem> initial;
     if (!start.empty() &&
@@ -112,6 +115,23 @@ const std::string* TextArgument(const MethodCall<EncodableValue>& call) {
                           : nullptr;
 }
 
+// Un campo di testo degli argomenti, se sono una mappa; "" se manca.
+std::string MapArgument(const MethodCall<EncodableValue>& call,
+                        const char* key) {
+  const auto* map = call.arguments()
+                        ? std::get_if<flutter::EncodableMap>(call.arguments())
+                        : nullptr;
+  if (!map) {
+    return std::string();
+  }
+  const auto found = map->find(EncodableValue(key));
+  if (found == map->end()) {
+    return std::string();
+  }
+  const auto* text = std::get_if<std::string>(&found->second);
+  return text ? *text : std::string();
+}
+
 std::unique_ptr<Channel> NewChannel(flutter::BinaryMessenger* messenger,
                                     const char* name) {
   return std::make_unique<Channel>(
@@ -128,11 +148,13 @@ std::unique_ptr<Channel> CreateFilesChannel(flutter::BinaryMessenger* messenger,
                std::unique_ptr<MethodResult<EncodableValue>> result) {
         const std::string& method = call.method_name();
         if (method == "openFiles") {
-          result->Success(List(Choose(window, false, std::string())));
+          result->Success(
+              List(Choose(window, false, std::string(), std::string())));
         } else if (method == "openFolder") {
-          // La cartella della libreria; si parte da quella di prima, se c'è.
-          const std::string* start = TextArgument(call);
-          const auto paths = Choose(window, true, start ? *start : "");
+          // Una cartella (della libreria, delle ROM): si parte da quella di
+          // prima, se c'è, con il messaggio che dà l'app.
+          const auto paths = Choose(window, true, MapArgument(call, "start"),
+                                    MapArgument(call, "message"));
           result->Success(paths.empty() ? EncodableValue()
                                         : EncodableValue(paths.front()));
         } else if (method == "initialFiles") {

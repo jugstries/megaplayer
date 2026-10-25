@@ -52,14 +52,16 @@ private enum FilesChannel {
           result(response == .OK ? panel.urls.map { $0.path } : [String]())
         }
       case "openFolder":
-        // La cartella della libreria; si parte da quella di prima, se c'è.
+        // Una cartella (della libreria, delle ROM): si parte da quella di
+        // prima, se c'è, con il messaggio che dà l'app.
+        let arguments = call.arguments as? [String: Any]
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
-        panel.message = "Scegli la cartella con la tua musica"
+        panel.message = arguments?["message"] as? String ?? "Scegli una cartella"
         panel.prompt = "Scegli"
-        if let start = call.arguments as? String, !start.isEmpty {
+        if let start = arguments?["start"] as? String, !start.isEmpty {
           panel.directoryURL = URL(fileURLWithPath: start)
         }
         panel.beginSheetModal(for: window) { response in

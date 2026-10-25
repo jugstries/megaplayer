@@ -425,6 +425,10 @@ nome, formato e durata: il triangolino apre i sottobrani, piattaforma e
 formato si scelgono da menu a comparsa con la spunta. Gli avvisi («Aggiunto
 alla coda») li dà la mascotte nella finestra «Ciao!».
 
+Nelle impostazioni (l'icona accanto ad «Apri file…» nella moderna, il menu
+«Impostazioni…» nella retrò) si sceglie la cartella con le ROM dei moduli
+Roland e il Sound Canvas per i MIDI; l'app se li ricorda.
+
 In tutte e due le skin, sotto i comandi di riproduzione c'è la fila dei
 canali del brano: un clic sul numero zittisce il canale, la S lo mette in
 solo (con quelli in solo si sentono solo loro), «Tutti» li riaccende.

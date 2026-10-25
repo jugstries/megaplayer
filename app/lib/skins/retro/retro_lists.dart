@@ -374,17 +374,18 @@ Widget _scrollbar({required ScrollController controller, required Widget child})
 
 /// Il riquadro degli avvisi del Mac: doppia cornice e ombra.
 class _DialogFrame extends StatelessWidget {
-  const _DialogFrame({required this.title, required this.child, required this.actions});
+  const _DialogFrame({required this.title, required this.child, required this.actions, this.width = 440});
 
   final String title;
   final Widget child;
   final List<Widget> actions;
+  final double width;
 
   @override
   Widget build(BuildContext context) {
     return Dialog(
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 440),
+        constraints: BoxConstraints(maxWidth: width),
         child: Container(
           padding: const EdgeInsets.all(4),
           decoration: const BoxDecoration(

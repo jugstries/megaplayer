@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Disegna le icone dell'app, una per skin, e le scrive nel catalogo di macOS.
+"""Disegna le icone dell'app, una per skin, per macOS e per Windows.
 
 La moderna è la manopola MegaSound sul fondo scuro; la retrò è la mascotte
 floppy della finestra "Ciao!" sul grigio della scrivania. Le icone seguono la sagoma di
@@ -9,6 +9,10 @@ Dock stanno in fila con le altre.
 Il bundle porta la moderna (AppIcon); la retrò è un'immagine a parte
 (RetroIcon) che l'app mette nel Dock quando si passa alla skin retrò.
 
+Su Windows le stesse icone riempiono il quadrato, senza il margine e l'ombra
+di macOS: app_icon.ico e retro_icon.ico in windows/runner/resources, con
+dentro i PNG dai 16 ai 256 pixel.
+
 Uso: python3 tool/make_icons.py [--preview DIR]   (serve resvg nel PATH)
 """
 
@@ -16,11 +20,14 @@ import argparse
 import json
 import math
 import pathlib
+import struct
 import subprocess
 import tempfile
 
 APP = pathlib.Path(__file__).resolve().parent.parent
 ASSETS = APP / "macos/Runner/Assets.xcassets"
+WINDOWS_RESOURCES = APP / "windows/runner/resources"
+WINDOWS_SIZES = (16, 20, 24, 32, 40, 48, 64, 256)
 
 SIZE = 1024
 INSET = 100  # 1024 - 824, diviso due
@@ -72,10 +79,13 @@ def squircle_path():
     )
 
 
-def frame(defs, body):
-    """Sagoma con l'ombra di sistema; `body` è disegnato dentro la sagoma."""
+def frame(defs, body, windows=False):
+    """Sagoma con l'ombra di sistema; `body` è disegnato dentro la sagoma.
+    Per Windows la sagoma riempie tutto il quadrato, senza ombra."""
     shape = squircle_path()
-    return f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {SIZE} {SIZE}">
+    view = f"{INSET} {INSET} {SHAPE} {SHAPE}" if windows else f"0 0 {SIZE} {SIZE}"
+    shadow = "" if windows else f'<path d="{shape}" fill="#000" filter="url(#drop)"/>'
+    return f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="{view}">
 <defs>
   <clipPath id="shape"><path d="{shape}"/></clipPath>
   <filter id="drop" x="-10%" y="-10%" width="120%" height="125%">
@@ -83,7 +93,7 @@ def frame(defs, body):
   </filter>
 {defs}
 </defs>
-<path d="{shape}" fill="#000" filter="url(#drop)"/>
+{shadow}
 <g clip-path="url(#shape)">
 {body}
 </g>
@@ -116,7 +126,7 @@ def arc(cx, cy, r, start, end):
     return f"M{x0:.2f} {y0:.2f} A{r} {r} 0 {large} 1 {x1:.2f} {y1:.2f}"
 
 
-def modern_svg():
+def modern_svg(windows=False):
     cx = cy = SIZE / 2
     radius, width = 262, 58
     start, span, value = 135, 270, 0.82  # come la manopola: da sud-ovest a sud-est
@@ -187,7 +197,7 @@ def modern_svg():
                  f'stroke-linejoin="round" opacity="0.35" filter="url(#glow)"/>')
     parts.append(f'<path d="{wave}" fill="none" stroke="{TEXT}" stroke-width="22" stroke-linecap="round" '
                  f'stroke-linejoin="round"/>')
-    return frame(defs, "\n".join(parts))
+    return frame(defs, "\n".join(parts), windows)
 
 
 # La mascotte della finestra "Ciao!" (lib/skins/retro/retro_skin.dart).
@@ -212,7 +222,7 @@ MASCOT = [
 MASCOT_COLOURS = {"#": INK, "l": LILAC, "w": PAPER, "p": RETRO_PINK}
 
 
-def retro_svg():
+def retro_svg(windows=False):
     unit = 32  # 16 pixel della mascotte: 512 su 1024, 16 a 512
     origin = (SIZE - unit * 17) // 2  # mascotte più l'ombra di un pixel
     parts = [f'<rect width="{SIZE}" height="{SIZE}" fill="{DESK}"/>']
@@ -230,11 +240,32 @@ def retro_svg():
                               f'width="{unit}" height="{unit}" fill="{MASCOT_COLOURS[cell]}"/>')
     parts.append(f'<g shape-rendering="crispEdges">{"".join(pixels)}</g>')
     parts.append(f'<path d="{squircle_path()}" fill="none" stroke="{INK}" stroke-width="32"/>')
-    return frame("", "\n".join(parts))
+    return frame("", "\n".join(parts), windows)
 
 
 def render(svg, png, size):
     subprocess.run(["resvg", "-w", str(size), "-h", str(size), str(svg), str(png)], check=True)
+
+
+def write_ico(path, pngs):
+    """Un .ico con dentro i PNG così come sono, uno per dimensione."""
+    header = struct.pack("<HHH", 0, 1, len(pngs))
+    entries, data = b"", b""
+    offset = len(header) + 16 * len(pngs)
+    for size, png in pngs:
+        side = 0 if size >= 256 else size  # 0 vuol dire 256
+        entries += struct.pack("<BBBBHHII", side, side, 0, 0, 1, 32, len(png), offset + len(data))
+        data += png
+    path.write_bytes(header + entries + data)
+
+
+def write_windows_icon(svg, ico, work):
+    pngs = []
+    for size in WINDOWS_SIZES:
+        png = work / f"{ico.stem}_{size}.png"
+        render(svg, png, size)
+        pngs.append((size, png.read_bytes()))
+    write_ico(ico, pngs)
 
 
 def write_json(path, images):
@@ -269,6 +300,12 @@ def main():
             {"idiom": "mac", "filename": "retro_icon_512.png", "scale": "1x"},
             {"idiom": "mac", "filename": "retro_icon_1024.png", "scale": "2x"},
         ])
+
+        modern_windows, retro_windows = work / "modern-windows.svg", work / "retro-windows.svg"
+        modern_windows.write_text(modern_svg(windows=True))
+        retro_windows.write_text(retro_svg(windows=True))
+        write_windows_icon(modern_windows, WINDOWS_RESOURCES / "app_icon.ico", work)
+        write_windows_icon(retro_windows, WINDOWS_RESOURCES / "retro_icon.ico", work)
 
 
 if __name__ == "__main__":

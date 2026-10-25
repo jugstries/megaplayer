@@ -110,7 +110,14 @@ std::optional<ExtractedArchive> openArchive(const std::filesystem::path& path, c
     std::unique_ptr<archive, ArchiveDeleter> reader(archive_read_new());
     archive_read_support_filter_all(reader.get());
     archive_read_support_format_all(reader.get());
-    if (archive_read_open_filename(reader.get(), path.string().c_str(), 64 * 1024) != ARCHIVE_OK)
+#ifdef _WIN32
+    // In UTF-16: il percorso a 8 bit libarchive lo leggerebbe nella code page
+    // del sistema, e i nomi con gli accenti non si aprirebbero.
+    const int opened = archive_read_open_filename_w(reader.get(), path.c_str(), 64 * 1024);
+#else
+    const int opened = archive_read_open_filename(reader.get(), path.c_str(), 64 * 1024);
+#endif
+    if (opened != ARCHIVE_OK)
         return std::nullopt;
 
     // Si crea la directory solo dopo aver letto il primo elemento: un file

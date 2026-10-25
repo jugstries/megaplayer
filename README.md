@@ -326,21 +326,28 @@ stanno lavorando) e nella pagina WebAssembly.
 
 ## App desktop (Flutter)
 
-In `app/` c'è l'app Flutter, per ora solo macOS, con la skin moderna (scura,
+In `app/` c'è l'app Flutter, per macOS e Windows, con la skin moderna (scura,
 gradienti arancio e viola) e quella retrò (Mac a 1 bit); si passa dall'una
 all'altra dall'interfaccia. Parla con il core attraverso l'API C di
 [src/capi/megaplayer.h](src/capi/megaplayer.h), compilata in
 `libmegaplayer.dylib`: un passo di build di Xcode
 ([scripts/embed-core-macos.sh](scripts/embed-core-macos.sh)) la compila con
-CMake e la copia, firmata, dentro l'app. Il core decodifica in un thread suo
+CMake e la copia, firmata, dentro l'app. Su Windows `libmegaplayer.dll`, le
+DLL di MSYS2 da cui dipende e i replayer di UADE (`uade-data`) stanno accanto
+a `megaplayer.exe`; l'app Windows si compila solo su Windows, e lo fa la CI
+delle release (vedi sotto). Il runner in `app/windows` ha gli stessi canali
+di quello di macOS (finestre per aprire file e cartelle, icona che segue la
+skin) e chiede a Windows le API a 8 bit in UTF-8, come i percorsi che l'app
+passa al core. Il core decodifica in un thread suo
 ([src/core/Player.cpp](src/core/Player.cpp)); l'app legge lo stato circa 30
 volte al secondo.
 
 Ogni skin ha la sua icona: la manopola MegaSound per la moderna, la mascotte
 floppy per la retrò. L'icona dell'app è la moderna; con la skin retrò l'app
-cambia l'icona nel Dock finché resta aperta. Le disegna
-[app/tool/make_icons.py](app/tool/make_icons.py) (serve `resvg`), che le
-scrive in `app/macos/Runner/Assets.xcassets`.
+cambia l'icona nel Dock (o nella barra delle applicazioni) finché resta
+aperta. Le disegna [app/tool/make_icons.py](app/tool/make_icons.py) (serve
+`resvg`), che le scrive in `app/macos/Runner/Assets.xcassets` e, come `.ico`,
+in `app/windows/runner/resources`.
 
 Serve Flutter (≥ 3.47) con Xcode, dopo `scripts/build-deps.sh`:
 

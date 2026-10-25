@@ -25,13 +25,46 @@ final class _MpStatus extends Struct {
 
 typedef _Engine = Pointer<Void>;
 
-/// La libreria del core: nel bundle dell'app (la copia
-/// scripts/embed-core-macos.sh), oppure dove indica MEGAPLAYER_CORE.
+/// La libreria del core: nel bundle dell'app su macOS (la copia
+/// scripts/embed-core-macos.sh), accanto all'eseguibile su Windows (la mette
+/// lì la build delle release), oppure dove indica MEGAPLAYER_CORE.
 String coreLibraryPath() {
   final override = Platform.environment['MEGAPLAYER_CORE'];
   if (override != null) return override;
-  final contents = File(Platform.resolvedExecutable).parent.parent;
-  return '${contents.path}/Frameworks/libmegaplayer.dylib';
+  final folder = File(Platform.resolvedExecutable).parent;
+  if (Platform.isWindows) return '${folder.path}\\libmegaplayer.dll';
+  return '${folder.parent.path}/Frameworks/libmegaplayer.dylib';
+}
+
+/// I replayer di UADE che viaggiano con l'app, accanto all'eseguibile
+/// (Windows) o nelle risorse del bundle (macOS). Se non ci sono, il core usa
+/// la cartella scelta alla compilazione, che va bene dove l'app è stata
+/// compilata.
+String? bundledUadeDataPath() {
+  final folder = File(Platform.resolvedExecutable).parent;
+  final bundled = Platform.isWindows
+      ? Directory('${folder.path}\\uade-data')
+      : Directory('${folder.parent.path}/Resources/uade-data');
+  return bundled.existsSync() ? bundled.path : null;
+}
+
+DynamicLibrary? _coreLibrary;
+
+/// Carica la libreria del core, una volta sola, e le indica i replayer di
+/// UADE che viaggiano con l'app.
+DynamicLibrary loadCoreLibrary() {
+  final loaded = _coreLibrary;
+  if (loaded != null) return loaded;
+  final lib = DynamicLibrary.open(coreLibraryPath());
+  final uade = bundledUadeDataPath();
+  if (uade != null) {
+    final setUadeDataDir =
+        lib.lookupFunction<Void Function(Pointer<Utf8>), void Function(Pointer<Utf8>)>('mp_set_uade_data_dir');
+    final native = uade.toNativeUtf8();
+    setUadeDataDir(native);
+    calloc.free(native);
+  }
+  return _coreLibrary = lib;
 }
 
 /// Binding a libmegaplayer (src/capi/megaplayer.h) via dart:ffi.
@@ -67,7 +100,7 @@ class FfiPlayerCore implements PlayerCore {
 
   /// Carica la libreria e apre il dispositivo audio. Lancia [CoreException].
   factory FfiPlayerCore.open({int sampleRate = 48000}) {
-    final lib = DynamicLibrary.open(coreLibraryPath());
+    final lib = loadCoreLibrary();
     final create = lib.lookupFunction<_Engine Function(Int32), _Engine Function(int)>('mp_engine_create');
     final engine = create(sampleRate);
     if (engine == nullptr) {

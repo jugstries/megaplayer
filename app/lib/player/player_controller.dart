@@ -143,14 +143,14 @@ class PlayerController extends ChangeNotifier {
     }
   }
 
-  /// La finestra di apertura file di macOS.
+  /// La finestra di apertura file del sistema.
   Future<void> openFiles() async {
     final paths = await _files.invokeListMethod<String>('openFiles') ?? const [];
     addPaths(paths);
   }
 
-  /// La finestra di macOS per scegliere la cartella della musica; null se
-  /// si annulla.
+  /// La finestra del sistema per scegliere la cartella della musica; null
+  /// se si annulla.
   Future<String?> chooseFolder() => _files.invokeMethod<String>('openFolder', library.root);
 
   /// I file passati da riga di comando all'avvio.
@@ -167,7 +167,7 @@ class PlayerController extends ChangeNotifier {
       try {
         entries.addAll(core.collect(path));
       } on CoreException catch (e) {
-        problems.add('${path.split('/').last}: $e');
+        problems.add('${path.split(pathSeparators).last}: $e');
       }
     }
     error = problems.isEmpty ? null : problems.join('\n');

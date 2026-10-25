@@ -22,7 +22,13 @@ WavWriter::WavWriter(const std::filesystem::path& path, int sampleRate)
 {
     const ma_encoder_config config =
         ma_encoder_config_init(ma_encoding_format_wav, ma_format_s16, kChannels, static_cast<ma_uint32>(sampleRate));
-    if (ma_encoder_init_file(path.string().c_str(), &config, &impl_->encoder) != MA_SUCCESS)
+#ifdef _WIN32
+    // In UTF-16, come per gli archivi: vedi openArchive().
+    const ma_result created = ma_encoder_init_file_w(path.c_str(), &config, &impl_->encoder);
+#else
+    const ma_result created = ma_encoder_init_file(path.c_str(), &config, &impl_->encoder);
+#endif
+    if (created != MA_SUCCESS)
         throw std::runtime_error("impossibile creare " + path.string());
 }
 

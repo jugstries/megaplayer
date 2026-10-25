@@ -74,7 +74,7 @@ class FfiLibraryStore implements LibraryStore {
   /// Apre il database nella cartella dei dati dell'utente, o in [path].
   /// Lancia [CoreException].
   factory FfiLibraryStore.open({String? path}) {
-    final lib = DynamicLibrary.open(coreLibraryPath());
+    final lib = loadCoreLibrary();
     final open =
         lib.lookupFunction<_Library Function(Pointer<Utf8>), _Library Function(Pointer<Utf8>)>('mp_library_open');
     final native = path?.toNativeUtf8() ?? nullptr;

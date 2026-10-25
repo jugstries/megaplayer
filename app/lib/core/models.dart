@@ -63,15 +63,15 @@ class Track {
   /// Il percorso del file, dentro l'archivio se viene da lì.
   String get _innerPath => fromArchive ? name.split(' > ').last : name;
 
-  String get fileName => _innerPath.split('/').last;
+  String get fileName => _innerPath.split(pathSeparators).last;
 
   /// Archivio e cartella che contengono il file, e il sottobrano se è
   /// scelto, per la seconda riga.
   String get location {
-    final parts = _innerPath.split('/')..removeLast();
+    final parts = _innerPath.split(pathSeparators)..removeLast();
     final String place;
     if (fromArchive) {
-      final archive = name.split(' > ').first.split('/').last;
+      final archive = name.split(' > ').first.split(pathSeparators).last;
       place = [archive, ...parts].join(' · ');
     } else {
       place = parts.isEmpty ? '' : parts.last;
@@ -81,6 +81,9 @@ class Track {
     return place.isEmpty ? label : '$place · $label';
   }
 }
+
+/// I separatori dei percorsi: / ovunque, e \ su Windows.
+final pathSeparators = RegExp(r'[/\\]');
 
 /// Una playlist salvata.
 class PlaylistInfo {

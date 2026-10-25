@@ -1,6 +1,8 @@
 // Testi e piccole regole che le due skin condividono, perché dicano le
 // stesse cose con le stesse parole.
 
+import '../core/models.dart';
+
 /// Le migliaia col punto, come si scrivono in italiano: "3.701".
 String formatCount(int value) {
   final digits = value.abs().toString();
@@ -45,6 +47,6 @@ bool looksLikeArchive(String name) {
 
 /// L'ultimo pezzo di un percorso.
 String baseName(String path) {
-  final parts = path.split('/').where((part) => part.isNotEmpty);
+  final parts = path.split(pathSeparators).where((part) => part.isNotEmpty);
   return parts.isEmpty ? path : parts.last;
 }

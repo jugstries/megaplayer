@@ -2,8 +2,9 @@
 // cartella con sottocartelle, un file nascosto, un file di testo e (se c'è
 // libarchive) uno zip: prima scansione, scansione senza novità, file cambiati
 // e spariti, ricerca, filtri, conteggi, cartelle, cambio di radice, interruzione,
-// playlist, coda e impostazioni, l'API C con la scansione in background, e
-// come TrackCollector riapre per ref i brani negli archivi.
+// playlist, coda e impostazioni, l'API C con la scansione in background,
+// come TrackCollector riapre per ref i brani negli archivi, e cartelle e
+// file con le lettere accentate.
 // Uso: library_test DIR DATI [CMAKE]   (CMAKE serve a creare lo zip)
 
 #include "capi/megaplayer.h"
@@ -312,6 +313,58 @@ void testCApi(const fs::path& root, const fs::path& database)
     mp_library_close(library);
 }
 
+// Il percorso in UTF-8, come lo passa l'app all'API C.
+std::string utf8(const fs::path& path)
+{
+    const std::u8string text = path.u8string();
+    return std::string(text.begin(), text.end());
+}
+
+// Cartelle, archivi e file con le lettere accentate, passati all'API C in
+// UTF-8 come fa l'app: devono arrivare giusti al file system anche su
+// Windows, dove le API a 8 bit parlano la code page del sistema.
+void testAccents(const fs::path& base, const fs::path& data, bool withArchive)
+{
+    const fs::path root = base / u8"Città";
+    const fs::path folder = root / u8"Perché";
+    fs::create_directories(folder);
+    fs::copy_file(data / "tono.wav", folder / u8"Àncora più su.wav");
+    if (withArchive)
+        fs::copy_file(base / "Musica" / "toni.zip", root / u8"Già zippati.zip");
+
+    mp_library* library = mp_library_open(utf8(base / u8"libreria è qui.db").c_str());
+    check(library != nullptr, "database in una cartella con gli accenti");
+    if (!library)
+        return;
+    check(mp_library_set_root(library, utf8(root).c_str()) == 0, "radice con gli accenti");
+    check(mp_library_scan(library) == 0, "scansione con gli accenti");
+    mp_scan_status status{};
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+    do {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        mp_library_scan_status(library, &status);
+    } while (status.running && std::chrono::steady_clock::now() < deadline);
+    check(!status.failed, "scansione con gli accenti fallita");
+    const std::string json = mp_library_search(library, "", "", "", "", 1, 0, 10);
+    check(json.find("\"name\":\"Àncora più su.wav\"") != std::string::npos, "file con gli accenti: " + json.substr(0, 300));
+    check(!withArchive || json.find("\"name\":\"zippato.wav\"") != std::string::npos,
+          "zip con gli accenti: " + json.substr(0, 300));
+    const std::string folders = mp_library_folders(library, "", "", "", "");
+    check(folders.find("\"name\":\"Perché\"") != std::string::npos, "cartella con gli accenti: " + folders);
+    mp_library_close(library);
+
+    // E riaperti per ref, come quando si suonano.
+    mp::DecoderRegistry registry;
+    mp::registerBuiltinDecoders(registry);
+    mp::TrackCollector collector(registry);
+    check(collector.collect(utf8(folder / u8"Àncora più su.wav")).size() == 1, "collect di un file con gli accenti");
+    if (withArchive) {
+        const std::string zip = utf8(root / u8"Già zippati.zip");
+        check(collector.collect(zip).size() == 1, "collect di uno zip con gli accenti");
+        check(fs::is_regular_file(collector.resolve(zip + "/dentro/zippato.wav")), "resolve in uno zip con gli accenti");
+    }
+}
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -354,6 +407,7 @@ int main(int argc, char** argv)
     testLibrary(root, base / "db" / "library.db", withArchive);
     testCApi(root, base / "capi.db");
     testResolve(root, withArchive);
+    testAccents(base, data, withArchive);
 
     std::printf(failures == 0 ? "ok\n" : "FALLITO\n");
     return failures == 0 ? 0 : 1;

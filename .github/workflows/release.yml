@@ -75,7 +75,16 @@ jobs:
             --dart-define=MEGAPLAYER_VERSION=${{ steps.version.outputs.name }} `
             --dart-define=MEGAPLAYER_BUILD=${{ steps.version.outputs.build }}
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Copy-Item -Recurse -Force ..\dist\core\* build\windows\x64\runner\Release\
+          $release = 'build\windows\x64\runner\Release'
+          Copy-Item -Recurse -Force ..\dist\core\* $release
+          # Il runtime C++ di Visual Studio, che l'app usa e che non tutti i
+          # Windows hanno: le DLL ridistribuibili accanto all'eseguibile.
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+          $crt = Get-ChildItem "$vs\VC\Redist\MSVC\*\x64\Microsoft.VC14*.CRT" | Sort-Object FullName | Select-Object -Last 1
+          foreach ($dll in 'msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll') {
+            Copy-Item -Force (Join-Path $crt.FullName $dll) $release
+          }
+          Get-ChildItem $release -Filter *.dll | ForEach-Object Name
 
       - name: Installer
         shell: pwsh

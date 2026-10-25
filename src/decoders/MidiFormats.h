@@ -31,4 +31,20 @@ inline const char* midiFormat(const std::vector<uint8_t>& data)
     return nullptr;
 }
 
+// Un MIDI con dentro gli strumenti AdLib: gli MDI dell'AdLib MIDIPlay, a volte
+// rinominati .mid, che li definiscono con eventi del sequencer per il
+// costruttore 00 00 3F (FF 7F, lunghezza, 00 00 3F). Senza cambi di programma
+// General MIDI: suonano giusti solo con AdPlug, che usa quegli strumenti.
+inline bool hasAdlibInstruments(const std::vector<uint8_t>& data)
+{
+    if (midiFormat(data) == nullptr)
+        return false;
+    for (size_t i = 0; i + 5 < data.size(); ++i) {
+        if (data[i] == 0xFF && data[i + 1] == 0x7F && data[i + 2] < 0x80 && data[i + 3] == 0x00
+            && data[i + 4] == 0x00 && data[i + 5] == 0x3F)
+            return true;
+    }
+    return false;
+}
+
 } // namespace mp

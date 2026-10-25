@@ -58,7 +58,9 @@ vogliono un file di timbri accanto al brano (`standard.bnk` per ROL, `.snd`
 o `.tim` per MUS di AdLib, `insts.dat` per KSM, `patch.003` per Sierra), che
 AdPlug cerca nella stessa cartella; da soli vengono saltati. Gli S3M con
 strumenti AdLib restano a libopenmpt, gli MDI (MIDI con dentro i timbri
-AdLib) vanno ad AdPlug.
+AdLib) vanno ad AdPlug, anche quando sono stati rinominati `.mid`: si
+riconoscono dagli eventi AdLib che contengono, e senza i loro timbri un modulo
+General MIDI li suonerebbe tutti col pianoforte.
 
 Quando più backend riconoscono un file vince quello col punteggio più alto
 (`openmpt` per i formati che conosce, perché è più veloce, conosce la durata

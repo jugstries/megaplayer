@@ -4,7 +4,9 @@
 // - per adplug un IMF che programma direttamente i registri del chip, con
 //   una sinusoide quasi pura sul primo canale.
 // Controlla backend, titolo, autore, durata, la frequenza che esce dal chip
-// emulato, la fine del brano e il seek. Scrive i file in DIR/test.mid e
+// emulato, la fine del brano e il seek. Un MDI dell'AdLib rinominato .mid
+// (un MIDI con dentro uno strumento AdLib) deve andare ad AdPlug, che lo
+// suona con quello strumento, e non agli altri MIDI. Scrive i file in DIR/test.mid e
 // DIR/test.imf, per i test della CLI. Con ADL, un Westwood ADL dei sorgenti
 // di AdPlug (DUNE19.ADL), controlla che i sottobrani vuoti restino fuori.
 // Uso: opl_decoders_test DIR [ADL]
@@ -56,6 +58,36 @@ std::vector<uint8_t> makeMidi()
     appendText(track, title, false);
     append(track, {0x00, 0xc0, 73});         // flauto
     append(track, {0x00, 0x90, 69, 100});    // La4 (440 Hz)
+    append(track, {0x83, 0x00, 0x80, 69, 0}); // due secondi dopo
+    append(track, {0x00, 0xff, 0x2f, 0x00});
+
+    std::vector<uint8_t> file;
+    appendText(file, "MThd", false);
+    append(file, {0, 0, 0, 6, 0, 0, 0, 1, 0, 96});
+    appendText(file, "MTrk", false);
+    const auto size = static_cast<uint32_t>(track.size());
+    append(file, {static_cast<int>(size >> 24), static_cast<int>((size >> 16) & 0xff),
+                  static_cast<int>((size >> 8) & 0xff), static_cast<int>(size & 0xff)});
+    file.insert(file.end(), track.begin(), track.end());
+    return file;
+}
+
+// Lo stesso La, ma come lo scrive l'AdLib MIDIPlay: lo strumento della voce
+// 0 è dentro il file, un evento del sequencer per il costruttore 00 00 3F
+// (codice 1, la voce, i 28 byte del formato BNK), e nessun cambio di
+// programma. Modulatore muto, portante sinusoidale con sostegno.
+std::vector<uint8_t> makeAdlibMidi()
+{
+    const int modulator[] = {0, 1, 0, 15, 0, 1, 0, 5, 63, 0, 0, 0, 0};
+    const int carrier[] = {0, 1, 0, 15, 0, 1, 0, 5, 0, 0, 0, 0, 0};
+    std::vector<uint8_t> track;
+    append(track, {0x00, 0xff, 0x7f, 34, 0x00, 0x00, 0x3f, 0x00, 0x01, 0x00});
+    for (const int value : modulator)
+        track.push_back(static_cast<uint8_t>(value));
+    for (const int value : carrier)
+        track.push_back(static_cast<uint8_t>(value));
+    append(track, {0, 0});                    // forme d'onda
+    append(track, {0x00, 0x90, 69, 100});     // La4
     append(track, {0x83, 0x00, 0x80, 69, 0}); // due secondi dopo
     append(track, {0x00, 0xff, 0x2f, 0x00});
 
@@ -202,6 +234,21 @@ void testFile(mp::DecoderRegistry& registry, const std::filesystem::path& path, 
     check(rms(after, 0.1, 0.5) > 0.01, "muto dopo il seek indietro");
 }
 
+void testAdlibMidi(mp::DecoderRegistry& registry, const std::filesystem::path& path)
+{
+    const mp::SourceFile file = mp::loadSourceFile(path);
+    const auto candidates = registry.probe(file);
+    check(!candidates.empty() && candidates.front().factory->name() == "adplug",
+          "un MDI rinominato .mid non va ad adplug");
+    for (const mp::ProbeResult& candidate : candidates)
+        check(candidate.factory->name() != "88emu", "un MDI dell'AdLib offerto a 88emu");
+    auto decoder = registry.open(file, mp::OutputSpec{kRate});
+    check(decoder->info().format.find("MIDIPlay") != std::string::npos, "formato " + decoder->info().format);
+    const std::vector<float> frames = renderSeconds(*decoder, 1.0);
+    std::printf("adplug (MDI): rms %.3f\n", rms(frames, 0.25, 0.75));
+    check(rms(frames, 0.25, 0.75) > 0.01, "MDI quasi muto");
+}
+
 // In DUNE19.ADL 30 sottobrani su 74 sono vuoti e uno non accende note: chi
 // passava da un sottobrano all'altro finiva su uno vuoto e la riproduzione
 // si fermava. Ogni sottobrano offerto deve suonare, e si parte dalla prima
@@ -233,6 +280,7 @@ int main(int argc, char** argv)
     const std::filesystem::path directory = argv[1];
     write(directory / "test.mid", makeMidi());
     write(directory / "test.imf", makeImf());
+    write(directory / "test-adlib.mid", makeAdlibMidi());
 
     mp::DecoderRegistry registry;
     mp::registerBuiltinDecoders(registry);
@@ -243,6 +291,7 @@ int main(int argc, char** argv)
 #ifdef MP_TEST_ADPLUG
     // Due secondi di nota e un decimo dopo lo spegnimento.
     testFile(registry, directory / "test.imf", "adplug", "Prova IMF", "Megaplayer", 2.1);
+    testAdlibMidi(registry, directory / "test-adlib.mid");
     if (argc > 2)
         testWestwoodSubsongs(registry, argv[2]);
 #endif

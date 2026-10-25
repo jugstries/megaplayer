@@ -19,6 +19,9 @@ namespace mp {
 namespace {
 
 constexpr int kProbeScore = 80;
+// Per gli MDI dell'AdLib, che AdPlug suona con i loro strumenti: solo se
+// AdPlug manca.
+constexpr int kFallbackScore = 50;
 // Quattro chip OPL3: 72 voci a due operatori, abbastanza per il General MIDI.
 constexpr int kChips = 4;
 constexpr int kMidiChannels = 16;
@@ -171,7 +174,9 @@ std::string_view AdlMidiDecoderFactory::description() const
 
 int AdlMidiDecoderFactory::probe(const SourceFile& file)
 {
-    return family(file.data) ? kProbeScore : 0;
+    if (!family(file.data))
+        return 0;
+    return hasAdlibInstruments(file.data) ? kFallbackScore : kProbeScore;
 }
 
 std::unique_ptr<Decoder> AdlMidiDecoderFactory::open(const SourceFile& file, const OutputSpec& spec)

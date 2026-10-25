@@ -394,9 +394,12 @@ std::string_view Emu88DecoderFactory::description() const
     return "88emu: MIDI su Roland Sound Canvas e MT-32 emulati (MID, RMI, XMI, MUS, HMI, HMP; servono le ROM)";
 }
 
+// Gli MDI dell'AdLib (anche rinominati .mid) restano ad AdPlug: senza i loro
+// strumenti FM, su un Sound Canvas suonerebbero tutti col pianoforte.
 int Emu88DecoderFactory::probe(const SourceFile& file)
 {
-    return midiFormat(file.data) != nullptr && deviceFor(file.data) ? kProbeScore : 0;
+    return midiFormat(file.data) != nullptr && !hasAdlibInstruments(file.data) && deviceFor(file.data) ? kProbeScore
+                                                                                                        : 0;
 }
 
 std::unique_ptr<Decoder> Emu88DecoderFactory::open(const SourceFile& file, const OutputSpec& spec)

@@ -1,6 +1,7 @@
 #include "AdplugDecoder.h"
 
 #include "AudioTags.h"
+#include "MidiFormats.h"
 #include "core/Platform.h"
 
 #include <adplug.h>
@@ -33,19 +34,30 @@ constexpr int kPreferredScore = 85;
 // oltre, il brano gira su sé stesso e si chiude lì.
 constexpr unsigned long kLengthLimitMs = 600000;
 
+// Il nome con cui presentare il brano ad AdPlug, che sceglie il lettore
+// dall'estensione: un MDI dell'AdLib rinominato .mid torna .mdi.
+std::string adplugName(const SourceFile& file)
+{
+    std::filesystem::path path = file.path;
+    if (hasAdlibInstruments(file.data) && !CFileProvider::extension(path.string(), ".mdi"))
+        path.replace_extension(".mdi");
+    return path.string();
+}
+
 // Il brano per AdPlug, dalla memoria. I file accessori (i banchi di strumenti,
 // come standard.bnk per ROL) si cercano nella cartella del brano.
 class MemoryProvider final : public CFileProvider {
 public:
     explicit MemoryProvider(const SourceFile& file)
         : file_(file)
+        , name_(adplugName(file))
     {
     }
 
     binistream* open(std::string name) const override
     {
         const std::vector<uint8_t>* data = &file_.data;
-        if (name != file_.path.string()) {
+        if (name != file_.path.string() && name != name_) {
             const std::filesystem::path path =
                 findIgnoringCase(file_.path.parent_path(), std::filesystem::path(name).filename().string());
             if (path.empty())
@@ -68,6 +80,7 @@ public:
 
 private:
     const SourceFile& file_;
+    const std::string name_;
     mutable std::list<std::vector<uint8_t>> companions_;
 };
 
@@ -76,7 +89,7 @@ private:
 std::unique_ptr<CPlayer> loadPlayer(const SourceFile& file, Copl* opl, const CFileProvider& provider,
                                     const CPlayerDesc** found = nullptr)
 {
-    const std::string name = file.path.string();
+    const std::string name = adplugName(file);
     for (const CPlayerDesc* desc : CAdPlug::players) {
         if (desc->filetype == "Scream Tracker 3")
             continue;

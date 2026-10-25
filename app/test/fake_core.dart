@@ -35,14 +35,14 @@ class FakeCore implements PlayerCore {
   List<Track> collect(String path) {
     if (path != archive) throw CoreException('impossibile aprire $path');
     return [
-      for (final file in files) Track(path: '/tmp/estratto/$file', name: '$archive > $file', fromArchive: true),
+      for (final file in files) Track(ref: '$archive/$file', name: '$archive > $file'),
     ];
   }
 
   @override
-  void play(String path) {
-    calls.add('play ${path.split('/').last}');
-    playing = path;
+  void play(String ref) {
+    calls.add('play ${ref.split('/').last}');
+    playing = ref;
     state = PlaybackState.playing;
     position = 0;
     subsong = 0;

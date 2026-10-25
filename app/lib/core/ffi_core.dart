@@ -25,6 +25,15 @@ final class _MpStatus extends Struct {
 
 typedef _Engine = Pointer<Void>;
 
+/// La libreria del core: nel bundle dell'app (la copia
+/// scripts/embed-core-macos.sh), oppure dove indica MEGAPLAYER_CORE.
+String coreLibraryPath() {
+  final override = Platform.environment['MEGAPLAYER_CORE'];
+  if (override != null) return override;
+  final contents = File(Platform.resolvedExecutable).parent.parent;
+  return '${contents.path}/Frameworks/libmegaplayer.dylib';
+}
+
 /// Binding a libmegaplayer (src/capi/megaplayer.h) via dart:ffi.
 class FfiPlayerCore implements PlayerCore {
   FfiPlayerCore._(DynamicLibrary lib, this._engine)
@@ -56,22 +65,13 @@ class FfiPlayerCore implements PlayerCore {
 
   /// Carica la libreria e apre il dispositivo audio. Lancia [CoreException].
   factory FfiPlayerCore.open({int sampleRate = 48000}) {
-    final lib = DynamicLibrary.open(_libraryPath());
+    final lib = DynamicLibrary.open(coreLibraryPath());
     final create = lib.lookupFunction<_Engine Function(Int32), _Engine Function(int)>('mp_engine_create');
     final engine = create(sampleRate);
     if (engine == nullptr) {
       throw const CoreException('impossibile aprire il dispositivo audio');
     }
     return FfiPlayerCore._(lib, engine);
-  }
-
-  /// Nel bundle dell'app (lo copia scripts/embed-core-macos.sh), oppure
-  /// dove indica MEGAPLAYER_CORE.
-  static String _libraryPath() {
-    final override = Platform.environment['MEGAPLAYER_CORE'];
-    if (override != null) return override;
-    final contents = File(Platform.resolvedExecutable).parent.parent;
-    return '${contents.path}/Frameworks/libmegaplayer.dylib';
   }
 
   static const _scopeCapacity = 4096;
@@ -121,8 +121,8 @@ class FfiPlayerCore implements PlayerCore {
   }
 
   @override
-  void play(String path) {
-    if (_withString(path, (native) => _play(_engine, native)) != 0) throw _error();
+  void play(String ref) {
+    if (_withString(ref, (native) => _play(_engine, native)) != 0) throw _error();
   }
 
   @override

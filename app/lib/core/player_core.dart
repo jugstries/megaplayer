@@ -10,8 +10,8 @@ abstract interface class PlayerCore {
   /// Brani contenuti in un file o in un archivio. Lancia [CoreException].
   List<Track> collect(String path);
 
-  /// Apre e avvia un brano. Lancia [CoreException].
-  void play(String path);
+  /// Apre e avvia un brano, dal suo [Track.ref]. Lancia [CoreException].
+  void play(String ref);
   void stop();
   void setPaused(bool paused);
   void seek(double seconds);

@@ -4,19 +4,25 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import '../core/library_store.dart';
 import '../core/models.dart';
 import '../core/player_core.dart';
 
 enum Skin { modern, retro }
 
 /// Stato e comandi del player, condivisi dalle due skin: la coda, il brano
-/// corrente e quello che il core riporta a ogni aggiornamento.
+/// corrente, le playlist e quello che il core riporta a ogni aggiornamento.
+///
+/// Con uno [store], coda, playlist, skin, volume e manopola restano da un
+/// avvio all'altro; senza, l'app funziona lo stesso e non ricorda niente.
 class PlayerController extends ChangeNotifier {
-  PlayerController(this.core) : backends = core.backends();
+  PlayerController(this.core, {this.store}) : backends = core.backends();
 
   final PlayerCore core;
+  final LibraryStore? store;
   final List<Backend> backends;
 
+  /// La coda: quello che suona, in ordine.
   final List<Track> tracks = [];
   int? currentIndex;
   CoreStatus status = CoreStatus.idle;
@@ -32,25 +38,59 @@ class PlayerController extends ChangeNotifier {
   Skin skin = Skin.modern;
   String? error;
 
+  /// Le playlist salvate (la coda non c'è).
+  List<PlaylistInfo> playlists = const [];
+
   static const _files = MethodChannel('megaplayer/files');
   static const scopeFrames = 1024;
 
+  static const _skinKey = 'app.skin';
+  static const _volumeKey = 'app.volume';
+  static const _megaSoundKey = 'app.megasound';
+  static const _currentKey = 'app.queue.current';
+
   Timer? _timer;
+  int? _queueId;
 
   Track? get currentTrack => currentIndex == null ? null : tracks[currentIndex!];
+
+  /// Riprende coda, brano corrente (senza farlo partire), playlist, skin,
+  /// volume e manopola dall'ultima volta. Prima di [start].
+  void restore() {
+    _withStore((store) {
+      _queueId = store.queueId();
+      tracks
+        ..clear()
+        ..addAll(store.entries(_queueId!));
+      final current = int.tryParse(store.setting(_currentKey));
+      currentIndex = current != null && current >= 0 && current < tracks.length ? current : null;
+      skin = Skin.values.asNameMap()[store.setting(_skinKey)] ?? skin;
+      volume = double.tryParse(store.setting(_volumeKey))?.clamp(0.0, 1.0) ?? volume;
+      megaSound = double.tryParse(store.setting(_megaSoundKey))?.clamp(0.0, 1.0) ?? megaSound;
+      playlists = store.playlists();
+    });
+  }
 
   /// Avvia gli aggiornamenti periodici dello stato (circa 30 al secondo).
   void start() {
     core.setVolume(volume);
+    _applyMegaSound();
     _timer ??= Timer.periodic(const Duration(milliseconds: 33), (_) => refresh());
   }
 
-  /// Legge lo stato dal core; a fine brano passa al successivo.
+  /// Legge lo stato dal core. A fine sottobrano, per una voce col file
+  /// intero si passa al sottobrano successivo; altrimenti alla voce dopo.
   void refresh() {
     status = core.status();
     scope = status.isPlaying ? core.scope(scopeFrames) : _flatten(scope);
     if (status.state == PlaybackState.ended) {
-      _advance();
+      final track = currentTrack;
+      if (track != null && track.subsong == null && status.subsong + 1 < status.subsongCount) {
+        core.selectSubsong(status.subsong + 1);
+        status = core.status();
+      } else {
+        _advance();
+      }
     }
     notifyListeners();
   }
@@ -89,19 +129,20 @@ class PlayerController extends ChangeNotifier {
     addPaths(paths);
   }
 
-  /// Aggiunge file e archivi alla coda; se non sta suonando nulla parte il
-  /// primo brano aggiunto.
+  /// Aggiunge file e archivi alla coda, senza le voci che ci sono già; se non
+  /// sta suonando nulla parte il primo brano aggiunto.
   void addPaths(List<String> paths) {
     final firstNew = tracks.length;
     final problems = <String>[];
     for (final path in paths) {
       try {
-        tracks.addAll(core.collect(path));
+        _addEntries(tracks, core.collect(path));
       } on CoreException catch (e) {
         problems.add('${path.split('/').last}: $e');
       }
     }
     error = problems.isEmpty ? null : problems.join('\n');
+    if (tracks.length > firstNew) _saveQueue();
     if (currentIndex == null && tracks.length > firstNew) {
       playIndex(firstNew);
     } else {
@@ -112,15 +153,19 @@ class PlayerController extends ChangeNotifier {
   void playIndex(int index) {
     if (index < 0 || index >= tracks.length) return;
     currentIndex = index;
+    final track = tracks[index];
     try {
-      core.play(tracks[index].path);
+      core.play(track.ref);
+      final subsong = track.subsong;
+      if (subsong != null && subsong < core.status().subsongCount) core.selectSubsong(subsong);
       details = core.details();
       error = null;
     } on CoreException catch (e) {
       details = null;
-      error = '${tracks[index].fileName}: $e';
+      error = '${track.fileName}: $e';
     }
     status = core.status();
+    _saveCurrent();
     notifyListeners();
   }
 
@@ -161,9 +206,142 @@ class PlayerController extends ChangeNotifier {
     refresh();
   }
 
+  // --- La coda ---
+
+  /// Toglie una voce. Se è quella che suona, la riproduzione si ferma.
+  void removeTrack(int index) {
+    if (index < 0 || index >= tracks.length) return;
+    tracks.removeAt(index);
+    final current = currentIndex;
+    if (current == index) {
+      currentIndex = null;
+      core.stop();
+      status = CoreStatus.idle;
+      details = null;
+    } else if (current != null && current > index) {
+      currentIndex = current - 1;
+    }
+    _saveQueue();
+    notifyListeners();
+  }
+
+  /// Sposta una voce: [to] è la sua posizione nella coda dopo lo spostamento.
+  void moveTrack(int from, int to) {
+    if (!_move(tracks, from, to)) return;
+    final current = currentIndex;
+    if (current == from) {
+      currentIndex = to;
+    } else if (current != null && from < current && to >= current) {
+      currentIndex = current - 1;
+    } else if (current != null && from > current && to <= current) {
+      currentIndex = current + 1;
+    }
+    _saveQueue();
+    notifyListeners();
+  }
+
+  void clearQueue() {
+    tracks.clear();
+    currentIndex = null;
+    core.stop();
+    status = CoreStatus.idle;
+    details = null;
+    _saveQueue();
+    notifyListeners();
+  }
+
+  /// Sceglie il sottobrano di una voce (null per il file intero). false se
+  /// la stessa voce c'è già.
+  bool setTrackSubsong(int index, int? subsong) {
+    if (!_setSubsong(tracks, index, subsong)) return false;
+    _saveQueue();
+    notifyListeners();
+    return true;
+  }
+
+  // --- Le playlist ---
+
+  void refreshPlaylists() {
+    playlists = _withStore((store) => store.playlists()) ?? playlists;
+    notifyListeners();
+  }
+
+  /// Crea una playlist, con dentro [entries] se ci sono. null se non c'è
+  /// dove salvarla.
+  int? createPlaylist(String name, {List<Track> entries = const []}) {
+    final id = _withStore((store) {
+      final id = store.createPlaylist(name);
+      if (entries.isNotEmpty) store.setEntries(id, _addEntries([], entries));
+      return id;
+    });
+    refreshPlaylists();
+    return id;
+  }
+
+  void renamePlaylist(int id, String name) {
+    _withStore((store) => store.renamePlaylist(id, name));
+    refreshPlaylists();
+  }
+
+  void deletePlaylist(int id) {
+    _withStore((store) => store.deletePlaylist(id));
+    refreshPlaylists();
+  }
+
+  List<Track> playlistTracks(int id) => _withStore((store) => store.entries(id)) ?? const [];
+
+  /// Aggiunge in fondo, senza le voci che ci sono già: quante ne entrano.
+  int addToPlaylist(int id, List<Track> entries) {
+    final added = _editPlaylist(id, (list) {
+      final before = list.length;
+      _addEntries(list, entries);
+      return list.length - before;
+    });
+    return added ?? 0;
+  }
+
+  void removeFromPlaylist(int id, int index) {
+    _editPlaylist(id, (list) {
+      if (index >= 0 && index < list.length) list.removeAt(index);
+    });
+  }
+
+  void movePlaylistTrack(int id, int from, int to) {
+    _editPlaylist(id, (list) => _move(list, from, to));
+  }
+
+  /// Come [setTrackSubsong], in una playlist.
+  bool setPlaylistSubsong(int id, int index, int? subsong) =>
+      _editPlaylist(id, (list) => _setSubsong(list, index, subsong)) ?? false;
+
+  /// Salva la coda così com'è in una nuova playlist.
+  int? saveQueueAsPlaylist(String name) => createPlaylist(name, entries: tracks);
+
+  /// Mette la playlist al posto della coda e fa partire la prima voce.
+  void loadPlaylist(int id) {
+    final entries = _withStore((store) => store.entries(id));
+    if (entries == null) return;
+    core.stop();
+    tracks
+      ..clear()
+      ..addAll(entries);
+    currentIndex = null;
+    details = null;
+    status = CoreStatus.idle;
+    _saveQueue();
+    if (tracks.isNotEmpty) {
+      playIndex(0);
+    } else {
+      notifyListeners();
+    }
+  }
+
+  // --- Impostazioni ---
+
   void setVolume(double value) {
     volume = value.clamp(0.0, 1.0);
     core.setVolume(volume);
+    _withStore((store) => store.setSetting(_volumeKey, '$volume'));
     notifyListeners();
   }
 
@@ -172,6 +350,7 @@ class PlayerController extends ChangeNotifier {
     // Chi gira la manopola vuole sentire l'effetto, non l'originale.
     megaSoundBypassed = false;
     _applyMegaSound();
+    _withStore((store) => store.setSetting(_megaSoundKey, '$megaSound'));
     notifyListeners();
   }
 
@@ -185,13 +364,73 @@ class PlayerController extends ChangeNotifier {
 
   void setSkin(Skin value) {
     skin = value;
+    _withStore((store) => store.setSetting(_skinKey, value.name));
     notifyListeners();
+  }
+
+  // --- Salvataggio ---
+
+  /// Gli errori del database diventano un messaggio, mai un crash.
+  T? _withStore<T>(T Function(LibraryStore store) body) {
+    final store = this.store;
+    if (store == null) return null;
+    try {
+      return body(store);
+    } on CoreException catch (e) {
+      error = 'libreria: $e';
+      return null;
+    }
+  }
+
+  void _saveQueue() {
+    _withStore((store) => store.setEntries(_queueId ??= store.queueId(), tracks));
+    _saveCurrent();
+  }
+
+  void _saveCurrent() => _withStore((store) => store.setSetting(_currentKey, '${currentIndex ?? -1}'));
+
+  /// Modifica le voci di una playlist e le salva; il risultato è quello di
+  /// [edit], null se non c'è dove salvare.
+  R? _editPlaylist<R>(int id, R Function(List<Track> entries) edit) {
+    final result = _withStore((store) {
+      final entries = store.entries(id);
+      final result = edit(entries);
+      store.setEntries(id, entries);
+      return result;
+    });
+    refreshPlaylists();
+    return result;
+  }
+
+  /// Aggiunge a [list] le voci che non ci sono già; restituisce [list].
+  static List<Track> _addEntries(List<Track> list, Iterable<Track> entries) {
+    for (final entry in entries) {
+      if (!list.any(entry.sameEntry)) list.add(entry);
+    }
+    return list;
+  }
+
+  static bool _move(List<Track> list, int from, int to) {
+    if (from < 0 || from >= list.length || to < 0 || to >= list.length || from == to) return false;
+    list.insert(to, list.removeAt(from));
+    return true;
+  }
+
+  static bool _setSubsong(List<Track> list, int index, int? subsong) {
+    if (index < 0 || index >= list.length) return false;
+    final changed = list[index].withSubsong(subsong);
+    for (var i = 0; i < list.length; i++) {
+      if (i != index && list[i].sameEntry(changed)) return false;
+    }
+    list[index] = changed;
+    return true;
   }
 
   @override
   void dispose() {
     _timer?.cancel();
     core.dispose();
+    store?.dispose();
     super.dispose();
   }
 }

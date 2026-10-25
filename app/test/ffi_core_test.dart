@@ -7,6 +7,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:megaplayer/core/ffi_core.dart';
+import 'package:megaplayer/core/ffi_library.dart';
 import 'package:megaplayer/core/models.dart';
 
 void main() {
@@ -24,7 +25,7 @@ void main() {
     expect(tracks, hasLength(6));
     final title = tracks.firstWhere((t) => t.name.endsWith('Stormlord/jt.title'));
 
-    core.play(title.path);
+    core.play(title.ref);
     await Future<void>.delayed(const Duration(seconds: 2));
     final status = core.status();
     expect(status.state, PlaybackState.playing);
@@ -46,4 +47,23 @@ void main() {
 
     expect(() => core.play('/non/esiste.mod'), throwsA(isA<CoreException>()));
   }, skip: skip);
+
+  test('playlist, coda e impostazioni con il database vero', () {
+    final directory = Directory.systemTemp.createTempSync('megaplayer-ffi');
+    addTearDown(() => directory.deleteSync(recursive: true));
+    final store = FfiLibraryStore.open(path: '${directory.path}/library.db');
+    addTearDown(store.dispose);
+
+    final id = store.createPlaylist('Prova àèì');
+    const title = Track(ref: '/Musica/Stormlord.lha/Stormlord/jt.title', name: '/Musica/Stormlord.lha > Stormlord/jt.title');
+    store.setEntries(id, [title, title.withSubsong(2), title]);
+    final entries = store.entries(id);
+    expect(entries.map((e) => e.subsong), [null, 2]);
+    expect(entries.first.fileName, 'jt.title');
+    expect(store.playlists().single.name, 'Prova àèì');
+    expect(store.queueId(), isNot(id));
+    store.setSetting('app.skin', 'retro');
+    expect(store.setting('app.skin'), 'retro');
+    expect(() => store.renamePlaylist(id + 100, 'x'), throwsA(isA<CoreException>()));
+  }, skip: library == null ? 'MEGAPLAYER_CORE non impostata' : null);
 }

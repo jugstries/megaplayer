@@ -5,6 +5,7 @@ import 'package:megaplayer/core/models.dart';
 import 'package:megaplayer/player/player_controller.dart';
 
 import 'fake_core.dart';
+import 'fake_library.dart';
 
 void main() {
   late FakeCore core;
@@ -37,11 +38,32 @@ void main() {
     controller.refresh();
     expect(controller.currentIndex, 1);
 
+    // L'ultima voce ha cinque sottobrani: finito l'ultimo, ci si ferma.
     controller.playIndex(5);
+    core.subsong = 4;
     core.state = PlaybackState.ended;
     controller.refresh();
     expect(controller.currentIndex, 5);
     expect(core.playing, isNull);
+  });
+
+  test('una voce col file intero suona i sottobrani in fila, una col sottobrano solo quello', () {
+    controller.addPaths([FakeCore.archive]);
+    controller.playIndex(1); // jt.ingame, cinque sottobrani
+    core.calls.clear();
+    core.state = PlaybackState.ended;
+    controller.refresh();
+    expect(controller.currentIndex, 1);
+    expect(core.calls, ['subsong 1']);
+
+    // Con il sottobrano scelto parte quello, e alla fine si passa avanti.
+    expect(controller.setTrackSubsong(3, 2), isTrue);
+    core.calls.clear();
+    controller.playIndex(3);
+    expect(core.calls, ['play mon.ingame', 'subsong 2']);
+    core.state = PlaybackState.ended;
+    controller.refresh();
+    expect(controller.currentIndex, 4);
   });
 
   test('"precedente" riparte dall\'inizio dopo i primi secondi', () {
@@ -102,5 +124,95 @@ void main() {
     expect(controller.megaSoundBypassed, isFalse);
     expect(core.calls.where((c) => c.startsWith('megasound')),
         ['megasound 70', 'megasound 0', 'megasound 70', 'megasound 0', 'megasound 100']);
+  });
+
+  group('con il database', () {
+    late FakeLibraryStore store;
+
+    PlayerController reopen() {
+      final next = PlayerController(FakeCore(), store: store)..restore();
+      return next;
+    }
+
+    setUp(() {
+      store = FakeLibraryStore();
+      controller = PlayerController(core, store: store)..restore();
+    });
+
+    test('coda, brano corrente, skin, volume e manopola restano al riavvio', () {
+      controller.addPaths([FakeCore.archive]);
+      controller.playIndex(2);
+      controller.setSkin(Skin.retro);
+      controller.setVolume(0.5);
+      controller.setMegaSound(0.7);
+
+      final next = reopen();
+      expect(next.tracks.map((t) => t.ref), controller.tracks.map((t) => t.ref));
+      expect(next.currentIndex, 2);
+      expect(next.status.state, PlaybackState.idle, reason: 'riprende la coda senza farla partire');
+      expect(next.skin, Skin.retro);
+      expect(next.volume, 0.5);
+      expect(next.megaSound, 0.7);
+    });
+
+    test('la stessa voce non entra due volte, con un altro sottobrano sì', () {
+      controller.addPaths([FakeCore.archive]);
+      controller.addPaths([FakeCore.archive]);
+      expect(controller.tracks, hasLength(6));
+      expect(controller.setTrackSubsong(1, 1), isTrue);
+      controller.addPaths([FakeCore.archive]);
+      expect(controller.tracks, hasLength(7), reason: 'jt.ingame intero torna, accanto al sottobrano 2');
+      expect(controller.setTrackSubsong(6, 1), isFalse, reason: 'jt.ingame sottobrano 2 c\'è già');
+    });
+
+    test('togliere e spostare voci tiene il brano corrente', () {
+      controller.addPaths([FakeCore.archive]);
+      controller.playIndex(2);
+      controller.removeTrack(0);
+      expect(controller.currentIndex, 1);
+      controller.moveTrack(1, 4);
+      expect(controller.currentIndex, 4);
+      expect(controller.currentTrack!.fileName, 'jt.title');
+      controller.moveTrack(0, 4);
+      expect(controller.currentIndex, 3);
+      controller.removeTrack(3);
+      expect(controller.currentIndex, isNull);
+      expect(core.playing, isNull);
+      expect(reopen().tracks, hasLength(4));
+    });
+
+    test('playlist: crea, rinomina, aggiungi, sposta, togli, carica, cancella', () {
+      controller.addPaths([FakeCore.archive]);
+      final id = controller.saveQueueAsPlaylist('Stormlord')!;
+      expect(controller.playlists.single.name, 'Stormlord');
+      expect(controller.playlists.single.count, 6);
+
+      final mine = controller.createPlaylist('Preferiti')!;
+      controller.renamePlaylist(mine, 'I miei preferiti');
+      final title = controller.tracks[2];
+      expect(controller.addToPlaylist(mine, [title, title.withSubsong(0), title]), 2);
+      expect(controller.addToPlaylist(mine, [title]), 0);
+      controller.movePlaylistTrack(mine, 1, 0);
+      expect(controller.playlistTracks(mine).first.subsong, 0);
+      expect(controller.setPlaylistSubsong(mine, 0, null), isFalse, reason: 'il file intero c\'è già');
+      controller.removeFromPlaylist(mine, 1);
+      expect(controller.playlistTracks(mine).single.subsong, 0);
+
+      controller.loadPlaylist(mine);
+      expect(controller.tracks.single.subsong, 0);
+      expect(core.calls.last, 'subsong 0');
+      expect(reopen().tracks.single.subsong, 0);
+
+      controller.deletePlaylist(id);
+      expect(controller.playlists.map((p) => p.name), ['I miei preferiti']);
+    });
+
+    test('senza database tutto funziona e niente resta', () {
+      final alone = PlayerController(FakeCore())..restore();
+      alone.addPaths([FakeCore.archive]);
+      expect(alone.tracks, hasLength(6));
+      expect(alone.createPlaylist('x'), isNull);
+      expect(alone.playlists, isEmpty);
+    });
   });
 }

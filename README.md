@@ -209,9 +209,18 @@ OKT e gli altri nati sull'Amiga vanno all'Amiga, S3M, XM e IT al PC.
 
 Il database sta nella cartella dei dati dell'utente (`~/Library/Application
 Support/megaplayer/library.db` su macOS, `%APPDATA%\megaplayer` su Windows,
-`~/.local/share/megaplayer` altrove), o dove dice `--db`. L'app lo userà
-attraverso l'API C (`mp_library_*` in [src/capi/megaplayer.h](src/capi/megaplayer.h)),
-con la scansione in un thread suo. Non c'è nella build WebAssembly.
+`~/.local/share/megaplayer` altrove), o dove dice `--db`. Non c'è nella
+build WebAssembly.
+
+Nello stesso database stanno le playlist, la coda dell'app e le sue
+impostazioni. Una voce di playlist è un brano intero, che suona tutti i
+sottobrani in fila, o un suo sottobrano; lo stesso brano entra più volte solo
+con sottobrani diversi. I brani si ritrovano per riferimento: il percorso, o
+`ARCHIVIO/percorso/interno` per quelli dentro un archivio, così coda e
+playlist sopravvivono alla chiusura dell'app. Per suonarne uno il core estrae
+solo la sua cartella dell'archivio, dove stanno anche i file che lo
+accompagnano, e tiene le ultime otto cartelle estratte. L'app usa tutto
+attraverso l'API C (`mp_library_*` in [src/capi/megaplayer.h](src/capi/megaplayer.h)).
 
 ## MegaSound
 
@@ -335,8 +344,10 @@ Limiti attuali:
   bundle (i replayer con `mp_set_uade_data_dir()`);
 - gli oscilloscopi mostrano i canali sinistro e destro dell'uscita: i quattro
   canali Paula separati richiedono lavoro nel core;
-- niente trascinamento dei file sulla finestra e la skin scelta non viene
-  ricordata.
+- niente trascinamento dei file sulla finestra;
+- coda, skin, volume e manopola si ricordano da un avvio all'altro, e il
+  controller sa gestire le playlist, ma l'interfaccia per sfogliare la
+  libreria e per le playlist non c'è ancora.
 
 ## Struttura
 

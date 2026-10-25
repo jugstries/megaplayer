@@ -154,6 +154,11 @@ void mp_engine_set_megasound(mp_engine* engine, float amount)
     engine->player.setMegaSound(amount);
 }
 
+void mp_engine_set_channel_muted(mp_engine* engine, int32_t channel, int32_t muted)
+{
+    engine->player.setChannelMuted(channel, muted != 0);
+}
+
 void mp_engine_status(mp_engine* engine, mp_status* out)
 {
     const mp::PlayerStatus status = engine->player.status();
@@ -172,13 +177,18 @@ const char* mp_engine_track_info(mp_engine* engine)
     for (const std::string& packer : engine->currentPackers)
         packers += (packers.size() > 1 ? "," : "") + mp::json::string(packer);
     packers += "]";
+    std::string channels = "[";
+    for (const std::string& channel : engine->player.channels())
+        channels += (channels.size() > 1 ? "," : "") + mp::json::string(channel);
+    channels += "]";
 
     engine->infoJson = "{\"file\":" + mp::json::string(engine->currentFile) + ",\"packers\":" + packers
         + ",\"backend\":" + mp::json::string(info.backend) + ",\"format\":" + mp::json::string(info.format)
         + ",\"player\":" + mp::json::string(info.player) + ",\"platform\":" + mp::json::string(info.platform)
         + ",\"title\":" + mp::json::string(info.title)
         + ",\"author\":" + mp::json::string(info.author) + ",\"subsongCount\":" + std::to_string(info.subsongCount)
-        + ",\"currentSubsong\":" + std::to_string(info.currentSubsong) + ",\"duration\":" + mp::json::number(info.duration) + "}";
+        + ",\"currentSubsong\":" + std::to_string(info.currentSubsong) + ",\"duration\":" + mp::json::number(info.duration)
+        + ",\"channels\":" + channels + "}";
     return engine->infoJson.c_str();
 }
 

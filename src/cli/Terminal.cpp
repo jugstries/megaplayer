@@ -110,7 +110,12 @@ Key TerminalInput::poll()
     case '-': return Key::MegaSoundDown;
     case 'm': return Key::MegaSoundCompare;
     case 'q': return Key::Quit;
-    default: return Key::None;
+    default:
+        if (c >= '0' && c <= '9') {
+            channel_ = c == '0' ? 9 : c - '1';
+            return Key::ToggleChannel;
+        }
+        return Key::None;
     }
 }
 

@@ -7,6 +7,11 @@
 // A differenza di uade.h, non dichiara le sue funzioni extern "C".
 extern "C" {
 #include <uade/eagleplayer.h>
+
+// Le voci di Paula che si sentono, un bit per voce: in src/audio.c di UADE,
+// con patches/uade-voice-mask.patch. uadecore gira nel nostro processo, e ha
+// una sola istanza.
+extern volatile int uade_audible_voices;
 }
 
 #include <algorithm>
@@ -110,6 +115,7 @@ public:
         , directory_(file.path.parent_path())
         , input_(prepareInput(file))
     {
+        uade_audible_voices = kAllVoices;
         resetState();
 
         play(input_.subsong);
@@ -134,6 +140,9 @@ public:
                 info_.format = known->format;
         }
     }
+
+    // Il brano dopo, anche con un altro backend, si sente tutto.
+    ~UadeDecoder() override { uade_audible_voices = kAllVoices; }
 
     // UADE ha l'indirizzo del decoder, per loadAmigaFile().
     UadeDecoder(const UadeDecoder&) = delete;
@@ -186,7 +195,23 @@ public:
         return static_cast<double>(song->subsongbytes) / (sampleRate_ * UADE_BYTES_PER_FRAME);
     }
 
+    // Le quattro voci di Paula: la 1 e la 4 vanno a sinistra, la 2 e la 3 a
+    // destra.
+    std::vector<std::string> channels() const override
+    {
+        return {"Voce 1 · sinistra", "Voce 2 · destra", "Voce 3 · destra", "Voce 4 · sinistra"};
+    }
+
+    // L'emulazione va avanti: riaccesa, la voce si sente da dove è arrivata.
+    void setChannelMuted(int channel, bool muted) override
+    {
+        const int bit = 1 << channel;
+        uade_audible_voices = muted ? (uade_audible_voices & ~bit) : (uade_audible_voices | bit);
+    }
+
 private:
+    static constexpr int kAllVoices = 0xf;
+
     void resetState()
     {
         state_ = newState(sampleRate_);

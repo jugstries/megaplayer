@@ -9,6 +9,7 @@
 #include <cstring>
 #include <memory>
 #include <optional>
+#include <string>
 #include <vector>
 
 namespace mp {
@@ -18,6 +19,7 @@ namespace {
 constexpr int kProbeScore = 80;
 // Quattro chip OPL3: 72 voci a due operatori, abbastanza per il General MIDI.
 constexpr int kChips = 4;
+constexpr int kMidiChannels = 16;
 
 // Il formato, dalla firma, e il banco di strumenti con cui suonava: i giochi
 // con la libreria Miles (XMI) usavano i timbri AIL, Doom (MUS) quelli DMX, i
@@ -101,6 +103,9 @@ public:
         if (adl_openData(player_.get(), data_.data(), static_cast<unsigned long>(data_.size())) < 0)
             throw DecoderError(adl_errorInfo(player_.get()));
         info_.currentSubsong = index;
+        // I canali spenti sono del sequencer, che riaprendo si azzera.
+        for (int channel = 0; channel < kMidiChannels; ++channel)
+            adl_setChannelEnabled(player_.get(), static_cast<size_t>(channel), muted_[channel] ? 0 : 1);
         if (const char* title = adl_metaMusicTitle(player_.get()))
             info_.title = textToUtf8(title);
         // Comprende il secondo che libADLMIDI aspetta dopo l'ultimo evento,
@@ -136,8 +141,26 @@ public:
 
     double position() const override { return static_cast<double>(rendered_) / sampleRate_; }
 
+    // I sedici canali MIDI; il decimo è la batteria del General MIDI.
+    std::vector<std::string> channels() const override
+    {
+        std::vector<std::string> names;
+        for (int channel = 0; channel < kMidiChannels; ++channel)
+            names.push_back("Canale " + std::to_string(channel + 1) + (channel == 9 ? " · batteria" : ""));
+        return names;
+    }
+
+    // Zittendo un canale libADLMIDI rilascia le sue note; riacceso, suona
+    // dalla nota dopo.
+    void setChannelMuted(int channel, bool muted) override
+    {
+        muted_[channel] = muted;
+        adl_setChannelEnabled(player_.get(), static_cast<size_t>(channel), muted ? 0 : 1);
+    }
+
 private:
     int sampleRate_;
+    bool muted_[kMidiChannels] = {};
     std::vector<uint8_t> data_;
     std::unique_ptr<ADL_MIDIPlayer, PlayerDeleter> player_;
     std::vector<short> samples_;

@@ -3,10 +3,12 @@
 #include "core/Platform.h"
 
 #include <libopenmpt/libopenmpt.hpp>
+#include <libopenmpt/libopenmpt_ext.hpp>
 
 #include <algorithm>
 #include <ostream>
 #include <string_view>
+#include <vector>
 
 namespace mp {
 
@@ -39,6 +41,8 @@ public:
     OpenMptDecoder(const SourceFile& file, const OutputSpec& spec)
         : sampleRate_(spec.sampleRate)
         , module_(load(file, log_))
+        , interactive_(static_cast<openmpt::ext::interactive*>(module_.get_interface(openmpt::ext::interactive_id)))
+        , channels_(module_.get_channel_names())
     {
         info_.backend = "openmpt";
         info_.format = module_.get_metadata("type_long");
@@ -68,11 +72,24 @@ public:
     void seek(double seconds) override { module_.set_position_seconds(seconds); }
     double position() const override { return module_.get_position_seconds(); }
 
+    // I canali del tracker, con il nome che gli ha dato l'autore (di solito
+    // nessuno).
+    std::vector<std::string> channels() const override
+    {
+        return interactive_ ? channels_ : std::vector<std::string>{};
+    }
+
+    void setChannelMuted(int channel, bool muted) override
+    {
+        if (interactive_)
+            interactive_->set_channel_mute_status(channel, muted);
+    }
+
 private:
-    static openmpt::module load(const SourceFile& file, std::ostream& log)
+    static openmpt::module_ext load(const SourceFile& file, std::ostream& log)
     {
         try {
-            return openmpt::module(file.data, log);
+            return openmpt::module_ext(file.data, log);
         } catch (const openmpt::exception& e) {
             throw DecoderError(e.what());
         }
@@ -82,7 +99,10 @@ private:
     // all'output della CLI: uno stream senza buffer li scarta.
     std::ostream log_{nullptr};
     int sampleRate_;
-    openmpt::module module_;
+    openmpt::module_ext module_;
+    // Il mute dei canali; resta valido cambiando sottobrano.
+    openmpt::ext::interactive* interactive_;
+    std::vector<std::string> channels_;
     TrackInfo info_;
 };
 

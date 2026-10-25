@@ -89,8 +89,9 @@ ctest --test-dir build
 libzakalwe, bencode-tools, ancient, miniaudio, game-music-emu, libsidplayfp,
 libresidfp, libADLMIDI, AdPlug, libbinio e SQLite in `third_party/src` (di
 libsidplayfp, libresidfp e SQLite gli archivi di rilascio, con la verifica
-dello SHA-256) e applica `patches/uade-in-process.patch` a
-UADE. Tutto il resto lo fa CMake: compila
+dello SHA-256) e applica le patch di `patches/`: due a UADE (l'emulatore nel
+processo del player, vedi sotto, e le voci di Paula da zittire) e una a
+libsidplayfp (il mute di una voce subito). Tutto il resto lo fa CMake: compila
 UADE senza il suo script di configurazione (che funziona solo su UNIX, vedi
 [cmake/UadeInProcess.cmake](cmake/UadeInProcess.cmake)) e copia replayer e
 configurazione in `build/uade-data`. La CLI e i test li cercano lì; le app li
@@ -165,6 +166,7 @@ build/megaplayer play Stormlord.lha            # tutti i brani dell'archivio
 build/megaplayer info -b uade mod.enigma       # formato, backend, metadati
 build/megaplayer render -s 2 -o out.wav Stormlord.lha/Stormlord/jt.ingame   # esporta in WAV
 build/megaplayer play -m 60 Stormlord.lha      # con MegaSound al 60%
+build/megaplayer render -M 1,3 -o out.wav mod.enigma   # senza i canali 1 e 3
 build/megaplayer backends
 ```
 
@@ -173,7 +175,27 @@ archivio.
 
 Durante `play`: spazio pausa, ←/→ seek di 10 s, `n`/`p` sottobrano
 successivo/precedente, invio file successivo, `+`/`-` MegaSound ±10%, `m`
-confronto A/B con l'originale, `q` esci.
+confronto A/B con l'originale, da `1` a `9` e `0` zittisce o riaccende i
+canali da 1 a 10, `q` esci.
+
+## Canali
+
+Ogni brano dei formati che lo permettono ha i suoi canali, da zittire uno
+per uno o da mettere in solo (`Decoder::channels()` e `setChannelMuted()`):
+
+| Backend  | Canali | Come si zittiscono |
+|----------|--------|--------------------|
+| openmpt  | i canali del tracker, con il nome dato dall'autore | il mute di libopenmpt |
+| uade     | le 4 voci di Paula (1 e 4 a sinistra, 2 e 3 a destra) | una maschera nel mixer di Paula ([patches/uade-voice-mask.patch](patches/uade-voice-mask.patch)): l'emulazione va avanti |
+| gme      | le voci del chip («Square 1», «Noise», «DSP 3»…) | il mute di gme, che con canali zittiti non chiude più il brano sul silenzio |
+| sid      | 3 voci per chip e i campioni digitalizzati | il mute di libsidplayfp, che filtra i registri; la patch ([patches/libsidplayfp-instant-mute.patch](patches/libsidplayfp-instant-mute.patch)) lo applica subito invece che alla nota dopo |
+| adlmidi  | i 16 canali MIDI | i canali spenti del sequencer, che rilascia le note |
+| adplug   | i canali OPL che suonano note | niente note nuove, quelle accese rilasciate e operatori al minimo (-47 dB) |
+
+I file audio non hanno canali. Il mute vale fino al brano dopo, anche
+cambiando sottobrano; nell'app si sente con il ritardo del buffer, circa tre
+decimi di secondo. Riaccesi, i canali OPL e SID ripartono dalla nota tenuta,
+quelli MIDI dalla nota dopo.
 
 ## Libreria
 

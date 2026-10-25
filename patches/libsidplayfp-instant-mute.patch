@@ -1,0 +1,52 @@
+--- a/src/sidemu.h
++++ b/src/sidemu.h
+@@ -72,6 +72,10 @@
+     /// Flags for muted voices
+     std::bitset<4> isMuted;
+ 
++    /// What the tune last wrote to the control registers of the three
++    /// voices and to the volume register, before muting filtered it
++    uint8_t lastWritten[4] = {};
++
+     std::string m_error;
+ 
+ protected:
+--- a/src/sidemu.cpp
++++ b/src/sidemu.cpp
+@@ -33,6 +33,14 @@
+ {
+     switch (addr)
+     {
++    case 0x04: lastWritten[0] = data; break;
++    case 0x0b: lastWritten[1] = data; break;
++    case 0x12: lastWritten[2] = data; break;
++    case 0x18: lastWritten[3] = data; break;
++    }
++
++    switch (addr)
++    {
+     case 0x04:
+         // Ignore writes to control register to mute voices
+         // Leave test/ring/sync bits untouched
+@@ -61,8 +69,19 @@
+ 
+ void sidemu::voice(unsigned int voice, bool mute)
+ {
+-    if (voice < 4) LIKELY
+-        isMuted[voice] = mute;
++    if (voice >= 4 || isMuted[voice] == mute) UNLIKELY
++        return;
++
++    isMuted[voice] = mute;
++
++    // Apply it now rather than at the tune's next write: a held note would
++    // keep sounding until then. Unmuting restores the gate, so the note
++    // starts again.
++    if (isLocked)
++    {
++        static const uint_least8_t addr[4] = { 0x04, 0x0b, 0x12, 0x18 };
++        writeReg(addr[voice], lastWritten[voice]);
++    }
+ }
+ 
+ void sidemu::filter(bool enable)

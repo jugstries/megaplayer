@@ -92,6 +92,19 @@ void Player::setMegaSound(float amount)
     megaSound_.setAmount(amount);
 }
 
+std::vector<std::string> Player::channels() const
+{
+    std::lock_guard lock(mutex_);
+    return decoder_ ? decoder_->channels() : std::vector<std::string>{};
+}
+
+void Player::setChannelMuted(int channel, bool muted)
+{
+    std::lock_guard lock(mutex_);
+    if (decoder_ && channel >= 0 && channel < static_cast<int>(decoder_->channels().size()))
+        decoder_->setChannelMuted(channel, muted);
+}
+
 PlayerStatus Player::status() const
 {
     std::lock_guard lock(mutex_);

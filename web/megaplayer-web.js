@@ -51,6 +51,8 @@ async function openMegaplayer({ sampleRate = 48000 } = {}) {
     setVolume: (volume) => M._mp_engine_set_volume(engine, volume),
     // La manopola MegaSound, da 0 (spenta) a 1 (tutti gli effetti).
     setMegaSound: (amount) => M._mp_engine_set_megasound(engine, amount),
+    // Un canale di trackInfo().channels, zittito o riacceso.
+    setChannelMuted: (channel, muted) => M._mp_engine_set_channel_muted(engine, channel, muted ? 1 : 0),
     status() {
       M._mp_engine_status(engine, statusBuffer);
       const ints = statusBuffer >> 2;

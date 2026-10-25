@@ -79,12 +79,20 @@ MP_API void mp_engine_set_volume(mp_engine* engine, float volume);
 /* La manopola MegaSound, da 0 (spenta) a 1 (tutti gli effetti). */
 MP_API void mp_engine_set_megasound(mp_engine* engine, float amount);
 
+/*
+ * Zittisce o riaccende un canale del brano corrente (un indice di
+ * "channels" in mp_engine_track_info). Vale fino al brano dopo, anche
+ * cambiando sottobrano.
+ */
+MP_API void mp_engine_set_channel_muted(mp_engine* engine, int32_t channel, int32_t muted);
 
 MP_API void mp_engine_status(mp_engine* engine, mp_status* out);
 
 /*
  * Il brano corrente: {"file", "packers", "backend", "format", "player",
- * "title", "author", "subsongCount", "currentSubsong", "duration"}.
+ * "title", "author", "subsongCount", "currentSubsong", "duration",
+ * "channels"}. "channels" sono i canali che si possono zittire, con il loro
+ * nome ("" se non ne hanno uno); vuoto per i file audio.
  */
 MP_API const char* mp_engine_track_info(mp_engine* engine);
 

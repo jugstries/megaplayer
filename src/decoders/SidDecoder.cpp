@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <string>
 #include <vector>
 
 namespace mp {
@@ -65,6 +66,8 @@ public:
         if (tune->numberOfInfoStrings() > 1)
             info_.author = textToUtf8(tune->infoString(1));
         info_.subsongCount = static_cast<int>(std::max(1u, tune->songs()));
+        chips_ = std::max(1, tune->sidChips());
+        muted_.assign(static_cast<size_t>(chips_ * kVoices), false);
         info_.duration = kLengthSeconds;
         selectSubsong(static_cast<int>(std::max(1u, tune->startSong())) - 1);
     }
@@ -81,6 +84,9 @@ public:
             throw DecoderError(engine_.error());
         // Mixer stereo e dimensione di un passo si preparano a brano caricato.
         engine_.initMixer(true);
+        // Caricare il brano ricrea i chip: i mute vanno rimessi.
+        for (size_t i = 0; i < muted_.size(); ++i)
+            applyMute(static_cast<int>(i));
         mixed_.resize(static_cast<size_t>(std::max(engine_.getBufSize(kCycles), 0)) * kChannels + 64);
         info_.currentSubsong = index;
         pending_.clear();
@@ -124,7 +130,38 @@ public:
 
     double position() const override { return static_cast<double>(rendered_) / sampleRate_; }
 
+    // Le tre voci di ogni chip, e i campioni digitalizzati (scritti nel
+    // registro del volume) come quarto canale.
+    std::vector<std::string> channels() const override
+    {
+        std::vector<std::string> names;
+        for (int chip = 0; chip < chips_; ++chip) {
+            const std::string prefix = chips_ > 1 ? "SID " + std::to_string(chip + 1) + " · " : "";
+            for (int voice = 0; voice < kVoices; ++voice)
+                names.push_back(prefix + (voice < 3 ? "Voce " + std::to_string(voice + 1) : std::string("Digi")));
+        }
+        return names;
+    }
+
+    void setChannelMuted(int channel, bool muted) override
+    {
+        muted_.at(static_cast<size_t>(channel)) = muted;
+        applyMute(channel);
+    }
+
 private:
+    static constexpr int kVoices = 4; // tre voci e i campioni
+
+    // libsidplayfp filtra le scritture nei registri del chip: una voce si
+    // zittisce (o si riaccende) alla prossima scrittura nel suo registro di
+    // controllo, che quasi tutti i replayer rifanno a ogni frame. Il terzo
+    // argomento vuol dire zittita, al contrario di quanto dice sidplayfp.h.
+    void applyMute(int channel)
+    {
+        engine_.mute(static_cast<unsigned int>(channel / kVoices), static_cast<unsigned int>(channel % kVoices),
+                     muted_[static_cast<size_t>(channel)]);
+    }
+
     // Fa avanzare l'emulazione di un passo e raccoglie i campioni prodotti.
     void fill()
     {
@@ -150,6 +187,8 @@ private:
     std::vector<short> pending_; // stereo interleaved, da pendingStart_ in poi
     size_t pendingStart_ = 0;
     size_t rendered_ = 0;
+    int chips_ = 1;
+    std::vector<bool> muted_; // kVoices per chip
     TrackInfo info_;
 };
 

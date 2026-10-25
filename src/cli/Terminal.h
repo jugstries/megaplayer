@@ -15,6 +15,7 @@ enum class Key {
     MegaSoundUp,
     MegaSoundDown,
     MegaSoundCompare,
+    ToggleChannel, // un tasto da 1 a 0: TerminalInput::channel()
     Quit,
 };
 
@@ -30,7 +31,12 @@ public:
 
     Key poll();
 
+    // Il canale dell'ultimo Key::ToggleChannel, da 0: i tasti da 1 a 9 e
+    // lo 0 per il decimo.
+    int channel() const { return channel_; }
+
 private:
+    int channel_ = 0;
     struct Impl;
     std::unique_ptr<Impl> impl_;
 };

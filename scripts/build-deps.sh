@@ -4,7 +4,8 @@
 # direttamente CMake (UADE con libzakalwe e bencode-tools, ancient, miniaudio,
 # game-music-emu, libsidplayfp con libresidfp, libADLMIDI, AdPlug con libbinio,
 # SQLite)
-# e applica a UADE la patch per farlo girare nel processo del player.
+# e applica a UADE le patch per farlo girare nel processo del player e per
+# zittirne le voci, e a libsidplayfp quella per zittirle subito.
 # libopenmpt e libarchive invece arrivano dal sistema (brew, apt, MSYS2...),
 # vedi README.md.
 #
@@ -91,11 +92,21 @@ fetch libresidfp   "https://github.com/libsidplayfp/libresidfp/releases/download
 fetch libsidplayfp "https://github.com/libsidplayfp/libsidplayfp/releases/download/v$LIBSIDPLAYFP_VERSION/libsidplayfp-$LIBSIDPLAYFP_VERSION.tar.gz" "$LIBSIDPLAYFP_SHA256"
 fetch sqlite       "https://sqlite.org/$SQLITE_YEAR/sqlite-autoconf-$SQLITE_VERSION.tar.gz" "$SQLITE_SHA256"
 
-# Patch per far girare uadecore in un thread del player (src/uade/InProcess.cpp).
-UADE_PATCH="$ROOT/patches/uade-in-process.patch"
-if ! git -C "$SRC/uade" apply --reverse --check "$UADE_PATCH" 2>/dev/null; then
-	echo "==> applico $(basename "$UADE_PATCH")"
-	git -C "$SRC/uade" apply "$UADE_PATCH"
+# Le patch di UADE: uadecore in un thread del player (src/uade/InProcess.cpp)
+# e le voci di Paula da zittire una per una. Ognuna si applica una volta sola.
+for UADE_PATCH in "$ROOT/patches/uade-in-process.patch" "$ROOT/patches/uade-voice-mask.patch"; do
+	if ! git -C "$SRC/uade" apply --reverse --check "$UADE_PATCH" 2>/dev/null; then
+		echo "==> applico $(basename "$UADE_PATCH")"
+		git -C "$SRC/uade" apply "$UADE_PATCH"
+	fi
+done
+
+# La patch di libsidplayfp: il mute di una voce agisce subito, e non alla
+# prossima scrittura del brano nel suo registro.
+SID_PATCH="$ROOT/patches/libsidplayfp-instant-mute.patch"
+if ! git -C "$SRC/libsidplayfp" apply --reverse --check "$SID_PATCH" 2>/dev/null; then
+	echo "==> applico $(basename "$SID_PATCH")"
+	git -C "$SRC/libsidplayfp" apply "$SID_PATCH"
 fi
 
 echo

@@ -19,6 +19,7 @@
 #include <iostream>
 #include <limits>
 #include <optional>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -54,6 +55,7 @@ Opzioni:
   -r, --rate HZ        frequenza di campionamento (default 48000)
   -o, --output FILE    file WAV di uscita (render)
   -m, --megasound N    manopola MegaSound da 0 a 100 (play e render)
+  -M, --mute LISTA     zittisce questi canali, es. 1,3 o 2-4 (da 1)
   -h, --help           questo messaggio
 
 Opzioni della libreria:
@@ -74,6 +76,7 @@ Tasti durante play:
   spazio  pausa              ←/→  indietro/avanti di 10 s
   n/p     sottobrano successivo/precedente
   +/-     MegaSound ±10%      m    confronto A/B con l'originale
+  1…9, 0  zittisce o riaccende i canali da 1 a 10
   invio   file successivo    q    esci
 )";
 
@@ -86,6 +89,7 @@ struct Options {
     int sampleRate = 48000;
     std::string output;
     int megaSound = 0; // posizione della manopola, 0..100
+    std::vector<int> mute; // canali da zittire, da 1 come li scrive l'utente
     // Libreria.
     std::string database;
     std::vector<std::string> platforms;
@@ -105,6 +109,26 @@ T parseNumber(const std::string& option, const std::string& text, T min, T max)
     } catch (const std::exception&) {
     }
     throw std::invalid_argument("valore non valido per " + option + ": " + text);
+}
+
+// "1,3,5-7": i canali da 1, senza ripetizioni, in ordine.
+std::vector<int> parseChannels(const std::string& option, const std::string& text)
+{
+    std::vector<int> channels;
+    std::stringstream list(text);
+    std::string part;
+    while (std::getline(list, part, ',')) {
+        const size_t dash = part.find('-');
+        const int first = parseNumber(option, part.substr(0, dash), 1, 256);
+        const int last = dash == std::string::npos ? first : parseNumber(option, part.substr(dash + 1), first, 256);
+        for (int channel = first; channel <= last; ++channel)
+            channels.push_back(channel);
+    }
+    if (channels.empty())
+        throw std::invalid_argument("valore non valido per " + option + ": " + text);
+    std::sort(channels.begin(), channels.end());
+    channels.erase(std::unique(channels.begin(), channels.end()), channels.end());
+    return channels;
 }
 
 Options parseArgs(int argc, char** argv)
@@ -135,6 +159,8 @@ Options parseArgs(int argc, char** argv)
             options.output = value(i);
         } else if (arg == "-m" || arg == "--megasound") {
             options.megaSound = parseNumber(arg, value(i), 0, 100);
+        } else if (arg == "-M" || arg == "--mute") {
+            options.mute = parseChannels(arg, value(i));
         } else if (arg == "--db") {
             options.database = value(i);
         } else if (arg == "-p" || arg == "--platform") {
@@ -241,6 +267,16 @@ void printTrack(const std::string& name, const SourceFile& source, const Decoder
     field("Autore:     ", info.author);
     std::cout << "  Sottobrano: " << info.currentSubsong + 1 << " di " << info.subsongCount << "\n";
     std::cout << "  Durata:     " << (info.duration ? formatTime(*info.duration) : "sconosciuta") << "\n";
+    // I nomi solo se sono pochi e ci sono tutti.
+    const std::vector<std::string> channels = decoder.channels();
+    if (!channels.empty()) {
+        std::string names;
+        for (const std::string& channel : channels)
+            names += (names.empty() ? "" : ", ") + channel;
+        const bool named = channels.size() <= 8
+            && std::none_of(channels.begin(), channels.end(), [](const std::string& c) { return c.empty(); });
+        std::cout << "  Canali:     " << channels.size() << (named ? " (" + names + ")" : "") << "\n";
+    }
 }
 
 std::unique_ptr<Decoder> openTrack(const SourceFile& source, const Options& options,
@@ -251,6 +287,13 @@ std::unique_ptr<Decoder> openTrack(const SourceFile& source, const Options& opti
         if (*options.subsong > decoder->info().subsongCount)
             throw DecoderError("il file ha solo " + std::to_string(decoder->info().subsongCount) + " sottobrani");
         decoder->selectSubsong(*options.subsong - 1);
+    }
+    const size_t channels = decoder->channels().size();
+    for (const int channel : options.mute) {
+        if (static_cast<size_t>(channel) > channels)
+            throw DecoderError(channels == 0 ? "il brano non ha canali da zittire"
+                                             : "il brano ha solo " + std::to_string(channels) + " canali");
+        decoder->setChannelMuted(channel - 1, true);
     }
     return decoder;
 }
@@ -308,6 +351,12 @@ int runRender(const Options& options, const DecoderRegistry& registry)
     printTrack(track.name, source, *decoder);
     if (options.megaSound > 0)
         std::cout << "  MegaSound:  " << options.megaSound << "%\n";
+    if (!options.mute.empty()) {
+        std::cout << "  Zittiti:   ";
+        for (const int channel : options.mute)
+            std::cout << " " << channel;
+        std::cout << "\n";
+    }
 
     // Qui non serve un ritardo costante: spenta, la catena si salta e il WAV
     // resta identico al bit.
@@ -375,6 +424,10 @@ AfterTrack playTrack(const Track& track, const SourceFile& source, Decoder& deco
     output.flush();
     output.setPaused(false);
 
+    std::vector<bool> muted(decoder.channels().size(), false);
+    for (const int channel : options.mute)
+        muted[static_cast<size_t>(channel - 1)] = true;
+
     while (!cli::interrupted()) {
         const cli::Key key = keys.poll();
         switch (key) {
@@ -416,6 +469,12 @@ AfterTrack playTrack(const Track& track, const SourceFile& source, Decoder& deco
             knob.compare = !knob.compare;
             applyKnob();
             break;
+        case cli::Key::ToggleChannel:
+            if (keys.channel() < static_cast<int>(muted.size())) {
+                muted[static_cast<size_t>(keys.channel())] = !muted[static_cast<size_t>(keys.channel())];
+                decoder.setChannelMuted(keys.channel(), muted[static_cast<size_t>(keys.channel())]);
+            }
+            break;
         case cli::Key::None:
             break;
         }
@@ -443,6 +502,13 @@ AfterTrack playTrack(const Track& track, const SourceFile& source, Decoder& deco
             std::cout << "   sottobrano " << info.currentSubsong + 1 << "/" << info.subsongCount;
             if (knob.amount > 0)
                 std::cout << "   MegaSound " << knob.amount << "%" << (knob.compare ? " (A/B: originale)" : "");
+            if (std::find(muted.begin(), muted.end(), true) != muted.end()) {
+                std::cout << "   zittiti";
+                for (size_t i = 0; i < muted.size(); ++i) {
+                    if (muted[i])
+                        std::cout << " " << i + 1;
+                }
+            }
             std::cout << "\x1b[K" << std::flush;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(10));

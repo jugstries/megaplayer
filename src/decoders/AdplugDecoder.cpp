@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iterator>
 #include <list>
 #include <memory>
 #include <string>
@@ -94,8 +95,33 @@ std::unique_ptr<CPlayer> loadPlayer(const SourceFile& file, Copl* opl, const CFi
     return nullptr;
 }
 
-// Il chip che vede il lettore. Di solito le scritture vanno al chip vero;
-// mentre si misurano i sottobrani vanno perse, e si contano le note accese.
+// Nove canali per banco di registri; l'OPL3 (e il doppio OPL2) ne ha due.
+constexpr int kOplChannels = 18;
+
+// I colpi di batteria del modo ritmico (registro BD) e il canale che li
+// suona: la cassa il 7, rullante e charleston l'8, tom e piatto il 9.
+int drumBits(int channel)
+{
+    switch (channel % 9) {
+    case 6: return 0x10;
+    case 7: return 0x08 | 0x01;
+    case 8: return 0x04 | 0x02;
+    default: return 0;
+    }
+}
+
+// Il canale di un operatore (l'offset nei registri 20-35, 40-55, ...), o -1
+// per gli offset che non esistono: ogni canale ne ha due, a tre di distanza.
+int operatorChannel(int offset)
+{
+    const int slot = offset % 8;
+    return offset < 22 && slot < 6 ? offset / 8 * 3 + slot % 3 : -1;
+}
+
+// Il chip che vede il lettore. Di solito le scritture vanno al chip vero,
+// senza le note dei canali zittiti e con i loro operatori al minimo; mentre
+// si misurano i sottobrani vanno perse, e si contano le note accese e i
+// canali che le suonano.
 class RoutedOpl final : public Copl {
 public:
     explicit RoutedOpl(Copl& chip)
@@ -112,17 +138,55 @@ public:
 
     int notes() const { return notes_; }
 
+    // I canali che hanno suonato almeno una nota mentre si misurava.
+    bool used(int channel) const { return used_[channel]; }
+    bool drums(int channel) const { return drums_[channel]; }
+
+    // Le note del canale non partono più, quelle accese si rilasciano e i
+    // suoi operatori vanno al volume minimo: alcuni strumenti non si
+    // spengono mai da soli. Riacceso, la nota che il brano tiene premuta
+    // riparte.
+    void setMuted(int channel, bool muted)
+    {
+        muted_[channel] = muted;
+        const int bank = channel / 9;
+        chip_.setchip(bank);
+        chip_.write(0xb0 + channel % 9, filtered(bank, 0xb0 + channel % 9, keys_[channel]));
+        if (drumBits(channel))
+            chip_.write(0xbd, filtered(bank, 0xbd, rhythm_[bank]));
+        for (int offset = 0; offset < 22; ++offset) {
+            if (operatorChannel(offset) == channel % 9)
+                chip_.write(0x40 + offset, filtered(bank, 0x40 + offset, levels_[bank][offset]));
+        }
+        chip_.setchip(currChip);
+    }
+
     void write(int reg, int value) override
     {
+        const bool key = (reg & 0xf0) == 0xb0 && (reg & 0x0f) <= 8;
+        const int channel = currChip * 9 + (reg & 0x0f);
         if (!measuring_) {
-            chip_.write(reg, value);
+            if (key)
+                keys_[channel] = value;
+            else if (reg == 0xbd)
+                rhythm_[currChip] = value;
+            else if (reg >= 0x40 && reg < 0x56)
+                levels_[currChip][reg - 0x40] = value;
+            chip_.write(reg, filtered(currChip, reg, value));
             return;
         }
         // Key-on (bit 5 di B0-B8), o un colpo di batteria in modo ritmico.
-        const bool keyOn = (reg & 0xf0) == 0xb0 && (reg & 0x0f) <= 8 && (value & 0x20);
-        const bool drum = reg == 0xbd && (value & 0x20) && (value & 0x1f);
-        if (keyOn || drum)
+        if (key && (value & 0x20)) {
             ++notes_;
+            used_[channel] = true;
+        }
+        if (reg == 0xbd && (value & 0x20) && (value & 0x1f)) {
+            ++notes_;
+            for (int c = currChip * 9 + 6; c < currChip * 9 + 9; ++c) {
+                if (value & drumBits(c))
+                    used_[c] = drums_[c] = true;
+            }
+        }
     }
 
     // Il banco di registri si segue sempre, anche mentre si misura.
@@ -135,16 +199,47 @@ public:
     void init() override
     {
         currChip = 0;
-        if (!measuring_)
+        if (!measuring_) {
             chip_.init();
+            std::fill(std::begin(keys_), std::end(keys_), 0);
+            std::fill(std::begin(rhythm_), std::end(rhythm_), 0);
+            for (auto& bank : levels_)
+                std::fill(std::begin(bank), std::end(bank), 0);
+        }
     }
 
     void update(short* buffer, int frames) override { chip_.update(buffer, frames); }
 
 private:
+    // Il valore da scrivere davvero: per un canale zittito senza key-on,
+    // senza i suoi colpi di batteria e con gli operatori al minimo (livello
+    // totale 63, -47 dB).
+    int filtered(int bank, int reg, int value) const
+    {
+        if ((reg & 0xf0) == 0xb0 && (reg & 0x0f) <= 8 && muted_[bank * 9 + (reg & 0x0f)])
+            return value & ~0x20;
+        if (reg >= 0x40 && reg < 0x56) {
+            const int channel = operatorChannel(reg - 0x40);
+            return channel >= 0 && muted_[bank * 9 + channel] ? value | 0x3f : value;
+        }
+        if (reg == 0xbd) {
+            for (int c = bank * 9 + 6; c < bank * 9 + 9; ++c) {
+                if (muted_[c])
+                    value &= ~drumBits(c);
+            }
+        }
+        return value;
+    }
+
     Copl& chip_;
     bool measuring_ = false;
     int notes_ = 0;
+    bool used_[kOplChannels] = {};
+    bool drums_[kOplChannels] = {};
+    bool muted_[kOplChannels] = {};
+    int keys_[kOplChannels] = {}; // l'ultimo valore scritto in B0-B8
+    int rhythm_[2] = {};          // e in BD, per banco
+    int levels_[2][22] = {};      // e in 40-55, per banco
 };
 
 std::string trimmed(const std::string& text)
@@ -246,6 +341,20 @@ public:
 
     double position() const override { return static_cast<double>(rendered_) / sampleRate_; }
 
+    // I canali del chip che suonano note in qualche sottobrano.
+    std::vector<std::string> channels() const override
+    {
+        std::vector<std::string> names;
+        for (int channel : channels_)
+            names.push_back("Canale " + std::to_string(channel + 1) + (opl_.drums(channel) ? " · batteria" : ""));
+        return names;
+    }
+
+    void setChannelMuted(int channel, bool muted) override
+    {
+        opl_.setMuted(channels_.at(static_cast<size_t>(channel)), muted);
+    }
+
 private:
     struct Subsong {
         unsigned int index; // per AdPlug
@@ -273,9 +382,13 @@ private:
         }
         opl_.measure(false);
         // Se nessuno accende note (un formato che le suona in altro modo),
-        // si tengono tutti.
+        // si tengono tutti, e i canali da zittire non si conoscono.
         if (subsongs_.empty())
             subsongs_ = all;
+        for (int channel = 0; channel < kOplChannels; ++channel) {
+            if (opl_.used(channel))
+                channels_.push_back(channel);
+        }
     }
 
     void restart(size_t frame)
@@ -291,6 +404,7 @@ private:
     RoutedOpl opl_;
     std::unique_ptr<CPlayer> player_;
     std::vector<Subsong> subsongs_;
+    std::vector<int> channels_; // i canali del chip che suonano
     std::vector<short> samples_;
     double untilTick_ = 0; // frame da generare prima del prossimo tick del brano
     bool ended_ = false;

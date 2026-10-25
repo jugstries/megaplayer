@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -79,6 +80,7 @@ public:
         if (const char* error = gme_start_track(emu_, index))
             throw DecoderError(error);
         info_.currentSubsong = index;
+        rendered_ = false;
 
         gme_info_t* raw = nullptr;
         if (gme_track_info(emu_, &raw, index) == nullptr && raw != nullptr) {
@@ -102,6 +104,7 @@ public:
     {
         if (gme_track_ended(emu_))
             return 0;
+        rendered_ = true;
         samples_.resize(frames * kChannels);
         if (gme_play(emu_, static_cast<int>(samples_.size()), samples_.data()) != nullptr)
             return 0;
@@ -117,8 +120,36 @@ public:
 
     double position() const override { return gme_tell(emu_) / 1000.0; }
 
+    // Le voci del chip, con i nomi di gme ("Square 1", "Noise", "DSP 3").
+    // Il mute resta cambiando sottobrano.
+    std::vector<std::string> channels() const override
+    {
+        std::vector<std::string> names;
+        for (int i = 0; i < gme_voice_count(emu_); ++i)
+            names.emplace_back(gme_voice_name(emu_, i));
+        return names;
+    }
+
+    void setChannelMuted(int channel, bool muted) override
+    {
+        if (muted)
+            mutedMask_ |= 1 << channel;
+        else
+            mutedMask_ &= ~(1 << channel);
+        gme_mute_voice(emu_, channel, muted ? 1 : 0);
+        // gme chiude il brano dopo qualche secondo di silenzio, e con i
+        // canali zittiti il silenzio può essere voluto.
+        gme_ignore_silence(emu_, mutedMask_ != 0);
+        // All'avvio gme ha già suonato il primo pezzo, per saltare il
+        // silenzio iniziale: si riparte, così vale anche il mute.
+        if (gme_tell(emu_) == 0 && !rendered_)
+            selectSubsong(info_.currentSubsong);
+    }
+
 private:
     Music_Emu* emu_ = nullptr;
+    int mutedMask_ = 0;
+    bool rendered_ = false; // dall'inizio del sottobrano
     std::vector<short> samples_;
     TrackInfo info_;
 };

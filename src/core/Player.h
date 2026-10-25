@@ -9,6 +9,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -48,6 +49,12 @@ public:
     void selectSubsong(int index);
     void setVolume(float volume); // 0..1
     void setMegaSound(float amount); // 0..1, vedi MegaSound
+
+    // I canali del brano corrente e il loro mute, vedi Decoder::channels().
+    // Si sente il cambio con il ritardo del buffer, circa tre decimi di
+    // secondo.
+    std::vector<std::string> channels() const;
+    void setChannelMuted(int channel, bool muted);
 
     PlayerStatus status() const;
     TrackInfo info() const;

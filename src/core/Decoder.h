@@ -8,6 +8,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace mp {
 
@@ -54,6 +55,16 @@ public:
 
     // Posizione di decodifica nel sottobrano corrente, in secondi.
     virtual double position() const = 0;
+
+    // I canali che si possono zittire uno per uno: le voci del chip, i
+    // canali del tracker o del MIDI. Il nome è quello che dà il formato, o
+    // una descrizione ("Voce 2", "Square 1"); vuoto se non ce n'è. Nessun
+    // canale se il backend non lo permette (i file audio).
+    virtual std::vector<std::string> channels() const { return {}; }
+
+    // Zittisce o riaccende un canale (un indice di channels()). Resta così
+    // anche cambiando sottobrano o con un seek.
+    virtual void setChannelMuted(int /*channel*/, bool /*muted*/) {}
 };
 
 class DecoderFactory {

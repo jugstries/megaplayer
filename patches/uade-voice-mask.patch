@@ -1,0 +1,57 @@
+diff --git a/src/audio.c b/src/audio.c
+index 7930de4..a074692 100644
+--- a/src/audio.c
++++ b/src/audio.c
+@@ -30,6 +30,12 @@
+ #include "text_scope.h"
+ 
+ struct audio_channel_data audio_channel[4];
++
++/* The voices that are heard, bit n for voice n. A player that runs uadecore
++   in its own process mutes voices by clearing bits; the emulation goes on, so
++   unmuting brings a voice back mid-note. */
++volatile int uade_audible_voices = 0xf;
++
+ static void (*sample_handler) (void);
+ static void (*sample_prehandler) (unsigned long best_evtime);
+ 
+@@ -196,6 +202,15 @@ static inline void write_left_right(int left, int right)
+     check_sound_buffers();
+ }
+ 
++static inline void mute_voices(int *output)
++{
++    int i;
++    for (i = 0; i < 4; i++) {
++	if (!(uade_audible_voices & (1 << i)))
++	    output[i] = 0;
++    }
++}
++
+ static inline void sample_backend(int left, int right)
+ {
+ #if AUDIO_DEBUG
+@@ -232,6 +247,7 @@ static void sample16s_handler (void)
+ 	output[i] &= audio_channel[i].adk_mask;
+     }
+ 
++    mute_voices(output);
+     sample_backend(output[0] + output[3], output[1] + output[2]);
+ }
+ 
+@@ -252,6 +268,7 @@ static void sample16si_anti_handler (void)
+ 	audio_channel[i].sample_accum_time = 0;
+     }
+ 
++    mute_voices(output);
+     sample_backend(output[0] + output[3], output[1] + output[2]);
+ }
+ 
+@@ -289,6 +306,7 @@ static void sample16si_sinc_handler (void)
+         output[i] = sum >> 16;
+     }
+ 
++    mute_voices(output);
+     const int left = clamp_sample(output[0] + output[3]);
+     const int right = clamp_sample(output[1] + output[2]);
+ 

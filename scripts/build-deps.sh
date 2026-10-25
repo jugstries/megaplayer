@@ -4,10 +4,12 @@
 # direttamente CMake (UADE con libzakalwe e bencode-tools, ancient, miniaudio,
 # game-music-emu, libsidplayfp con libresidfp, libADLMIDI, AdPlug con libbinio,
 # SQLite, gearmulator per 88emu, i moduli Roland emulati, FluidSynth con il
-# SoundFont GeneralUser GS, per i MIDI senza le ROM, e AtariAudio per l'Atari ST)
+# SoundFont GeneralUser GS, per i MIDI senza le ROM, AtariAudio per l'Atari ST,
+# Highly Experimental con psflib e OpenBIOS per la PlayStation)
 # e applica a UADE le patch per farlo girare nel processo del player e per
 # zittirne le voci, a libsidplayfp quella per zittirle subito e a gearmulator
-# quelle per compilarlo con MinGW.
+# quelle per compilarlo con MinGW, a Highly Experimental quella per avviarlo
+# con OpenBIOS.
 # libopenmpt e libarchive invece arrivano dal sistema (brew, apt, MSYS2...),
 # vedi README.md.
 #
@@ -43,6 +45,15 @@ ATARIAUDIO_REF=1.26
 GENERALUSER_COMMIT=684543d5e5efaef08d02be50dcda8d552478fa60
 GENERALUSER_SF2_SHA256=9575028c7a1f589f5770fccc8cff2734566af40cd26ed836944e9a5152688cfe
 GENERALUSER_LICENSE_SHA256=7b32efefdf95ce38a043799f0659853ddc00fbaa14d8c50f0aca16b9b8b405be
+# Highly Experimental (Neill Corlett, nella versione di Christopher Snowhill)
+# e psflib: niente tag, si prendono da un commit preciso.
+HIGHLY_EXPERIMENTAL_COMMIT=0fa96d186e3c0437951732d0c50bf1da4e32970e
+PSFLIB_COMMIT=3bea757c8b45c5e68da1b5a7b736ad960a06a124
+# OpenBIOS di PCSX-Redux (MIT), la BIOS della PlayStation riscritta da zero
+# che Highly Experimental usa al posto di quella di Sony: compilata da
+# Libreboot nella release 20241206rev11, dal commit 6ec53480 di PCSX-Redux.
+OPENBIOS_SHA256=57253fe00a1b2148e61da9955d0f327e21400ae84324e27c09a15c26252710ca
+OPENBIOS_LICENSE_SHA256=33f0e77cc0a9552d63d2d73ca6979dd03e3cd00cd1f6f30808cc92837d6c20aa
 # SQLite 3.53.4: l'amalgamation (un solo sqlite3.c) dall'archivio autoconf.
 SQLITE_VERSION=3530400
 SQLITE_YEAR=2026
@@ -110,13 +121,19 @@ fetch libresidfp   "https://github.com/libsidplayfp/libresidfp/releases/download
 fetch libsidplayfp "https://github.com/libsidplayfp/libsidplayfp/releases/download/v$LIBSIDPLAYFP_VERSION/libsidplayfp-$LIBSIDPLAYFP_VERSION.tar.gz" "$LIBSIDPLAYFP_SHA256"
 fetch sqlite       "https://sqlite.org/$SQLITE_YEAR/sqlite-autoconf-$SQLITE_VERSION.tar.gz" "$SQLITE_SHA256"
 
-# download <file> <url> <sha256>: scarica un file singolo, una volta sola.
+# download <file> <sha256> <url>...: scarica un file singolo, una volta sola,
+# dal primo indirizzo che risponde.
 download() {
-	local target="$1" url="$2" sha256="$3"
+	local target="$1" sha256="$2"
+	shift 2
 	if [[ ! -f "$target" ]]; then
 		echo "==> scarico $(basename "$target")"
 		mkdir -p "$(dirname "$target")"
-		curl -fsSL -o "$target.part" "$url"
+		local url
+		for url in "$@"; do
+			curl -fsSL -o "$target.part" "$url" && break
+		done
+		[[ -f "$target.part" ]] || { echo "impossibile scaricare $(basename "$target")" >&2; exit 1; }
 		local actual
 		if command -v sha256sum >/dev/null; then
 			actual=$(sha256sum "$target.part" | cut -d' ' -f1)
@@ -133,8 +150,34 @@ download() {
 }
 
 GENERALUSER_URL="https://raw.githubusercontent.com/mrbumpy409/GeneralUser-GS/$GENERALUSER_COMMIT"
-download "$SRC/generaluser-gs/GeneralUser-GS.sf2" "$GENERALUSER_URL/GeneralUser-GS.sf2" "$GENERALUSER_SF2_SHA256"
-download "$SRC/generaluser-gs/LICENSE.txt" "$GENERALUSER_URL/documentation/LICENSE.txt" "$GENERALUSER_LICENSE_SHA256"
+download "$SRC/generaluser-gs/GeneralUser-GS.sf2" "$GENERALUSER_SF2_SHA256" "$GENERALUSER_URL/GeneralUser-GS.sf2"
+download "$SRC/generaluser-gs/LICENSE.txt" "$GENERALUSER_LICENSE_SHA256" "$GENERALUSER_URL/documentation/LICENSE.txt"
+
+# OpenBIOS dai mirror di Libreboot: la release non è più fra le correnti.
+OPENBIOS_PATH=old/stable/20241206/roms/playstation
+OPENBIOS_MIRRORS=(
+	"https://mirror.math.princeton.edu/pub/libreboot/$OPENBIOS_PATH"
+	"https://www.mirrorservice.org/sites/libreboot.org/release/$OPENBIOS_PATH"
+	"https://mirrors.mit.edu/libreboot/$OPENBIOS_PATH"
+)
+download "$SRC/openbios/openbios.bin" "$OPENBIOS_SHA256" "${OPENBIOS_MIRRORS[@]/%//openbios.bin}"
+download "$SRC/openbios/COPYING.txt" "$OPENBIOS_LICENSE_SHA256" "${OPENBIOS_MIRRORS[@]/%//COPYING.txt}"
+
+# clone_commit <nome> <url> <commit>: clona un commit preciso, una volta sola,
+# per i progetti senza tag.
+clone_commit() {
+	local name="$1" url="$2" commit="$3"
+	if [[ ! -d "$SRC/$name/.git" ]]; then
+		echo "==> clono $name (${commit:0:10})"
+		rm -rf "$SRC/$name"
+		git init -q "$SRC/$name"
+		git -C "$SRC/$name" fetch -q --depth 1 "$url" "$commit"
+		git -C "$SRC/$name" -c advice.detachedHead=false checkout -q FETCH_HEAD
+	fi
+}
+
+clone_commit highly_experimental https://gitlab.com/kode54/highly_experimental.git "$HIGHLY_EXPERIMENTAL_COMMIT"
+clone_commit psflib              https://gitlab.com/kode54/psflib.git              "$PSFLIB_COMMIT"
 
 # gearmulator a un commit preciso, con i soli sottomoduli che il suo CMake
 # vuole per costruire 88lib: niente JUCE né le estensioni CLAP.
@@ -177,6 +220,15 @@ for GEAR_PATCH in "gearmulator:$ROOT/patches/gearmulator-mingw.patch" \
 		git -C "$dir" apply "$patch"
 	fi
 done
+
+# La patch di Highly Experimental: i punti dove fermare la BIOS si possono
+# dare da fuori (OpenBIOS non ha l'ambiente di hebios) e le scritture con la
+# cache isolata dal bit IsC non arrivano alla RAM, come sulla console.
+HE_PATCH="$ROOT/patches/highly-experimental-openbios.patch"
+if ! git -C "$SRC/highly_experimental" apply --reverse --check "$HE_PATCH" 2>/dev/null; then
+	echo "==> applico $(basename "$HE_PATCH")"
+	git -C "$SRC/highly_experimental" apply "$HE_PATCH"
+fi
 
 echo
 echo "Sorgenti pronti in $SRC"

@@ -25,6 +25,7 @@ option(MP_WITH_UADE "Backend UADE (formati Amiga)" ON)
 option(MP_WITH_GME "Backend game-music-emu (console a 8 e 16 bit)" ON)
 option(MP_WITH_SID "Backend libsidplayfp (Commodore 64)" ON)
 option(MP_WITH_ATARI "Backend AtariAudio (Atari ST: SNDH e YM)" ON)
+option(MP_WITH_PSF "Backend Highly Experimental (PlayStation: PSF), con OpenBIOS" ON)
 option(MP_WITH_ADLMIDI "Backend libADLMIDI (MIDI su chip FM OPL3)" ON)
 option(MP_WITH_88EMU "Backend 88emu (MIDI su Roland Sound Canvas e MT-32 emulati, con le ROM dell'utente)" ON)
 option(MP_WITH_FLUIDSYNTH "Backend FluidSynth (MIDI su un SoundFont, per chi non ha le ROM)" ON)
@@ -77,6 +78,7 @@ add_library(megaplayer_core STATIC
     src/core/Exporter.cpp
     src/core/Platform.cpp
     src/core/Player.cpp
+    src/core/Resampler.cpp
     src/core/SourceFile.cpp
     src/core/TrackList.cpp
     src/core/WavWriter.cpp
@@ -85,6 +87,7 @@ add_library(megaplayer_core STATIC
     src/decoders/MiniaudioDecoder.cpp
     src/decoders/RolandDevices.cpp
     src/decoders/TfmxFiles.cpp
+    src/decoders/XaDecoder.cpp
     src/dsp/MegaSound.cpp)
 target_include_directories(megaplayer_core PUBLIC src)
 target_link_libraries(megaplayer_core PUBLIC ancient miniaudio)
@@ -211,6 +214,53 @@ if(MP_WITH_ATARI)
         target_compile_definitions(megaplayer_core PRIVATE MP_WITH_ATARI)
         target_link_libraries(megaplayer_core PUBLIC atariaudio)
         set(MP_ATARI_ENABLED ON)
+    endif()
+endif()
+
+set(MP_PSF_ENABLED OFF)
+if(MP_WITH_PSF)
+    set(MP_HE_DIR "${MP_THIRD_PARTY}/src/highly_experimental/Core")
+    set(MP_PSFLIB_DIR "${MP_THIRD_PARTY}/src/psflib")
+    set(MP_OPENBIOS "${MP_THIRD_PARTY}/src/openbios/openbios.bin")
+    if(EMSCRIPTEN)
+        set(ZLIB_FOUND ON) # la porta di Emscripten, vedi sotto
+    else()
+        find_package(ZLIB)
+    endif()
+    if(NOT EXISTS "${MP_HE_DIR}/psx.c" OR NOT EXISTS "${MP_PSFLIB_DIR}/psflib.c" OR NOT EXISTS "${MP_OPENBIOS}")
+        message(WARNING "Highly Experimental, psflib o OpenBIOS non scaricati (scripts/build-deps.sh): backend psf disattivato")
+    elseif(NOT ZLIB_FOUND)
+        message(WARNING "zlib non trovata: backend psf disattivato")
+    else()
+        # Il nucleo PS1/PS2 di Highly Experimental, senza disassembler,
+        # assembler e mkhebios (che ricava hebios da una BIOS della PS2).
+        # Tutte le piattaforme di megaplayer sono little endian.
+        add_library(highly_experimental STATIC
+            "${MP_HE_DIR}/bios.c" "${MP_HE_DIR}/iop.c" "${MP_HE_DIR}/ioptimer.c" "${MP_HE_DIR}/psx.c"
+            "${MP_HE_DIR}/r3000.c" "${MP_HE_DIR}/spu.c" "${MP_HE_DIR}/spucore.c" "${MP_HE_DIR}/vfs.c")
+        target_include_directories(highly_experimental SYSTEM PUBLIC "${MP_HE_DIR}")
+        target_compile_definitions(highly_experimental PUBLIC EMU_LITTLE_ENDIAN HAVE_STDINT_H PRIVATE EMU_COMPILE)
+        # psflib: i file PSF, con le librerie (_lib) e i tag.
+        add_library(psflib STATIC "${MP_PSFLIB_DIR}/psflib.c" "${MP_PSFLIB_DIR}/psf2fs.c")
+        target_include_directories(psflib SYSTEM PUBLIC "${MP_PSFLIB_DIR}")
+        if(EMSCRIPTEN)
+            target_compile_options(psflib PUBLIC -sUSE_ZLIB=1)
+            target_link_options(psflib PUBLIC -sUSE_ZLIB=1)
+        else()
+            target_link_libraries(psflib PUBLIC ZLIB::ZLIB)
+        endif()
+        foreach(target highly_experimental psflib)
+            if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
+                target_compile_options(${target} PRIVATE -w) # codice di terzi
+            endif()
+        endforeach()
+        # OpenBIOS dentro la libreria: niente file da cercare a runtime.
+        include(cmake/EmbedBinary.cmake)
+        mp_embed_binary("${MP_OPENBIOS}" mp_openbios "${CMAKE_BINARY_DIR}/openbios.c")
+        target_sources(megaplayer_core PRIVATE src/decoders/PsfDecoder.cpp "${CMAKE_BINARY_DIR}/openbios.c")
+        target_compile_definitions(megaplayer_core PRIVATE MP_WITH_PSF)
+        target_link_libraries(megaplayer_core PUBLIC highly_experimental psflib)
+        set(MP_PSF_ENABLED ON)
     endif()
 endif()
 
@@ -645,6 +695,30 @@ if(Python3_FOUND)
     endforeach()
 endif()
 
+# I file PlayStation generati da tests/make_test_psf.py: un PSF il cui
+# programma suona solo se la BIOS (OpenBIOS) è partita, un MiniPSF con la sua
+# libreria, che ha un nome dalle maiuscole diverse, e un XA con due canali.
+if(Python3_FOUND)
+    set(MP_PSX_TEST_DIR "${CMAKE_BINARY_DIR}/psx-test")
+    add_test(NAME make_test_psf
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/make_test_psf.py" "${MP_PSX_TEST_DIR}")
+    set_tests_properties(make_test_psf PROPERTIES FIXTURES_SETUP test_psx)
+    add_test(NAME cli_render_xa
+        COMMAND megaplayer render -s 2 -o "${CMAKE_BINARY_DIR}/test-xa.wav" "${MP_PSX_TEST_DIR}/test.xa")
+    set_tests_properties(cli_render_xa PROPERTIES FIXTURES_REQUIRED test_psx
+        PASS_REGULAR_EXPRESSION "Backend: +xa.*Sottobrano: 2 di 2.*Durata: +0:32.*Scritti 0:32")
+    if(MP_PSF_ENABLED)
+        add_test(NAME cli_render_psf
+            COMMAND megaplayer render -o "${CMAKE_BINARY_DIR}/test-psf.wav" "${MP_PSX_TEST_DIR}/test.psf")
+        set_tests_properties(cli_render_psf PROPERTIES FIXTURES_REQUIRED test_psx
+            PASS_REGULAR_EXPRESSION "Backend: +psf.*Titolo: +Onda quadra.*Durata: +0:06.*Scritti 0:06")
+        add_test(NAME cli_render_minipsf
+            COMMAND megaplayer render -o "${CMAKE_BINARY_DIR}/test-minipsf.wav" "${MP_PSX_TEST_DIR}/test.minipsf")
+        set_tests_properties(cli_render_minipsf PROPERTIES FIXTURES_REQUIRED test_psx
+            PASS_REGULAR_EXPRESSION "Formato: +MiniPSF.*Titolo: +Onda larga.*Scritti 0:06")
+    endif()
+endif()
+
 # Il mute dei canali, con un brano di prova per ogni backend che lo permette.
 # L'esportazione su un tono dei dati di prova (e sul modulo generato, per il
 # mute, se c'è libopenmpt).
@@ -692,6 +766,10 @@ if(MP_SID_ENABLED)
 endif()
 if(MP_ATARI_ENABLED)
     list(APPEND MP_CHANNELS_TEST_ARGS "atariaudio=${MP_ATARI_SONGS}/Enchanted_Land.sndh")
+endif()
+if(MP_PSF_ENABLED AND Python3_FOUND)
+    list(APPEND MP_CHANNELS_TEST_ARGS "psf=${MP_PSX_TEST_DIR}/test.psf")
+    list(APPEND MP_CHANNELS_FIXTURES test_psx)
 endif()
 if(MP_ADLMIDI_ENABLED)
     list(APPEND MP_CHANNELS_TEST_ARGS "adlmidi=${CMAKE_BINARY_DIR}/test.mid")

@@ -13,6 +13,8 @@ Flutter (per ora macOS) con due skin: moderna e retrò.
 | `sid`     | libsidplayfp 3.1.1, libresidfp 1.2.3 | Commodore 64: PSID e RSID, con l'emulazione reSIDfp del chip SID (6581 e 8580) |
 | `gme`     | game-music-emu 0.6.5  | console: NES (NSF, NSFE), SNES (SPC), Game Boy (GBS), Master System e Mega Drive (VGM, VGZ, GYM), PC Engine (HES), MSX (KSS), ZX Spectrum (AY), Atari (SAP) |
 | `atariaudio` | AtariAudio 1.26 | Atari ST: SNDH, con il replayer originale su un 68000 emulato (YM2149, timer, DAC dell'STE, blitter), e YM (YM2–YM6, Digimix, YM Tracker), anche compressi con ICE! o LHA |
+| `psf`     | Highly Experimental (Neill Corlett, commit di gennaio 2022), psflib, OpenBIOS di PCSX-Redux | PlayStation: PSF e MiniPSF con le loro librerie, emulando la CPU R3000 e lo SPU. Al posto della BIOS di Sony gira OpenBIOS: non serve nessuna ROM |
+| `xa`      | (di megaplayer)       | l'audio in streaming dei CD della PlayStation: XA ADPCM, in RIFF/CDXA o in settori grezzi, un sottobrano per canale |
 | `88emu`   | 88emu di gearmulator (commit del 10 ottobre 2026) | gli stessi MIDI sui moduli Roland: Sound Canvas (SC-55, SC-55mkII, SC-88, SC-88VL, SC-88 Pro, SC-8850, ...) e MT-32/CM-32L, emulati facendo girare il loro firmware. Servono le ROM dell'utente |
 | `fluidsynth` | FluidSynth 2.6.1, GeneralUser GS 2.0.3 | gli stessi MIDI su un SoundFont General MIDI e GS a campioni, per chi non ha le ROM: di serie GeneralUser GS, che viaggia con le app |
 | `adlmidi` | libADLMIDI 1.6.2.1    | MIDI (MID, RMI) e i suoi parenti dei giochi DOS: XMI, MUS di Doom, HMI/HMP, GMF, su quattro chip FM OPL3 emulati (Nuked OPL3) |
@@ -49,9 +51,24 @@ durata indicata nel file, o dopo due giri del ritornello, o dopo due minuti e
 mezzo; i SID, che non dicono mai quanto durano, dopo tre minuti. Sempre con
 una dissolvenza. I SNDH dell'Atari ST finiscono alla durata del file, o a
 quella dell'archivio di durate di AtariAudio; se nessuno dei due la sa, dopo
-tre minuti con la dissolvenza, come i SID. Per i SID non servono le ROM del C64: libsidplayfp ha un
-kernal sostitutivo, che basta quasi sempre (le ROM originali sono protette da
-copyright).
+tre minuti con la dissolvenza, come i SID; così anche i PSF, che di solito
+la durata e la dissolvenza la scrivono nei tag. Per i SID non servono le ROM
+del C64: libsidplayfp ha un kernal sostitutivo, che basta quasi sempre (le ROM
+originali sono protette da copyright).
+
+Nemmeno per la PlayStation serve la BIOS di Sony. Un PSF è il programma del
+gioco che suona la musica, e quel programma chiama le funzioni della BIOS:
+Highly Experimental, l'emulatore più fedele dello SPU, di solito si porta
+dietro un'immagine ricavata da quella della PS2. megaplayer invece avvia
+OpenBIOS di PCSX-Redux (MIT, riscritta da zero), che viaggia dentro la
+libreria; Highly Experimental la ferma, come fa con quella di Sony, appena il
+kernel è pronto, prima della shell, e lì carica il brano. Per farla girare
+serve una piccola patch ([patches/highly-experimental-openbios.patch](patches/highly-experimental-openbios.patch)):
+il punto dove fermarla si dà da fuori, e le scritture fatte con la cache
+isolata dal bit IsC del registro di stato non arrivano alla RAM, come sulla
+console (OpenBIOS svuota la cache così, quella di Sony in un altro modo). I
+PSF2 della PS2 restano fuori: lì la BIOS fa molto di più, e OpenBIOS non la
+sostituisce.
 
 Con le ROM dei moduli Roland il MIDI suona come lo sentivano i compositori,
 su un Sound Canvas o un MT-32 (vedi sotto, «MIDI sui moduli Roland»). Senza,
@@ -79,14 +96,14 @@ Con `-b` si sceglie a mano.
 [![build](https://github.com/jugstries/megaplayer/actions/workflows/build.yml/badge.svg)](https://github.com/jugstries/megaplayer/actions/workflows/build.yml)
 
 Serve un compilatore C++20 (Clang o GCC; su Windows MinGW-w64), CMake ≥ 3.21,
-Ninja, pkg-config, git e Python 3 per i test. libopenmpt, libarchive e LAME
-(per esportare in MP3) arrivano dal sistema:
+Ninja, pkg-config, git e Python 3 per i test. libopenmpt, libarchive, LAME
+(per esportare in MP3) e zlib (per i PSF) arrivano dal sistema:
 
 | Sistema | Dipendenze |
 |---|---|
 | macOS | `brew install cmake ninja libopenmpt libarchive lame` |
-| Debian/Ubuntu | `apt install cmake ninja-build pkg-config libopenmpt-dev libarchive-dev libmp3lame-dev` |
-| Windows (MSYS2, ambiente UCRT64) | `pacman -S git mingw-w64-ucrt-x86_64-{gcc,cmake,ninja,pkgconf,python,libopenmpt,libarchive,lame}` |
+| Debian/Ubuntu | `apt install cmake ninja-build pkg-config libopenmpt-dev libarchive-dev libmp3lame-dev zlib1g-dev` |
+| Windows (MSYS2, ambiente UCRT64) | `pacman -S git mingw-w64-ucrt-x86_64-{gcc,cmake,ninja,pkgconf,python,libopenmpt,libarchive,lame,zlib}` |
 
 Poi, uguale ovunque (su Windows dalla shell di MSYS2):
 
@@ -101,11 +118,13 @@ ctest --test-dir build
 libzakalwe, bencode-tools, ancient, miniaudio, game-music-emu, libsidplayfp,
 libresidfp, libADLMIDI, AdPlug, libbinio, AtariAudio e SQLite in `third_party/src` (di
 libsidplayfp, libresidfp e SQLite gli archivi di rilascio, con la verifica
-dello SHA-256), gearmulator a un commit fissato con i soli sottomoduli che
-servono a 88emu, FluidSynth e il SoundFont GeneralUser GS (con lo SHA-256), e
-applica le patch di `patches/`: due a UADE (l'emulatore nel
+dello SHA-256), gearmulator, Highly Experimental e psflib a un commit fissato
+(di gearmulator i soli sottomoduli che servono a 88emu), FluidSynth, il
+SoundFont GeneralUser GS e OpenBIOS (dai mirror di Libreboot; entrambi con lo
+SHA-256), e applica le patch di `patches/`: due a UADE (l'emulatore nel
 processo del player, vedi sotto, e le voci di Paula da zittire), una a
-libsidplayfp (il mute di una voce subito) e due a gearmulator (MinGW). Tutto il resto lo fa CMake: compila
+libsidplayfp (il mute di una voce subito), due a gearmulator (MinGW) e una a
+Highly Experimental (OpenBIOS). Tutto il resto lo fa CMake: compila
 UADE senza il suo script di configurazione (che funziona solo su UNIX, vedi
 [cmake/UadeInProcess.cmake](cmake/UadeInProcess.cmake)) e copia replayer e
 configurazione in `build/uade-data`. La CLI e i test li cercano lì; le app li
@@ -207,6 +226,7 @@ per uno o da mettere in solo (`Decoder::channels()` e `setChannelMuted()`):
 | gme      | le voci del chip («Square 1», «Noise», «DSP 3»…) | il mute di gme, che con canali zittiti non chiude più il brano sul silenzio |
 | sid      | 3 voci per chip e i campioni digitalizzati | il mute di libsidplayfp, che filtra i registri; la patch ([patches/libsidplayfp-instant-mute.patch](patches/libsidplayfp-instant-mute.patch)) lo applica subito invece che alla nota dopo |
 | atariaudio | le 3 voci del YM2149 e, nei SNDH, il DAC dell'STE (nei YM Digimix e YM Tracker i campioni) | il mute di AtariAudio, rimesso a ogni cambio di sottobrano |
+| psf      | le 24 voci dello SPU | il mute di Highly Experimental, rimesso quando il brano riparte |
 | 88emu, fluidsynth | i 16 canali MIDI (nei file per SC-88 sulle due porte) | le note del canale non partono più e quelle accese si spengono (pedale, All Notes Off, All Sound Off) |
 | adlmidi  | i 16 canali MIDI | i canali spenti del sequencer, che rilascia le note |
 | adplug   | i canali OPL che suonano note | niente note nuove, quelle accese rilasciate e operatori al minimo (-47 dB) |
@@ -330,7 +350,7 @@ sottobrani si sanno solo suonando il brano.
 
 Le piattaforme le dichiarano i backend ([src/core/Platform.h](src/core/Platform.h)):
 Amiga, PC / DOS, Commodore 64, NES, SNES, Game Boy, Sega, PC Engine, MSX, ZX
-Spectrum, Atari 8 bit, Atari ST e file audio. Tra i moduli tracker, MOD, MED,
+Spectrum, Atari 8 bit, Atari ST, PlayStation e file audio. Tra i moduli tracker, MOD, MED,
 OKT e gli altri nati sull'Amiga vanno all'Amiga, S3M, XM e IT al PC.
 
 Il database sta nella cartella dei dati dell'utente (`~/Library/Application
@@ -605,7 +625,8 @@ ancient e libarchive BSD-2, miniaudio e stb_vorbis public domain / MIT-0,
 game-music-emu LGPL-2.1 (con l'emulatore Nuked del YM2612, anche lui LGPL),
 libsidplayfp e libresidfp GPL-2.0, AdPlug e libbinio LGPL-2.1, AtariAudio
 MIT (con il 68000 di Musashi, MIT, e i decompressori ICE!, di pubblico
-dominio, e LHA di Haruhiko Okumura); gearmulator
+dominio, e LHA di Haruhiko Okumura); Highly Experimental GPL-3.0, psflib e
+OpenBIOS MIT, zlib con la sua licenza; gearmulator
 (88emu) GPL-3.0, con parti derivate da Nuked-SC55 e Nuked-MT32 sotto GPL-2.0
 o successiva; FluidSynth LGPL-2.1 o successiva; LAME LGPL-2.0 o successiva; il SoundFont GeneralUser GS
 (S. Christian Collins) ha la sua licenza, che ne permette l'uso nei

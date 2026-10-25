@@ -17,7 +17,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            cmake ninja-build pkg-config python3 libopenmpt-dev libarchive-dev libmp3lame-dev
+            cmake ninja-build pkg-config python3 libopenmpt-dev libarchive-dev libmp3lame-dev zlib1g-dev
 
       - name: Sorgenti delle dipendenze
         run: scripts/build-deps.sh
@@ -52,6 +52,7 @@ jobs:
             mingw-w64-ucrt-x86_64-libopenmpt
             mingw-w64-ucrt-x86_64-libarchive
             mingw-w64-ucrt-x86_64-lame
+            mingw-w64-ucrt-x86_64-zlib
 
       - name: Sorgenti delle dipendenze
         run: scripts/build-deps.sh

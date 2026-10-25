@@ -10,6 +10,7 @@ Color _platformColor(String id) => switch (id) {
       'atarist' || 'atari8' => const Color(0xFFFFB27A),
       'nes' || 'snes' || 'gameboy' => const Color(0xFFB58CFF),
       'sega' || 'pcengine' || 'msx' || 'zxspectrum' => const Color(0xFFC9A6FF),
+      'playstation' => const Color(0xFF8FB8FF),
       _ => const Color(0xFFD9C2FF),
     };
 

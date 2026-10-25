@@ -1,6 +1,7 @@
 #include "core/DecoderRegistry.h"
 
 #include "MiniaudioDecoder.h"
+#include "XaDecoder.h"
 
 #ifdef MP_WITH_88EMU
 #include "Emu88Decoder.h"
@@ -16,6 +17,9 @@
 #endif
 #ifdef MP_WITH_ATARI
 #include "AtariAudioDecoder.h"
+#endif
+#ifdef MP_WITH_PSF
+#include "PsfDecoder.h"
 #endif
 #ifdef MP_WITH_GME
 #include "GmeDecoder.h"
@@ -35,6 +39,7 @@ namespace mp {
 void registerBuiltinDecoders(DecoderRegistry& registry)
 {
     registry.add(std::make_unique<MiniaudioDecoderFactory>());
+    registry.add(std::make_unique<XaDecoderFactory>());
 #ifdef MP_WITH_GME
     registry.add(std::make_unique<GmeDecoderFactory>());
 #endif
@@ -43,6 +48,9 @@ void registerBuiltinDecoders(DecoderRegistry& registry)
 #endif
 #ifdef MP_WITH_ATARI
     registry.add(std::make_unique<AtariAudioDecoderFactory>());
+#endif
+#ifdef MP_WITH_PSF
+    registry.add(std::make_unique<PsfDecoderFactory>());
 #endif
 #ifdef MP_WITH_88EMU
     registry.add(std::make_unique<Emu88DecoderFactory>());

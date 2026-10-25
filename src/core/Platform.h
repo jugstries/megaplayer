@@ -21,6 +21,7 @@ constexpr const char* kMsx = "msx";
 constexpr const char* kZxSpectrum = "zxspectrum";
 constexpr const char* kAtari8 = "atari8";
 constexpr const char* kAtariSt = "atarist";
+constexpr const char* kPlayStation = "playstation";
 constexpr const char* kAudio = "audio";
 
 } // namespace platform

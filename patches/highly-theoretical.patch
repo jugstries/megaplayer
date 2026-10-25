@@ -1,0 +1,169 @@
+diff --git a/Core/c68k/c68kexec.c b/Core/c68k/c68kexec.c
+index ccdaa4b..5915257 100644
+--- a/Core/c68k/c68kexec.c
++++ b/Core/c68k/c68kexec.c
+@@ -285,27 +285,76 @@ s32 FASTCALL C68k_Exec(c68k_struc *cpu, s32 cycle)
+ 
+ #ifdef C68K_NO_JUMP_TABLE
+ SwitchTable:
+-    switch(Opcode)
++    /* Two levels, one file of opcodes each: WebAssembly engines do not
++       take a jump table for all the 65536 opcodes (V8 stops at 65520) */
++    switch(Opcode >> 12)
+     {
+-#endif
++    case 0x0: switch(Opcode) {
+     #include "c68k_op0.inc"
++    } break;
++    case 0x1: switch(Opcode) {
+     #include "c68k_op1.inc"
++    } break;
++    case 0x2: switch(Opcode) {
+     #include "c68k_op2.inc"
++    } break;
++    case 0x3: switch(Opcode) {
+     #include "c68k_op3.inc"
++    } break;
++    case 0x4: switch(Opcode) {
+     #include "c68k_op4.inc"
++    } break;
++    case 0x5: switch(Opcode) {
+     #include "c68k_op5.inc"
++    } break;
++    case 0x6: switch(Opcode) {
+     #include "c68k_op6.inc"
++    } break;
++    case 0x7: switch(Opcode) {
+     #include "c68k_op7.inc"
++    } break;
++    case 0x8: switch(Opcode) {
+     #include "c68k_op8.inc"
++    } break;
++    case 0x9: switch(Opcode) {
+     #include "c68k_op9.inc"
++    } break;
++    case 0xA: switch(Opcode) {
+     #include "c68k_opA.inc"
++    } break;
++    case 0xB: switch(Opcode) {
+     #include "c68k_opB.inc"
++    } break;
++    case 0xC: switch(Opcode) {
+     #include "c68k_opC.inc"
++    } break;
++    case 0xD: switch(Opcode) {
+     #include "c68k_opD.inc"
++    } break;
++    case 0xE: switch(Opcode) {
+     #include "c68k_opE.inc"
++    } break;
++    case 0xF: switch(Opcode) {
+     #include "c68k_opF.inc"
+-#ifdef C68K_NO_JUMP_TABLE
++    } break;
+     }
++#else
++    #include "c68k_op0.inc"
++    #include "c68k_op1.inc"
++    #include "c68k_op2.inc"
++    #include "c68k_op3.inc"
++    #include "c68k_op4.inc"
++    #include "c68k_op5.inc"
++    #include "c68k_op6.inc"
++    #include "c68k_op7.inc"
++    #include "c68k_op8.inc"
++    #include "c68k_op9.inc"
++    #include "c68k_opA.inc"
++    #include "c68k_opB.inc"
++    #include "c68k_opC.inc"
++    #include "c68k_opD.inc"
++    #include "c68k_opE.inc"
++    #include "c68k_opF.inc"
+ #endif
+ 
+ C68k_Exec_End:
+diff --git a/Core/satsound.c b/Core/satsound.c
+index 13f6cac..8bfe1c6 100644
+--- a/Core/satsound.c
++++ b/Core/satsound.c
+@@ -103,7 +103,7 @@ static void location_check(struct SATSOUND_STATE *state) {
+ #if defined(USE_STARSCREAM) || defined(USE_M68K)
+     recompute_and_set_memory_maps(SATSOUNDSTATE);
+ #else
+-    C68k_Set_Fetch(SCPUSTATE, 0x00000, 0x7FFFF, RAMBYTEPTR);
++    C68k_Set_Fetch(SCPUSTATE, 0x00000, 0x7FFFF, (pointer)RAMBYTEPTR);
+ #endif
+     yam_setram(YAMSTATE, (uint32*)(RAMBYTEPTR), 0x80000, EMU_ENDIAN_XOR(1) ^ 1, 0);
+     state->myself = state;
+@@ -230,7 +230,7 @@ void EMU_CALL satsound_clear_state(void *state) {
+   C68k_Init(SCPUSTATE, NULL);
+ 
+   C68k_Set_Callback_Param(SCPUSTATE, state);
+-  C68k_Set_Fetch(SCPUSTATE, 0x00000, 0x7FFFF, RAMBYTEPTR);
++  C68k_Set_Fetch(SCPUSTATE, 0x00000, 0x7FFFF, (pointer)RAMBYTEPTR);
+   C68k_Set_ReadB(SCPUSTATE, satsound_cb_readb);
+   C68k_Set_ReadW(SCPUSTATE, satsound_cb_readw);
+   C68k_Set_WriteB(SCPUSTATE, satsound_cb_writeb);
+diff --git a/Core/yam.c b/Core/yam.c
+index 1e9949a..ecfd4a3 100644
+--- a/Core/yam.c
++++ b/Core/yam.c
+@@ -24,7 +24,11 @@
+ 
+ #ifndef _WIN32
+ #define __cdecl
++#if defined(__i386__)
+ #define __fastcall __attribute__((regparm(3)))
++#else
++#define __fastcall
++#endif
+ #endif
+ 
+ /* No dynarec for x86_64 yet */
+@@ -443,6 +447,10 @@ struct YAM_STATE {
+   //
+   struct YAM_CHAN chan[64];
+   //
++  // Channels left out of the output, one bit each
++  //
++  uint64 mute_mask;
++  //
+   // Buffer for dynarec code
+   //
+ #ifdef ENABLE_DYNAREC
+@@ -590,6 +598,10 @@ void EMU_CALL yam_enable_dry(void *state, uint8 enable) {
+   YAMSTATE->dry_out_enabled = (enable != 0);
+ }
+ 
++void EMU_CALL yam_set_mute_mask(void *state, uint64 mask) {
++  YAMSTATE->mute_mask = mask;
++}
++
+ void EMU_CALL yam_enable_dsp(void *state, uint8 enable) {
+   YAMSTATE->dsp_emulation_enabled = (enable != 0);
+ #ifdef ENABLE_DYNAREC
+@@ -3015,8 +3027,10 @@ fclose(f);
+     chan = state->chan + j;
+     state->bufptr = bufptr_base + j;
+ // is 11
+-    render_and_add_channel(state, chan, directout,
+-      wantreverb ? (fxbus + chan->dspchan) : NULL,
++    // A muted channel is still generated, for the FM of the others
++    render_and_add_channel(state, chan,
++      ((state->mute_mask >> j) & 1) ? NULL : directout,
++      (wantreverb && !((state->mute_mask >> j) & 1)) ? (fxbus + chan->dspchan) : NULL,
+       odometer, samples
+     );
+   }
+diff --git a/Core/yam.h b/Core/yam.h
+index 272d6fb..56ac446 100644
+--- a/Core/yam.h
++++ b/Core/yam.h
+@@ -23,6 +23,7 @@ uint32 EMU_CALL yam_get_state_size(uint8 version);
+ void   EMU_CALL yam_clear_state(void *state, uint8 version);
+ 
+ void   EMU_CALL yam_enable_dry(void *state, uint8 enable);
++void   EMU_CALL yam_set_mute_mask(void *state, uint64 mask);
+ void   EMU_CALL yam_enable_dsp(void *state, uint8 enable);
+ void   EMU_CALL yam_enable_dsp_dynarec(void *state, uint8 enable);
+ 

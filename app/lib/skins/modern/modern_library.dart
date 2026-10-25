@@ -11,6 +11,8 @@ Color _platformColor(String id) => switch (id) {
       'nes' || 'snes' || 'gameboy' => const Color(0xFFB58CFF),
       'sega' || 'pcengine' || 'msx' || 'zxspectrum' => const Color(0xFFC9A6FF),
       'playstation' => const Color(0xFF8FB8FF),
+      'saturn' || 'dreamcast' => const Color(0xFF9FD0FF),
+      'arcade' => const Color(0xFFFF9FB8),
       _ => const Color(0xFFD9C2FF),
     };
 

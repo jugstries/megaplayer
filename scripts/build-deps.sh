@@ -5,11 +5,13 @@
 # game-music-emu, libsidplayfp con libresidfp, libADLMIDI, AdPlug con libbinio,
 # SQLite, gearmulator per 88emu, i moduli Roland emulati, FluidSynth con il
 # SoundFont GeneralUser GS, per i MIDI senza le ROM, AtariAudio per l'Atari ST,
-# Highly Experimental con psflib e OpenBIOS per la PlayStation)
+# Highly Experimental con psflib e OpenBIOS per la PlayStation, Highly
+# Theoretical per Saturn e Dreamcast, Highly Quixotic per il QSound di Capcom)
 # e applica a UADE le patch per farlo girare nel processo del player e per
 # zittirne le voci, a libsidplayfp quella per zittirle subito e a gearmulator
 # quelle per compilarlo con MinGW, a Highly Experimental quella per avviarlo
-# con OpenBIOS.
+# con OpenBIOS, a Highly Theoretical e Highly Quixotic quelle per zittire i
+# canali.
 # libopenmpt e libarchive invece arrivano dal sistema (brew, apt, MSYS2...),
 # vedi README.md.
 #
@@ -45,9 +47,12 @@ ATARIAUDIO_REF=1.26
 GENERALUSER_COMMIT=684543d5e5efaef08d02be50dcda8d552478fa60
 GENERALUSER_SF2_SHA256=9575028c7a1f589f5770fccc8cff2734566af40cd26ed836944e9a5152688cfe
 GENERALUSER_LICENSE_SHA256=7b32efefdf95ce38a043799f0659853ddc00fbaa14d8c50f0aca16b9b8b405be
-# Highly Experimental (Neill Corlett, nella versione di Christopher Snowhill)
-# e psflib: niente tag, si prendono da un commit preciso.
+# Highly Experimental, Theoretical e Quixotic (Neill Corlett, nella versione
+# di Christopher Snowhill) e psflib: niente tag, si prendono da un commit
+# preciso.
 HIGHLY_EXPERIMENTAL_COMMIT=0fa96d186e3c0437951732d0c50bf1da4e32970e
+HIGHLY_THEORETICAL_COMMIT=0e4c18c5b757b04dbcb68c572c5a4f6fd803283c
+HIGHLY_QUIXOTIC_COMMIT=d730174d436e8cabca90fabdb3ad4ddf614d31cc
 PSFLIB_COMMIT=3bea757c8b45c5e68da1b5a7b736ad960a06a124
 # OpenBIOS di PCSX-Redux (MIT), la BIOS della PlayStation riscritta da zero
 # che Highly Experimental usa al posto di quella di Sony: compilata da
@@ -177,6 +182,8 @@ clone_commit() {
 }
 
 clone_commit highly_experimental https://gitlab.com/kode54/highly_experimental.git "$HIGHLY_EXPERIMENTAL_COMMIT"
+clone_commit highly_theoretical https://gitlab.com/kode54/highly_theoretical.git "$HIGHLY_THEORETICAL_COMMIT"
+clone_commit highly_quixotic     https://gitlab.com/kode54/highly_quixotic.git     "$HIGHLY_QUIXOTIC_COMMIT"
 clone_commit psflib              https://gitlab.com/kode54/psflib.git              "$PSFLIB_COMMIT"
 
 # gearmulator a un commit preciso, con i soli sottomoduli che il suo CMake
@@ -221,14 +228,21 @@ for GEAR_PATCH in "gearmulator:$ROOT/patches/gearmulator-mingw.patch" \
 	fi
 done
 
-# La patch di Highly Experimental: i punti dove fermare la BIOS si possono
-# dare da fuori (OpenBIOS non ha l'ambiente di hebios) e le scritture con la
-# cache isolata dal bit IsC non arrivano alla RAM, come sulla console.
-HE_PATCH="$ROOT/patches/highly-experimental-openbios.patch"
-if ! git -C "$SRC/highly_experimental" apply --reverse --check "$HE_PATCH" 2>/dev/null; then
-	echo "==> applico $(basename "$HE_PATCH")"
-	git -C "$SRC/highly_experimental" apply "$HE_PATCH"
-fi
+# Le patch dei nuclei di Neill Corlett. Highly Experimental: i punti dove
+# fermare la BIOS si possono dare da fuori (OpenBIOS non ha l'ambiente di
+# hebios) e le scritture con la cache isolata dal bit IsC non arrivano alla
+# RAM, come sulla console. Highly Theoretical: i canali si possono zittire, e
+# compila fuori da x86 e con C68K. Highly Quixotic: una voce zittita continua
+# ad avanzare, in silenzio.
+for NC_PATCH in "highly_experimental:$ROOT/patches/highly-experimental-openbios.patch" \
+	"highly_theoretical:$ROOT/patches/highly-theoretical.patch" \
+	"highly_quixotic:$ROOT/patches/highly-quixotic.patch"; do
+	dir="$SRC/${NC_PATCH%%:*}" patch="${NC_PATCH#*:}"
+	if ! git -C "$dir" apply --reverse --check "$patch" 2>/dev/null; then
+		echo "==> applico $(basename "$patch")"
+		git -C "$dir" apply "$patch"
+	fi
+done
 
 echo
 echo "Sorgenti pronti in $SRC"

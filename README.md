@@ -14,6 +14,8 @@ Flutter (per ora macOS) con due skin: moderna e retrò.
 | `gme`     | game-music-emu 0.6.5  | console: NES (NSF, NSFE), SNES (SPC), Game Boy (GBS), Master System e Mega Drive (VGM, VGZ, GYM), PC Engine (HES), MSX (KSS), ZX Spectrum (AY), Atari (SAP) |
 | `atariaudio` | AtariAudio 1.26 | Atari ST: SNDH, con il replayer originale su un 68000 emulato (YM2149, timer, DAC dell'STE, blitter), e YM (YM2–YM6, Digimix, YM Tracker), anche compressi con ICE! o LHA |
 | `psf`     | Highly Experimental (Neill Corlett, commit di gennaio 2022), psflib, OpenBIOS di PCSX-Redux | PlayStation: PSF e MiniPSF con le loro librerie, emulando la CPU R3000 e lo SPU. Al posto della BIOS di Sony gira OpenBIOS: non serve nessuna ROM |
+| `ssf`     | Highly Theoretical (Neill Corlett, commit di gennaio 2022), con il 68000 C68K di Yabause | Saturn (SSF, il 68000 e lo SCSP) e Dreamcast (DSF, l'ARM7 e l'AICA), con le loro librerie |
+| `qsf`     | Highly Quixotic (Neill Corlett, commit di gennaio 2022), con il QSound di superctr | le schede arcade Capcom con il QSound (CPS-1 e CPS-2): QSF, con lo Z80 e la cifratura Kabuki |
 | `xa`      | (di megaplayer)       | l'audio in streaming dei CD della PlayStation: XA ADPCM, in RIFF/CDXA o in settori grezzi, un sottobrano per canale |
 | `88emu`   | 88emu di gearmulator (commit del 10 ottobre 2026) | gli stessi MIDI sui moduli Roland: Sound Canvas (SC-55, SC-55mkII, SC-88, SC-88VL, SC-88 Pro, SC-8850, ...) e MT-32/CM-32L, emulati facendo girare il loro firmware. Servono le ROM dell'utente |
 | `fluidsynth` | FluidSynth 2.6.1, GeneralUser GS 2.0.3 | gli stessi MIDI su un SoundFont General MIDI e GS a campioni, per chi non ha le ROM: di serie GeneralUser GS, che viaggia con le app |
@@ -68,7 +70,13 @@ il punto dove fermarla si dà da fuori, e le scritture fatte con la cache
 isolata dal bit IsC del registro di stato non arrivano alla RAM, come sulla
 console (OpenBIOS svuota la cache così, quella di Sony in un altro modo). I
 PSF2 della PS2 restano fuori: lì la BIOS fa molto di più, e OpenBIOS non la
-sostituisce.
+sostituisce. Saturn, Dreamcast e QSound una BIOS non la vogliono: il programma
+del brano basta. Il 68000 del Saturn è C68K di Yabause, perché il Musashi che
+Highly Theoretical ha accanto ha una licenza solo non commerciale; i suoi
+opcode passano per due `switch` annidati invece che per uno solo
+([patches/highly-theoretical.patch](patches/highly-theoretical.patch)), che in
+WebAssembly sarebbe una tabella di salto più lunga di quanto i browser
+accettino.
 
 Con le ROM dei moduli Roland il MIDI suona come lo sentivano i compositori,
 su un Sound Canvas o un MT-32 (vedi sotto, «MIDI sui moduli Roland»). Senza,
@@ -118,13 +126,15 @@ ctest --test-dir build
 libzakalwe, bencode-tools, ancient, miniaudio, game-music-emu, libsidplayfp,
 libresidfp, libADLMIDI, AdPlug, libbinio, AtariAudio e SQLite in `third_party/src` (di
 libsidplayfp, libresidfp e SQLite gli archivi di rilascio, con la verifica
-dello SHA-256), gearmulator, Highly Experimental e psflib a un commit fissato
+dello SHA-256), gearmulator, Highly Experimental, Theoretical e Quixotic e
+psflib a un commit fissato
 (di gearmulator i soli sottomoduli che servono a 88emu), FluidSynth, il
 SoundFont GeneralUser GS e OpenBIOS (dai mirror di Libreboot; entrambi con lo
 SHA-256), e applica le patch di `patches/`: due a UADE (l'emulatore nel
 processo del player, vedi sotto, e le voci di Paula da zittire), una a
-libsidplayfp (il mute di una voce subito), due a gearmulator (MinGW) e una a
-Highly Experimental (OpenBIOS). Tutto il resto lo fa CMake: compila
+libsidplayfp (il mute di una voce subito), due a gearmulator (MinGW) e una
+per ciascuno dei nuclei di Neill Corlett (OpenBIOS, il mute dei canali, C68K
+fuori da x86). Tutto il resto lo fa CMake: compila
 UADE senza il suo script di configurazione (che funziona solo su UNIX, vedi
 [cmake/UadeInProcess.cmake](cmake/UadeInProcess.cmake)) e copia replayer e
 configurazione in `build/uade-data`. La CLI e i test li cercano lì; le app li
@@ -227,6 +237,8 @@ per uno o da mettere in solo (`Decoder::channels()` e `setChannelMuted()`):
 | sid      | 3 voci per chip e i campioni digitalizzati | il mute di libsidplayfp, che filtra i registri; la patch ([patches/libsidplayfp-instant-mute.patch](patches/libsidplayfp-instant-mute.patch)) lo applica subito invece che alla nota dopo |
 | atariaudio | le 3 voci del YM2149 e, nei SNDH, il DAC dell'STE (nei YM Digimix e YM Tracker i campioni) | il mute di AtariAudio, rimesso a ogni cambio di sottobrano |
 | psf      | le 24 voci dello SPU | il mute di Highly Experimental, rimesso quando il brano riparte |
+| ssf      | i 32 slot dello SCSP, i 64 canali dell'AICA | una maschera nel mixer di Highly Theoretical: il canale si genera ancora, per la modulazione FM degli altri |
+| qsf      | le 16 voci del QSound | il mute del QSound di superctr, che con la patch lascia avanzare la voce |
 | 88emu, fluidsynth | i 16 canali MIDI (nei file per SC-88 sulle due porte) | le note del canale non partono più e quelle accese si spengono (pedale, All Notes Off, All Sound Off) |
 | adlmidi  | i 16 canali MIDI | i canali spenti del sequencer, che rilascia le note |
 | adplug   | i canali OPL che suonano note | niente note nuove, quelle accese rilasciate e operatori al minimo (-47 dB) |
@@ -350,7 +362,8 @@ sottobrani si sanno solo suonando il brano.
 
 Le piattaforme le dichiarano i backend ([src/core/Platform.h](src/core/Platform.h)):
 Amiga, PC / DOS, Commodore 64, NES, SNES, Game Boy, Sega, PC Engine, MSX, ZX
-Spectrum, Atari 8 bit, Atari ST, PlayStation e file audio. Tra i moduli tracker, MOD, MED,
+Spectrum, Atari 8 bit, Atari ST, PlayStation, Saturn, Dreamcast, Arcade e
+file audio. Tra i moduli tracker, MOD, MED,
 OKT e gli altri nati sull'Amiga vanno all'Amiga, S3M, XM e IT al PC.
 
 Il database sta nella cartella dei dati dell'utente (`~/Library/Application
@@ -625,8 +638,10 @@ ancient e libarchive BSD-2, miniaudio e stb_vorbis public domain / MIT-0,
 game-music-emu LGPL-2.1 (con l'emulatore Nuked del YM2612, anche lui LGPL),
 libsidplayfp e libresidfp GPL-2.0, AdPlug e libbinio LGPL-2.1, AtariAudio
 MIT (con il 68000 di Musashi, MIT, e i decompressori ICE!, di pubblico
-dominio, e LHA di Haruhiko Okumura); Highly Experimental GPL-3.0, psflib e
-OpenBIOS MIT, zlib con la sua licenza; gearmulator
+dominio, e LHA di Haruhiko Okumura); Highly Experimental, Theoretical e
+Quixotic GPL-3.0 (con C68K di Yabause, GPL-2.0 o successiva, e il QSound di
+superctr e Valley Bell, che in MAME è BSD-3-Clause), psflib e OpenBIOS MIT,
+zlib con la sua licenza; gearmulator
 (88emu) GPL-3.0, con parti derivate da Nuked-SC55 e Nuked-MT32 sotto GPL-2.0
 o successiva; FluidSynth LGPL-2.1 o successiva; LAME LGPL-2.0 o successiva; il SoundFont GeneralUser GS
 (S. Christian Collins) ha la sua licenza, che ne permette l'uso nei

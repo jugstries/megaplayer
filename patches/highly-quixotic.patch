@@ -1,0 +1,19 @@
+diff --git a/Core/qsound_ctr.c b/Core/qsound_ctr.c
+index c18cba3..9e096f1 100644
+--- a/Core/qsound_ctr.c
++++ b/Core/qsound_ctr.c
+@@ -630,11 +630,9 @@ INLINE INT16 pcm_update(struct qsound_chip *chip, int voice_no, INT32 *echo_out)
+ 	INT32 new_phase;
+ 	INT16 output;
+ 	
+-	if (chip->muteMask & (1<<voice_no))
+-		return 0;
+-	
+-	// Read sample from rom and apply volume
+-	output = (v->volume * get_sample(chip, v->bank, v->addr))>>14;
++	// Read sample from rom and apply volume. A muted voice keeps moving,
++	// silent, so that it is in the right place when unmuted.
++	output = (chip->muteMask & (1<<voice_no)) ? 0 : (v->volume * get_sample(chip, v->bank, v->addr))>>14;
+ 	
+ 	*echo_out += (output * v->echo)<<2;
+ 	

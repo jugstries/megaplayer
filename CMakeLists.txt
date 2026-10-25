@@ -26,6 +26,8 @@ option(MP_WITH_GME "Backend game-music-emu (console a 8 e 16 bit)" ON)
 option(MP_WITH_SID "Backend libsidplayfp (Commodore 64)" ON)
 option(MP_WITH_ATARI "Backend AtariAudio (Atari ST: SNDH e YM)" ON)
 option(MP_WITH_PSF "Backend Highly Experimental (PlayStation: PSF), con OpenBIOS" ON)
+option(MP_WITH_SSF "Backend Highly Theoretical (Saturn: SSF, Dreamcast: DSF)" ON)
+option(MP_WITH_QSF "Backend Highly Quixotic (QSound di Capcom: QSF)" ON)
 option(MP_WITH_ADLMIDI "Backend libADLMIDI (MIDI su chip FM OPL3)" ON)
 option(MP_WITH_88EMU "Backend 88emu (MIDI su Roland Sound Canvas e MT-32 emulati, con le ROM dell'utente)" ON)
 option(MP_WITH_FLUIDSYNTH "Backend FluidSynth (MIDI su un SoundFont, per chi non ha le ROM)" ON)
@@ -217,30 +219,24 @@ if(MP_WITH_ATARI)
     endif()
 endif()
 
-set(MP_PSF_ENABLED OFF)
-if(MP_WITH_PSF)
-    set(MP_HE_DIR "${MP_THIRD_PARTY}/src/highly_experimental/Core")
-    set(MP_PSFLIB_DIR "${MP_THIRD_PARTY}/src/psflib")
-    set(MP_OPENBIOS "${MP_THIRD_PARTY}/src/openbios/openbios.bin")
+# --- La famiglia PSF: psflib (file, librerie _lib e tag), il codice comune
+# dei decoder (src/decoders/Xsf.cpp) e i nuclei di Neill Corlett, con le
+# piattaforme che emulano. Tutte le piattaforme di megaplayer sono little
+# endian. ---
+
+set(MP_PSFLIB_DIR "${MP_THIRD_PARTY}/src/psflib")
+set(MP_XSF_ENABLED OFF)
+if(MP_WITH_PSF OR MP_WITH_SSF OR MP_WITH_QSF)
     if(EMSCRIPTEN)
         set(ZLIB_FOUND ON) # la porta di Emscripten, vedi sotto
     else()
         find_package(ZLIB)
     endif()
-    if(NOT EXISTS "${MP_HE_DIR}/psx.c" OR NOT EXISTS "${MP_PSFLIB_DIR}/psflib.c" OR NOT EXISTS "${MP_OPENBIOS}")
-        message(WARNING "Highly Experimental, psflib o OpenBIOS non scaricati (scripts/build-deps.sh): backend psf disattivato")
+    if(NOT EXISTS "${MP_PSFLIB_DIR}/psflib.c")
+        message(WARNING "psflib non scaricata (scripts/build-deps.sh): backend psf, ssf e qsf disattivati")
     elseif(NOT ZLIB_FOUND)
-        message(WARNING "zlib non trovata: backend psf disattivato")
+        message(WARNING "zlib non trovata: backend psf, ssf e qsf disattivati")
     else()
-        # Il nucleo PS1/PS2 di Highly Experimental, senza disassembler,
-        # assembler e mkhebios (che ricava hebios da una BIOS della PS2).
-        # Tutte le piattaforme di megaplayer sono little endian.
-        add_library(highly_experimental STATIC
-            "${MP_HE_DIR}/bios.c" "${MP_HE_DIR}/iop.c" "${MP_HE_DIR}/ioptimer.c" "${MP_HE_DIR}/psx.c"
-            "${MP_HE_DIR}/r3000.c" "${MP_HE_DIR}/spu.c" "${MP_HE_DIR}/spucore.c" "${MP_HE_DIR}/vfs.c")
-        target_include_directories(highly_experimental SYSTEM PUBLIC "${MP_HE_DIR}")
-        target_compile_definitions(highly_experimental PUBLIC EMU_LITTLE_ENDIAN HAVE_STDINT_H PRIVATE EMU_COMPILE)
-        # psflib: i file PSF, con le librerie (_lib) e i tag.
         add_library(psflib STATIC "${MP_PSFLIB_DIR}/psflib.c" "${MP_PSFLIB_DIR}/psf2fs.c")
         target_include_directories(psflib SYSTEM PUBLIC "${MP_PSFLIB_DIR}")
         if(EMSCRIPTEN)
@@ -249,18 +245,74 @@ if(MP_WITH_PSF)
         else()
             target_link_libraries(psflib PUBLIC ZLIB::ZLIB)
         endif()
-        foreach(target highly_experimental psflib)
-            if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
-                target_compile_options(${target} PRIVATE -w) # codice di terzi
-            endif()
-        endforeach()
+        target_sources(megaplayer_core PRIVATE src/decoders/Xsf.cpp)
+        target_link_libraries(megaplayer_core PUBLIC psflib)
+        set(MP_XSF_ENABLED ON)
+    endif()
+endif()
+
+# mp_neill_core(<target> <cartella> <sorgenti>...): un nucleo di Neill Corlett
+# come libreria statica.
+function(mp_neill_core target directory)
+    list(TRANSFORM ARGN PREPEND "${directory}/")
+    add_library(${target} STATIC ${ARGN})
+    target_include_directories(${target} SYSTEM PUBLIC "${directory}")
+    target_compile_definitions(${target} PUBLIC EMU_LITTLE_ENDIAN HAVE_STDINT_H PRIVATE EMU_COMPILE)
+    if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
+        target_compile_options(${target} PRIVATE -w) # codice di terzi
+    endif()
+    target_link_libraries(megaplayer_core PUBLIC ${target})
+endfunction()
+
+set(MP_PSF_ENABLED OFF)
+if(MP_WITH_PSF AND MP_XSF_ENABLED)
+    set(MP_HE_DIR "${MP_THIRD_PARTY}/src/highly_experimental/Core")
+    set(MP_OPENBIOS "${MP_THIRD_PARTY}/src/openbios/openbios.bin")
+    if(NOT EXISTS "${MP_HE_DIR}/psx.c" OR NOT EXISTS "${MP_OPENBIOS}")
+        message(WARNING "Highly Experimental o OpenBIOS non scaricati (scripts/build-deps.sh): backend psf disattivato")
+    else()
+        # Il nucleo PS1/PS2, senza disassembler, assembler e mkhebios (che
+        # ricava hebios da una BIOS della PS2).
+        mp_neill_core(highly_experimental "${MP_HE_DIR}"
+            bios.c iop.c ioptimer.c psx.c r3000.c spu.c spucore.c vfs.c)
         # OpenBIOS dentro la libreria: niente file da cercare a runtime.
         include(cmake/EmbedBinary.cmake)
         mp_embed_binary("${MP_OPENBIOS}" mp_openbios "${CMAKE_BINARY_DIR}/openbios.c")
         target_sources(megaplayer_core PRIVATE src/decoders/PsfDecoder.cpp "${CMAKE_BINARY_DIR}/openbios.c")
         target_compile_definitions(megaplayer_core PRIVATE MP_WITH_PSF)
-        target_link_libraries(megaplayer_core PUBLIC highly_experimental psflib)
         set(MP_PSF_ENABLED ON)
+    endif()
+endif()
+
+set(MP_SSF_ENABLED OFF)
+if(MP_WITH_SSF AND MP_XSF_ENABLED)
+    set(MP_HT_DIR "${MP_THIRD_PARTY}/src/highly_theoretical/Core")
+    if(NOT EXISTS "${MP_HT_DIR}/sega.c")
+        message(WARNING "Highly Theoretical non scaricato (scripts/build-deps.sh): backend ssf disattivato")
+    else()
+        # Il 68000 del Saturn è C68K di Yabause (GPL-2.0 o successiva), con
+        # gli opcode in uno switch: il Musashi che c'è accanto ha una licenza
+        # solo non commerciale. Il ricompilatore del DSP è solo per x86 a 32
+        # bit, e resta spento.
+        mp_neill_core(highly_theoretical "${MP_HT_DIR}"
+            sega.c satsound.c dcsound.c yam.c arm.c c68k/c68k.c c68k/c68kexec.c)
+        target_compile_definitions(highly_theoretical PRIVATE LSB_FIRST C68K_NO_JUMP_TABLE)
+        target_sources(megaplayer_core PRIVATE src/decoders/SsfDecoder.cpp)
+        target_compile_definitions(megaplayer_core PRIVATE MP_WITH_SSF)
+        set(MP_SSF_ENABLED ON)
+    endif()
+endif()
+
+set(MP_QSF_ENABLED OFF)
+if(MP_WITH_QSF AND MP_XSF_ENABLED)
+    set(MP_HQ_DIR "${MP_THIRD_PARTY}/src/highly_quixotic/Core")
+    if(NOT EXISTS "${MP_HQ_DIR}/qsound.c")
+        message(WARNING "Highly Quixotic non scaricato (scripts/build-deps.sh): backend qsf disattivato")
+    else()
+        mp_neill_core(highly_quixotic "${MP_HQ_DIR}" qsound.c qsound_ctr.c qmix.c z80.c kabuki.c)
+        target_sources(megaplayer_core PRIVATE src/decoders/QsfDecoder.cpp)
+        target_compile_definitions(megaplayer_core PRIVATE MP_WITH_QSF)
+        set(MP_QSF_ENABLED ON)
     endif()
 endif()
 
@@ -719,6 +771,32 @@ if(Python3_FOUND)
     endif()
 endif()
 
+# I file di Saturn, Dreamcast e QSound generati da tests/make_test_xsf.py:
+# ognuno un programma per la CPU del suono che suona un'onda quadra sul chip.
+if(Python3_FOUND AND (MP_SSF_ENABLED OR MP_QSF_ENABLED))
+    set(MP_XSF_TEST_DIR "${CMAKE_BINARY_DIR}/xsf-test")
+    add_test(NAME make_test_xsf
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/make_test_xsf.py" "${MP_XSF_TEST_DIR}")
+    set_tests_properties(make_test_xsf PROPERTIES FIXTURES_SETUP test_xsf)
+    set(MP_XSF_TESTS)
+    if(MP_SSF_ENABLED)
+        list(APPEND MP_XSF_TESTS "ssf:ssf:SSF" "dsf:ssf:DSF")
+    endif()
+    if(MP_QSF_ENABLED)
+        list(APPEND MP_XSF_TESTS "qsf:qsf:QSF")
+    endif()
+    foreach(entry ${MP_XSF_TESTS})
+        string(REPLACE ":" ";" parts "${entry}")
+        list(GET parts 0 extension)
+        list(GET parts 1 backend)
+        list(GET parts 2 format)
+        add_test(NAME cli_render_${extension}
+            COMMAND megaplayer render -o "${CMAKE_BINARY_DIR}/test-${extension}.wav" "${MP_XSF_TEST_DIR}/test.${extension}")
+        set_tests_properties(cli_render_${extension} PROPERTIES FIXTURES_REQUIRED test_xsf
+            PASS_REGULAR_EXPRESSION "Backend: +${backend}.*Formato: +${format}.*Titolo: +Onda quadra.*Scritti 0:06")
+    endforeach()
+endif()
+
 # Il mute dei canali, con un brano di prova per ogni backend che lo permette.
 # L'esportazione su un tono dei dati di prova (e sul modulo generato, per il
 # mute, se c'è libopenmpt).
@@ -770,6 +848,14 @@ endif()
 if(MP_PSF_ENABLED AND Python3_FOUND)
     list(APPEND MP_CHANNELS_TEST_ARGS "psf=${MP_PSX_TEST_DIR}/test.psf")
     list(APPEND MP_CHANNELS_FIXTURES test_psx)
+endif()
+if(MP_SSF_ENABLED AND Python3_FOUND)
+    list(APPEND MP_CHANNELS_TEST_ARGS "ssf=${MP_XSF_TEST_DIR}/test.ssf" "ssf=${MP_XSF_TEST_DIR}/test.dsf")
+    list(APPEND MP_CHANNELS_FIXTURES test_xsf)
+endif()
+if(MP_QSF_ENABLED AND Python3_FOUND)
+    list(APPEND MP_CHANNELS_TEST_ARGS "qsf=${MP_XSF_TEST_DIR}/test.qsf")
+    list(APPEND MP_CHANNELS_FIXTURES test_xsf)
 endif()
 if(MP_ADLMIDI_ENABLED)
     list(APPEND MP_CHANNELS_TEST_ARGS "adlmidi=${CMAKE_BINARY_DIR}/test.mid")

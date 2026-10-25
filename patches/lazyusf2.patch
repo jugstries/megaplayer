@@ -1,0 +1,32 @@
+diff --git a/debugger/dbg_decoder.h b/debugger/dbg_decoder.h
+index cd3b930..e9f58ec 100644
+--- a/debugger/dbg_decoder.h
++++ b/debugger/dbg_decoder.h
+@@ -24,15 +24,8 @@
+ 
+ #include "dbg_types.h"
+ 
+-#if defined(WIN32)
+-typedef unsigned int uint32_t;
+-typedef unsigned char bool;
+-#define false 0
+-#define true 1
+-#else
+ #include <stdint.h>
+ #include <stdbool.h>
+-#endif
+ 
+ /* Disassembler lookup handler */
+ typedef char * (*r4k_lookup_func)(uint32_t, void *);
+diff --git a/rsp_hle/plugin.c b/rsp_hle/plugin.c
+index 7779886..951c189 100644
+--- a/rsp_hle/plugin.c
++++ b/rsp_hle/plugin.c
+@@ -121,7 +121,6 @@ void HleProcessRdpList(void* user_defined)
+ void HleShowCFB(void* user_defined)
+ {
+     rsp_lle_run_task((usf_state_t *)user_defined);
+-    return 0;
+ }
+ 
+ int HleForwardTask(void* user_defined)

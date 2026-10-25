@@ -25,6 +25,9 @@ constexpr const char* kPlayStation = "playstation";
 constexpr const char* kSaturn = "saturn";
 constexpr const char* kDreamcast = "dreamcast";
 constexpr const char* kArcade = "arcade";
+constexpr const char* kGameBoyAdvance = "gba";
+constexpr const char* kNintendoDs = "nds";
+constexpr const char* kNintendo64 = "n64";
 constexpr const char* kAudio = "audio";
 
 } // namespace platform

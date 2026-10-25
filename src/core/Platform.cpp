@@ -23,6 +23,9 @@ std::string_view platformName(std::string_view id)
         {platform::kSaturn, "Saturn"},
         {platform::kDreamcast, "Dreamcast"},
         {platform::kArcade, "Arcade"},
+        {platform::kGameBoyAdvance, "Game Boy Advance"},
+        {platform::kNintendoDs, "Nintendo DS"},
+        {platform::kNintendo64, "Nintendo 64"},
         {platform::kAudio, "File audio"},
     };
     for (const auto& [key, name] : names) {

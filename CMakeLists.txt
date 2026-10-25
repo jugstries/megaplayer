@@ -28,6 +28,9 @@ option(MP_WITH_ATARI "Backend AtariAudio (Atari ST: SNDH e YM)" ON)
 option(MP_WITH_PSF "Backend Highly Experimental (PlayStation: PSF), con OpenBIOS" ON)
 option(MP_WITH_SSF "Backend Highly Theoretical (Saturn: SSF, Dreamcast: DSF)" ON)
 option(MP_WITH_QSF "Backend Highly Quixotic (QSound di Capcom: QSF)" ON)
+option(MP_WITH_2SF "Backend vio2sf (Nintendo DS: 2SF)" ON)
+option(MP_WITH_GSF "Backend viogsf (Game Boy Advance: GSF)" ON)
+option(MP_WITH_USF "Backend lazyusf2 (Nintendo 64: USF)" ON)
 option(MP_WITH_ADLMIDI "Backend libADLMIDI (MIDI su chip FM OPL3)" ON)
 option(MP_WITH_88EMU "Backend 88emu (MIDI su Roland Sound Canvas e MT-32 emulati, con le ROM dell'utente)" ON)
 option(MP_WITH_FLUIDSYNTH "Backend FluidSynth (MIDI su un SoundFont, per chi non ha le ROM)" ON)
@@ -226,16 +229,16 @@ endif()
 
 set(MP_PSFLIB_DIR "${MP_THIRD_PARTY}/src/psflib")
 set(MP_XSF_ENABLED OFF)
-if(MP_WITH_PSF OR MP_WITH_SSF OR MP_WITH_QSF)
+if(MP_WITH_PSF OR MP_WITH_SSF OR MP_WITH_QSF OR MP_WITH_2SF OR MP_WITH_GSF OR MP_WITH_USF)
     if(EMSCRIPTEN)
         set(ZLIB_FOUND ON) # la porta di Emscripten, vedi sotto
     else()
         find_package(ZLIB)
     endif()
     if(NOT EXISTS "${MP_PSFLIB_DIR}/psflib.c")
-        message(WARNING "psflib non scaricata (scripts/build-deps.sh): backend psf, ssf e qsf disattivati")
+        message(WARNING "psflib non scaricata (scripts/build-deps.sh): backend della famiglia PSF disattivati")
     elseif(NOT ZLIB_FOUND)
-        message(WARNING "zlib non trovata: backend psf, ssf e qsf disattivati")
+        message(WARNING "zlib non trovata: backend della famiglia PSF disattivati")
     else()
         add_library(psflib STATIC "${MP_PSFLIB_DIR}/psflib.c" "${MP_PSFLIB_DIR}/psf2fs.c")
         target_include_directories(psflib SYSTEM PUBLIC "${MP_PSFLIB_DIR}")
@@ -313,6 +316,83 @@ if(MP_WITH_QSF AND MP_XSF_ENABLED)
         target_sources(megaplayer_core PRIVATE src/decoders/QsfDecoder.cpp)
         target_compile_definitions(megaplayer_core PRIVATE MP_WITH_QSF)
         set(MP_QSF_ENABLED ON)
+    endif()
+endif()
+
+# mp_xsf_library(<target> <cartella> <sorgenti>...): un emulatore della
+# famiglia PSF che non è di Neill Corlett, come libreria statica.
+function(mp_xsf_library target directory)
+    list(TRANSFORM ARGN PREPEND "${directory}/")
+    add_library(${target} STATIC ${ARGN})
+    target_include_directories(${target} SYSTEM PUBLIC "${directory}")
+    if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
+        target_compile_options(${target} PRIVATE -w) # codice di terzi
+    endif()
+    target_link_libraries(megaplayer_core PUBLIC ${target})
+endfunction()
+
+set(MP_2SF_ENABLED OFF)
+if(MP_WITH_2SF AND MP_XSF_ENABLED)
+    set(MP_VIO2SF_DIR "${MP_THIRD_PARTY}/src/vio2sf/src/vio2sf/desmume")
+    if(NOT EXISTS "${MP_VIO2SF_DIR}/state.c")
+        message(WARNING "vio2sf non scaricato (scripts/build-deps.sh): backend 2sf disattivato")
+    else()
+        # Il DS di DeSmuME ridotto al suono, con le chiamate della BIOS
+        # emulate.
+        mp_xsf_library(vio2sf "${MP_VIO2SF_DIR}"
+            FIFO.c GPU.c MMU.c NDSSystem.c SPU.cpp arm_instructions.c armcpu.c barray.c bios.c cp15.c isqrt.c
+            matrix.c mc.c resampler.c state.c thumb_instructions.c)
+        target_sources(megaplayer_core PRIVATE src/decoders/TwosfDecoder.cpp)
+        target_compile_definitions(megaplayer_core PRIVATE MP_WITH_2SF)
+        set(MP_2SF_ENABLED ON)
+    endif()
+endif()
+
+set(MP_GSF_ENABLED OFF)
+if(MP_WITH_GSF AND MP_XSF_ENABLED)
+    set(MP_VIOGSF_DIR "${MP_THIRD_PARTY}/src/viogsf/vbam")
+    if(NOT EXISTS "${MP_VIOGSF_DIR}/gba/GBA.cpp")
+        message(WARNING "viogsf non scaricato (scripts/build-deps.sh): backend gsf disattivato")
+    else()
+        # Il GBA di VBA-M, con le chiamate della BIOS emulate, e l'APU di
+        # Blargg.
+        mp_xsf_library(viogsf "${MP_VIOGSF_DIR}"
+            apu/Blip_Buffer.cpp apu/Effects_Buffer.cpp apu/Gb_Apu.cpp apu/Gb_Oscs.cpp apu/Multi_Buffer.cpp
+            gba/GBA.cpp gba/GBA-arm.cpp gba/GBA-thumb.cpp gba/Sound.cpp gba/bios.cpp)
+        target_sources(megaplayer_core PRIVATE src/decoders/GsfDecoder.cpp)
+        target_compile_definitions(megaplayer_core PRIVATE MP_WITH_GSF)
+        set(MP_GSF_ENABLED ON)
+    endif()
+endif()
+
+set(MP_USF_ENABLED OFF)
+if(MP_WITH_USF AND MP_XSF_ENABLED)
+    set(MP_LAZYUSF2_DIR "${MP_THIRD_PARTY}/src/lazyusf2")
+    if(NOT EXISTS "${MP_LAZYUSF2_DIR}/usf/usf.c")
+        message(WARNING "lazyusf2 non scaricato (scripts/build-deps.sh): backend usf disattivato")
+    else()
+        # Mupen64Plus ridotto al suono: l'interprete con la cache, senza i
+        # ricompilatori (solo x86), e l'RSP di Iconoclast.
+        mp_xsf_library(lazyusf2 "${MP_LAZYUSF2_DIR}"
+            ai/ai_controller.c api/callbacks.c debugger/dbg_decoder.c main/main.c main/rom.c main/savestates.c
+            main/util.c memory/memory.c pi/cart_rom.c pi/pi_controller.c r4300/cached_interp.c r4300/cp0.c
+            r4300/cp1.c r4300/empty_dynarec.c r4300/exception.c r4300/interupt.c r4300/mi_controller.c
+            r4300/pure_interp.c r4300/r4300.c r4300/r4300_core.c r4300/recomp.c r4300/reset.c r4300/tlb.c
+            rdp/rdp_core.c ri/rdram.c ri/rdram_detection_hack.c ri/ri_controller.c rsp/rsp_core.c
+            rsp_hle/alist.c rsp_hle/alist_audio.c rsp_hle/alist_naudio.c rsp_hle/alist_nead.c rsp_hle/audio.c
+            rsp_hle/cicx105.c rsp_hle/hle.c rsp_hle/hvqm.c rsp_hle/jpeg.c rsp_hle/memory.c rsp_hle/mp3.c
+            rsp_hle/musyx.c rsp_hle/plugin.c rsp_hle/re2.c rsp_lle/rsp.c si/cic.c si/game_controller.c
+            si/n64_cic_nus_6105.c si/pif.c si/si_controller.c usf/barray.c usf/resampler.c usf/usf.c
+            vi/vi_controller.c)
+        # Per crc32.
+        if(EMSCRIPTEN)
+            target_compile_options(lazyusf2 PRIVATE -sUSE_ZLIB=1)
+        else()
+            target_link_libraries(lazyusf2 PRIVATE ZLIB::ZLIB)
+        endif()
+        target_sources(megaplayer_core PRIVATE src/decoders/UsfDecoder.cpp)
+        target_compile_definitions(megaplayer_core PRIVATE MP_WITH_USF)
+        set(MP_USF_ENABLED ON)
     endif()
 endif()
 
@@ -771,9 +851,10 @@ if(Python3_FOUND)
     endif()
 endif()
 
-# I file di Saturn, Dreamcast e QSound generati da tests/make_test_xsf.py:
-# ognuno un programma per la CPU del suono che suona un'onda quadra sul chip.
-if(Python3_FOUND AND (MP_SSF_ENABLED OR MP_QSF_ENABLED))
+# I file di Saturn, Dreamcast, QSound, GBA e DS generati da
+# tests/make_test_xsf.py: ognuno un programma per la CPU del suono che suona
+# un'onda quadra sul chip.
+if(Python3_FOUND AND (MP_SSF_ENABLED OR MP_QSF_ENABLED OR MP_GSF_ENABLED OR MP_2SF_ENABLED))
     set(MP_XSF_TEST_DIR "${CMAKE_BINARY_DIR}/xsf-test")
     add_test(NAME make_test_xsf
         COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/make_test_xsf.py" "${MP_XSF_TEST_DIR}")
@@ -784,6 +865,12 @@ if(Python3_FOUND AND (MP_SSF_ENABLED OR MP_QSF_ENABLED))
     endif()
     if(MP_QSF_ENABLED)
         list(APPEND MP_XSF_TESTS "qsf:qsf:QSF")
+    endif()
+    if(MP_GSF_ENABLED)
+        list(APPEND MP_XSF_TESTS "gsf:gsf:GSF")
+    endif()
+    if(MP_2SF_ENABLED)
+        list(APPEND MP_XSF_TESTS "2sf:2sf:2SF")
     endif()
     foreach(entry ${MP_XSF_TESTS})
         string(REPLACE ":" ";" parts "${entry}")
@@ -855,6 +942,14 @@ if(MP_SSF_ENABLED AND Python3_FOUND)
 endif()
 if(MP_QSF_ENABLED AND Python3_FOUND)
     list(APPEND MP_CHANNELS_TEST_ARGS "qsf=${MP_XSF_TEST_DIR}/test.qsf")
+    list(APPEND MP_CHANNELS_FIXTURES test_xsf)
+endif()
+if(MP_GSF_ENABLED AND Python3_FOUND)
+    list(APPEND MP_CHANNELS_TEST_ARGS "gsf=${MP_XSF_TEST_DIR}/test.gsf")
+    list(APPEND MP_CHANNELS_FIXTURES test_xsf)
+endif()
+if(MP_2SF_ENABLED AND Python3_FOUND)
+    list(APPEND MP_CHANNELS_TEST_ARGS "2sf=${MP_XSF_TEST_DIR}/test.2sf")
     list(APPEND MP_CHANNELS_FIXTURES test_xsf)
 endif()
 if(MP_ADLMIDI_ENABLED)

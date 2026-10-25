@@ -1,0 +1,15 @@
+diff --git a/src/vio2sf/desmume/types.h b/src/vio2sf/desmume/types.h
+index f274e50..cf78e7b 100755
+--- a/src/vio2sf/desmume/types.h
++++ b/src/vio2sf/desmume/types.h
+@@ -97,7 +97,9 @@ typedef s16 v10;
+ /*----------------------*/
+ 
+ #ifndef OBJ_C
+-#ifdef WIN32
++/* _WIN32 and not WIN32, which MinGW leaves out in standard C++: the
++   library and its users must agree on the size of BOOL */
++#if defined(WIN32) || defined(_WIN32)
+ typedef int BOOL;
+ #else
+ typedef signed char BOOL;

@@ -6,12 +6,13 @@
 # SQLite, gearmulator per 88emu, i moduli Roland emulati, FluidSynth con il
 # SoundFont GeneralUser GS, per i MIDI senza le ROM, AtariAudio per l'Atari ST,
 # Highly Experimental con psflib e OpenBIOS per la PlayStation, Highly
-# Theoretical per Saturn e Dreamcast, Highly Quixotic per il QSound di Capcom)
+# Theoretical per Saturn e Dreamcast, Highly Quixotic per il QSound di Capcom,
+# vio2sf per il DS, viogsf per il GBA e lazyusf2 per l'N64)
 # e applica a UADE le patch per farlo girare nel processo del player e per
 # zittirne le voci, a libsidplayfp quella per zittirle subito e a gearmulator
 # quelle per compilarlo con MinGW, a Highly Experimental quella per avviarlo
 # con OpenBIOS, a Highly Theoretical e Highly Quixotic quelle per zittire i
-# canali.
+# canali, a vio2sf, viogsf e lazyusf2 quelle per compilarli ovunque.
 # libopenmpt e libarchive invece arrivano dal sistema (brew, apt, MSYS2...),
 # vedi README.md.
 #
@@ -54,6 +55,11 @@ HIGHLY_EXPERIMENTAL_COMMIT=0fa96d186e3c0437951732d0c50bf1da4e32970e
 HIGHLY_THEORETICAL_COMMIT=0e4c18c5b757b04dbcb68c572c5a4f6fd803283c
 HIGHLY_QUIXOTIC_COMMIT=d730174d436e8cabca90fabdb3ad4ddf614d31cc
 PSFLIB_COMMIT=3bea757c8b45c5e68da1b5a7b736ad960a06a124
+# vio2sf (DeSmuME), viogsf (VBA-M) e lazyusf2 (Mupen64Plus), nelle versioni
+# di Christopher Snowhill per la famiglia PSF.
+VIO2SF_COMMIT=1d68801f5fd370c3275affd51505353e2b366a7e
+VIOGSF_COMMIT=6c43a9926a6a85fbb736ea8f5f7f6c4f59ed3d64
+LAZYUSF2_COMMIT=421f00bcaa1988b8e1825e91780129f24fbd1aa0
 # OpenBIOS di PCSX-Redux (MIT), la BIOS della PlayStation riscritta da zero
 # che Highly Experimental usa al posto di quella di Sony: compilata da
 # Libreboot nella release 20241206rev11, dal commit 6ec53480 di PCSX-Redux.
@@ -185,6 +191,9 @@ clone_commit highly_experimental https://gitlab.com/kode54/highly_experimental.g
 clone_commit highly_theoretical https://gitlab.com/kode54/highly_theoretical.git "$HIGHLY_THEORETICAL_COMMIT"
 clone_commit highly_quixotic     https://gitlab.com/kode54/highly_quixotic.git     "$HIGHLY_QUIXOTIC_COMMIT"
 clone_commit psflib              https://gitlab.com/kode54/psflib.git              "$PSFLIB_COMMIT"
+clone_commit vio2sf              https://gitlab.com/kode54/vio2sf.git              "$VIO2SF_COMMIT"
+clone_commit viogsf              https://gitlab.com/kode54/viogsf.git              "$VIOGSF_COMMIT"
+clone_commit lazyusf2            https://gitlab.com/kode54/lazyusf2.git            "$LAZYUSF2_COMMIT"
 
 # gearmulator a un commit preciso, con i soli sottomoduli che il suo CMake
 # vuole per costruire 88lib: niente JUCE né le estensioni CLAP.
@@ -233,10 +242,15 @@ done
 # hebios) e le scritture con la cache isolata dal bit IsC non arrivano alla
 # RAM, come sulla console. Highly Theoretical: i canali si possono zittire, e
 # compila fuori da x86 e con C68K. Highly Quixotic: una voce zittita continua
-# ad avanzare, in silenzio.
+# ad avanzare, in silenzio. vio2sf: BOOL ha la stessa misura nella libreria e
+# nel C++ che la usa, anche con MinGW. viogsf e lazyusf2: compilano fuori da
+# x86 e con i compilatori recenti.
 for NC_PATCH in "highly_experimental:$ROOT/patches/highly-experimental-openbios.patch" \
 	"highly_theoretical:$ROOT/patches/highly-theoretical.patch" \
-	"highly_quixotic:$ROOT/patches/highly-quixotic.patch"; do
+	"highly_quixotic:$ROOT/patches/highly-quixotic.patch" \
+	"vio2sf:$ROOT/patches/vio2sf.patch" \
+	"viogsf:$ROOT/patches/viogsf.patch" \
+	"lazyusf2:$ROOT/patches/lazyusf2.patch"; do
 	dir="$SRC/${NC_PATCH%%:*}" patch="${NC_PATCH#*:}"
 	if ! git -C "$dir" apply --reverse --check "$patch" 2>/dev/null; then
 		echo "==> applico $(basename "$patch")"

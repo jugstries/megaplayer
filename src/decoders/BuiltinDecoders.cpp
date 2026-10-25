@@ -27,6 +27,15 @@
 #ifdef MP_WITH_QSF
 #include "QsfDecoder.h"
 #endif
+#ifdef MP_WITH_2SF
+#include "TwosfDecoder.h"
+#endif
+#ifdef MP_WITH_GSF
+#include "GsfDecoder.h"
+#endif
+#ifdef MP_WITH_USF
+#include "UsfDecoder.h"
+#endif
 #ifdef MP_WITH_GME
 #include "GmeDecoder.h"
 #endif
@@ -63,6 +72,15 @@ void registerBuiltinDecoders(DecoderRegistry& registry)
 #endif
 #ifdef MP_WITH_QSF
     registry.add(std::make_unique<QsfDecoderFactory>());
+#endif
+#ifdef MP_WITH_2SF
+    registry.add(std::make_unique<TwosfDecoderFactory>());
+#endif
+#ifdef MP_WITH_GSF
+    registry.add(std::make_unique<GsfDecoderFactory>());
+#endif
+#ifdef MP_WITH_USF
+    registry.add(std::make_unique<UsfDecoderFactory>());
 #endif
 #ifdef MP_WITH_88EMU
     registry.add(std::make_unique<Emu88DecoderFactory>());

@@ -13,6 +13,7 @@ Flutter (per ora macOS) con due skin: moderna e retrò.
 | `sid`     | libsidplayfp 3.1.1, libresidfp 1.2.3 | Commodore 64: PSID e RSID, con l'emulazione reSIDfp del chip SID (6581 e 8580) |
 | `gme`     | game-music-emu 0.6.5  | console: NES (NSF, NSFE), SNES (SPC), Game Boy (GBS), Master System e Mega Drive (VGM, VGZ, GYM), PC Engine (HES), MSX (KSS), ZX Spectrum (AY), Atari (SAP) |
 | `88emu`   | 88emu di gearmulator (commit del 10 ottobre 2026) | gli stessi MIDI sui moduli Roland: Sound Canvas (SC-55, SC-55mkII, SC-88, SC-88VL, SC-88 Pro, SC-8850, ...) e MT-32/CM-32L, emulati facendo girare il loro firmware. Servono le ROM dell'utente |
+| `fluidsynth` | FluidSynth 2.6.1, GeneralUser GS 2.0.3 | gli stessi MIDI su un SoundFont General MIDI e GS a campioni, per chi non ha le ROM: di serie GeneralUser GS, che viaggia con le app |
 | `adlmidi` | libADLMIDI 1.6.2.1    | MIDI (MID, RMI) e i suoi parenti dei giochi DOS: XMI, MUS di Doom, HMI/HMP, GMF, su quattro chip FM OPL3 emulati (Nuked OPL3) |
 | `adplug`  | AdPlug 2.4, libbinio 1.5 | una cinquantina di formati AdLib dei giochi e dei tracker DOS (RAD, HSC, D00, A2M, CMF, IMF/WLF, DRO, ROL, LDS, SA2, AMD, XAD, Westwood ADL, ...) e i VGM per i chip OPL, su Nuked OPL3 |
 | `openmpt` | libopenmpt            | moduli tracker: MOD, XM, S3M, IT, MED, OKT, ...                |
@@ -49,7 +50,8 @@ copyright).
 
 Con le ROM dei moduli Roland il MIDI suona come lo sentivano i compositori,
 su un Sound Canvas o un MT-32 (vedi sotto, «MIDI sui moduli Roland»). Senza,
-suona come su una Sound Blaster: libADLMIDI usa i banchi di timbri FM
+suona sul SoundFont GeneralUser GS con FluidSynth, o, se l'utente lo
+preferisce, come su una Sound Blaster: libADLMIDI usa i banchi di timbri FM
 dei giochi, scelti secondo il formato. I giochi con la libreria Miles (XMI)
 usavano il banco AIL, Doom (MUS) quello DMX di Bobby Prince, i giochi con la
 libreria HMI il suo; per il MIDI generico c'è il banco General MIDI DMXOPL3.
@@ -95,7 +97,8 @@ libzakalwe, bencode-tools, ancient, miniaudio, game-music-emu, libsidplayfp,
 libresidfp, libADLMIDI, AdPlug, libbinio e SQLite in `third_party/src` (di
 libsidplayfp, libresidfp e SQLite gli archivi di rilascio, con la verifica
 dello SHA-256), gearmulator a un commit fissato con i soli sottomoduli che
-servono a 88emu, e applica le patch di `patches/`: due a UADE (l'emulatore nel
+servono a 88emu, FluidSynth e il SoundFont GeneralUser GS (con lo SHA-256), e
+applica le patch di `patches/`: due a UADE (l'emulatore nel
 processo del player, vedi sotto, e le voci di Paula da zittire), una a
 libsidplayfp (il mute di una voce subito) e due a gearmulator (MinGW). Tutto il resto lo fa CMake: compila
 UADE senza il suo script di configurazione (che funziona solo su UNIX, vedi
@@ -173,6 +176,7 @@ build/megaplayer info -b uade mod.enigma       # formato, backend, metadati
 build/megaplayer render -s 2 -o out.wav Stormlord.lha/Stormlord/jt.ingame   # esporta in WAV
 build/megaplayer play -m 60 Stormlord.lha      # con MegaSound al 60%
 build/megaplayer play --roms ~/Roms/Roland --roland SC-88Pro brano.mid   # MIDI su un Sound Canvas
+build/megaplayer render --from 600 -t 30 -o pezzo.wav brano.mid    # 30 secondi dal minuto 10
 build/megaplayer render -M 1,3 -o out.wav mod.enigma   # senza i canali 1 e 3
 build/megaplayer backends
 ```
@@ -196,6 +200,7 @@ per uno o da mettere in solo (`Decoder::channels()` e `setChannelMuted()`):
 | uade     | le 4 voci di Paula (1 e 4 a sinistra, 2 e 3 a destra) | una maschera nel mixer di Paula ([patches/uade-voice-mask.patch](patches/uade-voice-mask.patch)): l'emulazione va avanti |
 | gme      | le voci del chip («Square 1», «Noise», «DSP 3»…) | il mute di gme, che con canali zittiti non chiude più il brano sul silenzio |
 | sid      | 3 voci per chip e i campioni digitalizzati | il mute di libsidplayfp, che filtra i registri; la patch ([patches/libsidplayfp-instant-mute.patch](patches/libsidplayfp-instant-mute.patch)) lo applica subito invece che alla nota dopo |
+| 88emu, fluidsynth | i 16 canali MIDI (nei file per SC-88 sulle due porte) | le note del canale non partono più e quelle accese si spengono (pedale, All Notes Off, All Sound Off) |
 | adlmidi  | i 16 canali MIDI | i canali spenti del sequencer, che rilascia le note |
 | adplug   | i canali OPL che suonano note | niente note nuove, quelle accese rilasciate e operatori al minimo (-47 dB) |
 
@@ -242,6 +247,29 @@ piccole patch ([patches/gearmulator-mingw.patch](patches/gearmulator-mingw.patch
 I test che suonano davvero vogliono le ROM: girano se
 `MEGAPLAYER_ROLAND_ROMS` indica la cartella che le contiene quando si
 configura CMake, e in CI no.
+
+Senza le ROM i MIDI suonano su un SoundFont con FluidSynth (backend
+`fluidsynth`, [src/decoders/FluidSynthDecoder.cpp](src/decoders/FluidSynthDecoder.cpp)):
+di serie [GeneralUser GS](https://github.com/mrbumpy409/GeneralUser-GS),
+General MIDI e GS, 32 MB, che `build-deps.sh` scarica e le app si portano
+dentro (la sua licenza ne permette l'uso nei programmi). Se ne può scegliere
+un altro (`.sf2`; i `.sf3` compressi no: FluidSynth è compilato senza
+libsndfile), con `--soundfont FILE` o nelle impostazioni dell'app, oppure
+tornare all'FM di `adlmidi` (`--soundfont ""`). FluidSynth si compila a
+parte, statico e senza driver audio né altro di quello che il suo CMake
+cercherebbe sulla macchina. Il SoundFont si carica al primo audio e resta
+caricato per il brano dopo; il volume è allineato a quello di 88emu e
+dell'FM.
+
+88emu e FluidSynth condividono il sequencer
+([src/decoders/SequencedMidiDecoder.cpp](src/decoders/SequencedMidiDecoder.cpp)).
+Per un salto il sequencer riparte dall'inizio del brano, ma non manda al
+sintetizzatore le migliaia di messaggi incontrati fin lì: rimette il
+sintetizzatore come appena acceso e gli manda solo lo stato al punto
+d'arrivo, i SysEx dopo l'ultimo reset (dei DT1 Roland l'ultimo per
+indirizzo), poi per ogni canale banco, programma, controller, parametri RPN e
+NRPN e pitch bend. Ai moduli emulati arriva al ritmo del cavo MIDI, come a
+quelli veri, che altrimenti ne perderebbero pezzi.
 
 ## Libreria
 
@@ -548,7 +576,9 @@ ancient e libarchive BSD-2, miniaudio e stb_vorbis public domain / MIT-0,
 game-music-emu LGPL-2.1 (con l'emulatore Nuked del YM2612, anche lui LGPL),
 libsidplayfp e libresidfp GPL-2.0, AdPlug e libbinio LGPL-2.1; gearmulator
 (88emu) GPL-3.0, con parti derivate da Nuked-SC55 e Nuked-MT32 sotto GPL-2.0
-o successiva; libADLMIDI ha
+o successiva; FluidSynth LGPL-2.1 o successiva; il SoundFont GeneralUser GS
+(S. Christian Collins) ha la sua licenza, che ne permette l'uso nei
+programmi, e viaggia accanto a lui nelle app; libADLMIDI ha
 parti LGPL, MIT e BSD, ma nel complesso è GPL-3.0 o successiva, e i suoi
 banchi di timbri hanno ciascuno le sue note. SQLite è di pubblico dominio.
 Finché il backend UADE è incluso, il binario risultante va distribuito sotto

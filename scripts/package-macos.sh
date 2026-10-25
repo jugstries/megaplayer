@@ -2,8 +2,9 @@
 #
 # Rende distribuibile l'app macOS compilata da `flutter build macos --release`:
 # mette nel bundle le librerie di Homebrew da cui dipende il core (con i
-# riferimenti riscritti verso Contents/Frameworks) e i replayer di UADE in
-# Contents/Resources/uade-data, firma e fa lo zip, che serve sia per
+# riferimenti riscritti verso Contents/Frameworks), i replayer di UADE in
+# Contents/Resources/uade-data e il SoundFont GeneralUser GS (con la sua
+# licenza) in Contents/Resources/soundfonts, firma e fa lo zip, che serve sia per
 # scaricarla sia per gli aggiornamenti.
 #
 # Per ora la firma è "ad hoc": la prima volta macOS la apre solo con «Apri
@@ -26,6 +27,8 @@ fail() {
 
 [ -f "$CORE" ] || fail "nel bundle manca libmegaplayer.dylib"
 [ -d "$ROOT/build/uade-data" ] || fail "mancano i replayer di UADE in build/uade-data"
+SOUNDFONT="$ROOT/third_party/src/generaluser-gs"
+[ -f "$SOUNDFONT/GeneralUser-GS.sf2" ] || fail "manca GeneralUser GS (scripts/build-deps.sh)"
 
 # I riferimenti di una libreria ad altre librerie, tranne quelle di sistema.
 references() {
@@ -63,8 +66,11 @@ for library in "$FRAMEWORKS"/*.dylib; do
 	[ -z "$outside" ] || fail "$(basename "$library") punta ancora a: $outside"
 done
 
-rm -rf "$APP/Contents/Resources/uade-data"
+rm -rf "$APP/Contents/Resources/uade-data" "$APP/Contents/Resources/soundfonts"
 cp -R "$ROOT/build/uade-data" "$APP/Contents/Resources/uade-data"
+mkdir -p "$APP/Contents/Resources/soundfonts"
+cp "$SOUNDFONT/GeneralUser-GS.sf2" "$APP/Contents/Resources/soundfonts/"
+cp "$SOUNDFONT/LICENSE.txt" "$APP/Contents/Resources/soundfonts/GeneralUser-GS-LICENSE.txt"
 
 # Prima le librerie, poi l'app: la firma del bundle copre quello che c'è dentro.
 for library in "$FRAMEWORKS"/*.dylib; do

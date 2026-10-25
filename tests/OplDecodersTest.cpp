@@ -284,6 +284,8 @@ int main(int argc, char** argv)
 
     mp::DecoderRegistry registry;
     mp::registerBuiltinDecoders(registry);
+    // Qui si provano i chip FM: niente SoundFont, che per i MIDI verrebbe prima.
+    mp::setSoundFont("");
 #ifdef MP_TEST_ADLMIDI
     // La durata comprende il secondo che libADLMIDI aspetta a fine brano.
     testFile(registry, directory / "test.mid", "adlmidi", "Prova MIDI", "", 3.0);

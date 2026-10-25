@@ -29,6 +29,7 @@ struct mp_engine {
     std::string collectJson;
     std::string infoJson;
     std::string rolandJson;
+    std::string soundFont;
 
     std::string currentFile;
     std::vector<std::string> currentPackers;
@@ -59,6 +60,11 @@ void mp_add_roland_rom_dir(const char* path)
 void mp_set_roland_device(const char* name)
 {
     mp::setRolandDevice(name ? name : "");
+}
+
+void mp_set_soundfont(const char* path)
+{
+    mp::setSoundFont(path ? path : "");
 }
 
 mp_engine* mp_engine_create(int32_t sample_rate)
@@ -105,6 +111,12 @@ const char* mp_engine_roland_devices(mp_engine* engine)
     }
     engine->rolandJson = json + "]";
     return engine->rolandJson.c_str();
+}
+
+const char* mp_engine_soundfont(mp_engine* engine)
+{
+    engine->soundFont = mp::soundFont();
+    return engine->soundFont.c_str();
 }
 
 const char* mp_engine_collect(mp_engine* engine, const char* path)

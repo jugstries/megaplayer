@@ -65,11 +65,14 @@ jobs:
           scripts/build-deps.sh
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
           cmake --build build --target megaplayer_capi uade_data
-          # La libreria del core, le DLL di MSYS2 da cui dipende e i replayer.
-          mkdir -p dist/core
+          # La libreria del core, le DLL di MSYS2 da cui dipende, i replayer e
+          # il SoundFont GeneralUser GS con la sua licenza.
+          mkdir -p dist/core/soundfonts
           cp build/libmegaplayer.dll dist/core/
           ldd build/libmegaplayer.dll | awk '$3 ~ /^\/ucrt64\// { print $3 }' | sort -u | xargs -r cp -t dist/core/
           cp -r build/uade-data dist/core/
+          cp third_party/src/generaluser-gs/GeneralUser-GS.sf2 dist/core/soundfonts/
+          cp third_party/src/generaluser-gs/LICENSE.txt dist/core/soundfonts/GeneralUser-GS-LICENSE.txt
           ls dist/core
 
       - uses: subosito/flutter-action@v2

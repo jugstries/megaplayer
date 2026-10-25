@@ -8,6 +8,9 @@
 #ifdef MP_WITH_ADLMIDI
 #include "AdlMidiDecoder.h"
 #endif
+#ifdef MP_WITH_FLUIDSYNTH
+#include "FluidSynthDecoder.h"
+#endif
 #ifdef MP_WITH_ADPLUG
 #include "AdplugDecoder.h"
 #endif
@@ -37,6 +40,9 @@ void registerBuiltinDecoders(DecoderRegistry& registry)
 #endif
 #ifdef MP_WITH_88EMU
     registry.add(std::make_unique<Emu88DecoderFactory>());
+#endif
+#ifdef MP_WITH_FLUIDSYNTH
+    registry.add(std::make_unique<FluidSynthDecoderFactory>());
 #endif
 #ifdef MP_WITH_ADLMIDI
     registry.add(std::make_unique<AdlMidiDecoderFactory>());
@@ -83,6 +89,24 @@ std::vector<RolandDevice> rolandDevices()
 {
 #ifdef MP_WITH_88EMU
     return emu88::devices();
+#else
+    return {};
+#endif
+}
+
+void setSoundFont(const std::string& path)
+{
+#ifdef MP_WITH_FLUIDSYNTH
+    fluidsynth::setSoundFont(path);
+#else
+    (void)path;
+#endif
+}
+
+std::string soundFont()
+{
+#ifdef MP_WITH_FLUIDSYNTH
+    return fluidsynth::soundFont();
 #else
     return {};
 #endif

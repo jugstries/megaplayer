@@ -58,6 +58,14 @@ MP_API void mp_set_uade_data_dir(const char* path);
 MP_API void mp_add_roland_rom_dir(const char* path);
 MP_API void mp_set_roland_device(const char* name);
 
+/*
+ * Il SoundFont con cui FluidSynth suona i MIDI quando non ci sono le ROM dei
+ * moduli Roland: di serie GeneralUser GS, se la build lo trova; "" o NULL lo
+ * spengono, e i MIDI vanno all'FM di adlmidi. mp_engine_soundfont dice quello
+ * in uso ("" se nessuno). Vale per tutto il processo.
+ */
+MP_API void mp_set_soundfont(const char* path);
+
 /* Apre il dispositivo audio. NULL se non ci riesce. */
 MP_API mp_engine* mp_engine_create(int32_t sample_rate);
 MP_API void mp_engine_destroy(mp_engine* engine);
@@ -74,6 +82,9 @@ MP_API const char* mp_engine_backends(mp_engine* engine);
  * {"name": "MT-32 1.x (experimental)", "family": "la", ...}, ...]
  */
 MP_API const char* mp_engine_roland_devices(mp_engine* engine);
+
+/* Il SoundFont in uso per i MIDI, "" se nessuno (vedi mp_set_soundfont). */
+MP_API const char* mp_engine_soundfont(mp_engine* engine);
 
 /*
  * Brani contenuti in un file, un archivio o "ARCHIVIO/percorso/interno":

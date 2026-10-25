@@ -52,6 +52,7 @@ Opzioni:
   -b, --backend NOME   usa solo questo backend
   -s, --subsong N      sottobrano da riprodurre (da 1)
   -t, --seconds N      durata massima in secondi
+  --from N             parte da N secondi, con un salto (play e render)
   -r, --rate HZ        frequenza di campionamento (default 48000)
   -o, --output FILE    file WAV di uscita (render)
   -m, --megasound N    manopola MegaSound da 0 a 100 (play e render)
@@ -60,6 +61,8 @@ Opzioni:
                        (backend 88emu; si può ripetere)
   --roland NOME        il Sound Canvas per i MIDI GS e GM, es. SC-88Pro
                        (vedi megaplayer backends)
+  --soundfont FILE     il SoundFont per i MIDI senza le ROM (di serie
+                       GeneralUser GS); --soundfont "" per l'FM di adlmidi
   -h, --help           questo messaggio
 
 Opzioni della libreria:
@@ -90,12 +93,14 @@ struct Options {
     std::string backend;
     std::optional<int> subsong; // da 1, come lo scrive l'utente
     std::optional<double> seconds;
+    std::optional<double> from; // secondi da cui partire
     int sampleRate = 48000;
     std::string output;
     int megaSound = 0; // posizione della manopola, 0..100
     std::vector<int> mute; // canali da zittire, da 1 come li scrive l'utente
     std::vector<std::string> romDirectories; // ROM dei moduli Roland
     std::string roland;
+    std::optional<std::string> soundFont;
     // Libreria.
     std::string database;
     std::vector<std::string> platforms;
@@ -159,6 +164,8 @@ Options parseArgs(int argc, char** argv)
             options.subsong = parseNumber(arg, value(i), 1, 1000);
         } else if (arg == "-t" || arg == "--seconds") {
             options.seconds = parseNumber(arg, value(i), 0.0, 1e6);
+        } else if (arg == "--from") {
+            options.from = parseNumber(arg, value(i), 0.0, 1e6);
         } else if (arg == "-r" || arg == "--rate") {
             options.sampleRate = parseNumber(arg, value(i), 8000, 192000);
         } else if (arg == "-o" || arg == "--output") {
@@ -171,6 +178,8 @@ Options parseArgs(int argc, char** argv)
             options.romDirectories.push_back(value(i));
         } else if (arg == "--roland") {
             options.roland = value(i);
+        } else if (arg == "--soundfont") {
+            options.soundFont = value(i);
         } else if (arg == "--db") {
             options.database = value(i);
         } else if (arg == "-p" || arg == "--platform") {
@@ -305,6 +314,11 @@ std::unique_ptr<Decoder> openTrack(const SourceFile& source, const Options& opti
                                              : "il brano ha solo " + std::to_string(channels) + " canali");
         decoder->setChannelMuted(channel - 1, true);
     }
+    if (options.from) {
+        if (!decoder->canSeek())
+            throw DecoderError("questo brano non permette di saltare");
+        decoder->seek(*options.from);
+    }
     return decoder;
 }
 
@@ -323,6 +337,10 @@ int runBackends(const DecoderRegistry& registry)
                 found += (found.empty() ? "" : ", ") + device.name;
         }
         std::cout << "\nModuli Roland con le ROM: " << (found.empty() ? "nessuno (--roms CARTELLA)" : found) << "\n";
+    }
+    if (registry.find("fluidsynth") != nullptr) {
+        const std::string font = soundFont();
+        std::cout << "SoundFont per i MIDI: " << (font.empty() ? "nessuno, i MIDI vanno all'FM" : font) << "\n";
     }
     return 0;
 }
@@ -505,7 +523,7 @@ AfterTrack playTrack(const Track& track, const SourceFile& source, Decoder& deco
                 // Sempre, anche spenta: così accenderla non fa saltare l'audio.
                 megaSound.process(chunk.data(), got);
                 output.write(chunk.data(), got);
-                if (got == 0 || (options.seconds && decoder.position() >= *options.seconds)) {
+                if (got == 0 || (options.seconds && decoder.position() >= options.from.value_or(0) + *options.seconds)) {
                     decoding = false;
                     break;
                 }
@@ -718,6 +736,8 @@ int main(int argc, char** argv)
     for (const std::string& directory : options.romDirectories)
         addRolandRomDirectory(directory);
     setRolandDevice(options.roland);
+    if (options.soundFont)
+        setSoundFont(*options.soundFont);
     cli::installInterruptHandler();
 
     try {

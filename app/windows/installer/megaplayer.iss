@@ -60,6 +60,7 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 ; I file della versione prima che in questa non ci sono più.
 Type: filesandordirs; Name: "{app}\data"
 Type: filesandordirs; Name: "{app}\uade-data"
+Type: filesandordirs; Name: "{app}\soundfonts"
 Type: files; Name: "{app}\*.dll"
 
 [Files]

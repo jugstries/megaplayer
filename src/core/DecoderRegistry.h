@@ -51,4 +51,11 @@ void addRolandRomDirectory(const std::string& path);
 void setRolandDevice(const std::string& name);
 std::vector<RolandDevice> rolandDevices();
 
+// Il SoundFont con cui FluidSynth suona i MIDI quando non ci sono le ROM dei
+// moduli Roland (backend "fluidsynth"): di serie GeneralUser GS in
+// third_party, se c'è; "" lo spegne, e i MIDI vanno all'FM di adlmidi. Senza
+// FluidSynth nella build non fanno niente.
+void setSoundFont(const std::string& path);
+std::string soundFont();
+
 } // namespace mp

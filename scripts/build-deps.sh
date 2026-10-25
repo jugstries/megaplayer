@@ -3,7 +3,8 @@
 # Scarica, a versioni fissate, i sorgenti delle dipendenze che compila
 # direttamente CMake (UADE con libzakalwe e bencode-tools, ancient, miniaudio,
 # game-music-emu, libsidplayfp con libresidfp, libADLMIDI, AdPlug con libbinio,
-# SQLite, e gearmulator per 88emu, i moduli Roland emulati)
+# SQLite, gearmulator per 88emu, i moduli Roland emulati, e FluidSynth con il
+# SoundFont GeneralUser GS, per i MIDI senza le ROM)
 # e applica a UADE le patch per farlo girare nel processo del player e per
 # zittirne le voci, a libsidplayfp quella per zittirle subito e a gearmulator
 # quelle per compilarlo con MinGW.
@@ -35,6 +36,12 @@ LIBSIDPLAYFP_SHA256=12b79190593bf480b2d11481b5c2de62bac07f344437a66cd8d887329875
 # gearmulator (The Usual Suspects), per 88lib: un commit del ramo principale,
 # perché l'interfaccia C di 88lib non è ancora in una release abbastanza vecchia.
 GEARMULATOR_COMMIT=a8a9ae99a8f7fc05152fa641a5ec1fed0fd88164
+FLUIDSYNTH_REF=v2.6.1
+# GeneralUser GS 2.0.3 (S. Christian Collins), il SoundFont General MIDI e GS
+# che viaggia con le app: non ha release, si prende da un commit preciso.
+GENERALUSER_COMMIT=684543d5e5efaef08d02be50dcda8d552478fa60
+GENERALUSER_SF2_SHA256=9575028c7a1f589f5770fccc8cff2734566af40cd26ed836944e9a5152688cfe
+GENERALUSER_LICENSE_SHA256=7b32efefdf95ce38a043799f0659853ddc00fbaa14d8c50f0aca16b9b8b405be
 # SQLite 3.53.4: l'amalgamation (un solo sqlite3.c) dall'archivio autoconf.
 SQLITE_VERSION=3530400
 SQLITE_YEAR=2026
@@ -91,10 +98,41 @@ clone miniaudio    https://github.com/mackron/miniaudio.git            "$MINIAUD
 clone game-music-emu https://github.com/libgme/game-music-emu.git      "$GME_REF"
 clone libadlmidi   https://github.com/Wohlstand/libADLMIDI.git        "$ADLMIDI_REF"
 clone libbinio     https://github.com/adplug/libbinio.git             "$LIBBINIO_REF"
+clone fluidsynth   https://github.com/FluidSynth/fluidsynth.git        "$FLUIDSYNTH_REF"
+# Delle sue dipendenze incluse a FluidSynth serve solo gcem.
+if [[ ! -f "$SRC/fluidsynth/gcem/CMakeLists.txt" ]]; then
+	git -C "$SRC/fluidsynth" submodule update -q --init --depth 1 gcem
+fi
 clone adplug       https://github.com/adplug/adplug.git               "$ADPLUG_REF"
 fetch libresidfp   "https://github.com/libsidplayfp/libresidfp/releases/download/v$LIBRESIDFP_VERSION/libresidfp-$LIBRESIDFP_VERSION.tar.gz" "$LIBRESIDFP_SHA256"
 fetch libsidplayfp "https://github.com/libsidplayfp/libsidplayfp/releases/download/v$LIBSIDPLAYFP_VERSION/libsidplayfp-$LIBSIDPLAYFP_VERSION.tar.gz" "$LIBSIDPLAYFP_SHA256"
 fetch sqlite       "https://sqlite.org/$SQLITE_YEAR/sqlite-autoconf-$SQLITE_VERSION.tar.gz" "$SQLITE_SHA256"
+
+# download <file> <url> <sha256>: scarica un file singolo, una volta sola.
+download() {
+	local target="$1" url="$2" sha256="$3"
+	if [[ ! -f "$target" ]]; then
+		echo "==> scarico $(basename "$target")"
+		mkdir -p "$(dirname "$target")"
+		curl -fsSL -o "$target.part" "$url"
+		local actual
+		if command -v sha256sum >/dev/null; then
+			actual=$(sha256sum "$target.part" | cut -d' ' -f1)
+		else
+			actual=$(shasum -a 256 "$target.part" | cut -d' ' -f1)
+		fi
+		if [[ "$actual" != "$sha256" ]]; then
+			rm -f "$target.part"
+			echo "checksum sbagliato per $(basename "$target"): $actual" >&2
+			exit 1
+		fi
+		mv "$target.part" "$target"
+	fi
+}
+
+GENERALUSER_URL="https://raw.githubusercontent.com/mrbumpy409/GeneralUser-GS/$GENERALUSER_COMMIT"
+download "$SRC/generaluser-gs/GeneralUser-GS.sf2" "$GENERALUSER_URL/GeneralUser-GS.sf2" "$GENERALUSER_SF2_SHA256"
+download "$SRC/generaluser-gs/LICENSE.txt" "$GENERALUSER_URL/documentation/LICENSE.txt" "$GENERALUSER_LICENSE_SHA256"
 
 # gearmulator a un commit preciso, con i soli sottomoduli che il suo CMake
 # vuole per costruire 88lib: niente JUCE né le estensioni CLAP.

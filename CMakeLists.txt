@@ -26,6 +26,7 @@ option(MP_WITH_GME "Backend game-music-emu (console a 8 e 16 bit)" ON)
 option(MP_WITH_SID "Backend libsidplayfp (Commodore 64)" ON)
 option(MP_WITH_ADLMIDI "Backend libADLMIDI (MIDI su chip FM OPL3)" ON)
 option(MP_WITH_88EMU "Backend 88emu (MIDI su Roland Sound Canvas e MT-32 emulati, con le ROM dell'utente)" ON)
+option(MP_WITH_FLUIDSYNTH "Backend FluidSynth (MIDI su un SoundFont, per chi non ha le ROM)" ON)
 option(MP_WITH_ADPLUG "Backend AdPlug (formati AdLib dei giochi DOS)" ON)
 option(MP_WITH_ARCHIVES "Apertura diretta degli archivi LHA/ZIP/7z/... (libarchive)" ON)
 option(MP_WITH_LIBRARY "Libreria musicale: indice SQLite di una cartella, con ricerca (non per WebAssembly)" ON)
@@ -185,6 +186,16 @@ if(MP_WITH_ADLMIDI)
     endif()
 endif()
 
+# Le dipendenze compilate a parte (ExternalProject) con lo stesso compilatore
+# e la stessa piattaforma del core.
+set(MP_EXTERNAL_TOOLCHAIN_ARGS)
+foreach(variable CMAKE_TOOLCHAIN_FILE CMAKE_C_COMPILER CMAKE_CXX_COMPILER CMAKE_MAKE_PROGRAM
+        CMAKE_OSX_DEPLOYMENT_TARGET CMAKE_OSX_ARCHITECTURES)
+    if(${variable})
+        list(APPEND MP_EXTERNAL_TOOLCHAIN_ARGS "-D${variable}=${${variable}}")
+    endif()
+endforeach()
+
 # 88emu di gearmulator (The Usual Suspects): i moduli Roland, emulati
 # facendo girare il loro firmware. Si compila a parte, con il suo CMake e solo
 # quello che serve a 88lib, in un'unica libreria statica (il target
@@ -205,12 +216,7 @@ if(MP_WITH_88EMU AND MP_ADLMIDI_ENABLED AND NOT EMSCRIPTEN)
         foreach(synth OSIRUS OSTIRUS VAVRA XENIA NODALRED2X JE8086)
             list(APPEND MP_88EMU_ARGS -Dgearmulator_SYNTH_${synth}=OFF)
         endforeach()
-        foreach(variable CMAKE_TOOLCHAIN_FILE CMAKE_C_COMPILER CMAKE_CXX_COMPILER CMAKE_MAKE_PROGRAM
-                CMAKE_OSX_DEPLOYMENT_TARGET CMAKE_OSX_ARCHITECTURES)
-            if(${variable})
-                list(APPEND MP_88EMU_ARGS "-D${variable}=${${variable}}")
-            endif()
-        endforeach()
+        list(APPEND MP_88EMU_ARGS ${MP_EXTERNAL_TOOLCHAIN_ARGS})
         ExternalProject_Add(gearmulator_88emu
             SOURCE_DIR "${MP_GEARMULATOR}"
             BINARY_DIR "${MP_88EMU_BINARY}"
@@ -231,12 +237,77 @@ if(MP_WITH_88EMU AND MP_ADLMIDI_ENABLED AND NOT EMSCRIPTEN)
             target_link_libraries(emu88 INTERFACE "-framework CoreFoundation")
         endif()
         target_sources(megaplayer_core PRIVATE src/decoders/Emu88Decoder.cpp)
-        # Il sequencer di libADLMIDI, compilato con un altro nome di classe.
-        target_include_directories(megaplayer_core PRIVATE "${MP_THIRD_PARTY}/src/libadlmidi/src")
         target_compile_definitions(megaplayer_core PRIVATE MP_WITH_88EMU)
         target_link_libraries(megaplayer_core PUBLIC emu88)
         set(MP_88EMU_ENABLED ON)
     endif()
+endif()
+
+# FluidSynth: i MIDI su un SoundFont, per chi non ha le ROM dei moduli Roland.
+# Si compila a parte, come libreria statica e con spento tutto quello che il
+# suo CMake cercherebbe sulla macchina (driver audio e MIDI, rete,
+# libsndfile, OpenMP...): qui serve solo il sintetizzatore. Il SoundFont che
+# viaggia con le app è GeneralUser GS; il core lo prende da third_party
+# finché l'app non gliene indica un altro (mp_set_soundfont).
+set(MP_FLUIDSYNTH_ENABLED OFF)
+if(MP_WITH_FLUIDSYNTH AND MP_ADLMIDI_ENABLED AND NOT EMSCRIPTEN)
+    set(MP_FLUIDSYNTH_SOURCE "${MP_THIRD_PARTY}/src/fluidsynth")
+    if(NOT EXISTS "${MP_FLUIDSYNTH_SOURCE}/gcem/CMakeLists.txt")
+        message(WARNING "FluidSynth non scaricato (scripts/build-deps.sh): backend fluidsynth disattivato")
+    else()
+        include(ExternalProject)
+        set(MP_FLUIDSYNTH_BINARY "${CMAKE_BINARY_DIR}/fluidsynth")
+        # Su Windows FluidSynth mette nel nome la versione dell'ABI.
+        if(WIN32)
+            set(MP_FLUIDSYNTH_LIBRARY "${MP_FLUIDSYNTH_BINARY}/src/libfluidsynth-3.a")
+        else()
+            set(MP_FLUIDSYNTH_LIBRARY "${MP_FLUIDSYNTH_BINARY}/src/libfluidsynth.a")
+        endif()
+        set(MP_FLUIDSYNTH_ARGS -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DCMAKE_POSITION_INDEPENDENT_CODE=ON
+            ${MP_EXTERNAL_TOOLCHAIN_ARGS})
+        foreach(feature alsa aufile dbus ipv6 jack ladspa libsndfile midishare network oss dsound wasapi waveout
+                winmidi sdl3 pulseaudio pipewire readline openmp native-dls signalsmith systemd coreaudio coremidi
+                framework dart kai libinstpatch portaudio opensles oboe)
+            list(APPEND MP_FLUIDSYNTH_ARGS -Denable-${feature}=OFF)
+        endforeach()
+        ExternalProject_Add(fluidsynth_static
+            SOURCE_DIR "${MP_FLUIDSYNTH_SOURCE}"
+            BINARY_DIR "${MP_FLUIDSYNTH_BINARY}"
+            DOWNLOAD_COMMAND ""
+            UPDATE_COMMAND ""
+            CMAKE_GENERATOR "${CMAKE_GENERATOR}"
+            CMAKE_ARGS ${MP_FLUIDSYNTH_ARGS}
+            BUILD_COMMAND "${CMAKE_COMMAND}" --build <BINARY_DIR> --target libfluidsynth
+            BUILD_BYPRODUCTS "${MP_FLUIDSYNTH_LIBRARY}"
+            INSTALL_COMMAND "")
+        # fluidsynth.h lo genera la sua configurazione: la cartella deve
+        # esserci già quando si configura il core.
+        file(MAKE_DIRECTORY "${MP_FLUIDSYNTH_BINARY}/include")
+        add_library(fluidsynth STATIC IMPORTED GLOBAL)
+        set_target_properties(fluidsynth PROPERTIES IMPORTED_LOCATION "${MP_FLUIDSYNTH_LIBRARY}")
+        target_include_directories(fluidsynth INTERFACE "${MP_FLUIDSYNTH_SOURCE}/include" "${MP_FLUIDSYNTH_BINARY}/include")
+        target_compile_definitions(fluidsynth INTERFACE FLUIDSYNTH_NOT_A_DLL)
+        add_dependencies(fluidsynth fluidsynth_static)
+        find_package(Threads REQUIRED)
+        target_link_libraries(fluidsynth INTERFACE Threads::Threads)
+        if(NOT WIN32 AND NOT APPLE)
+            target_link_libraries(fluidsynth INTERFACE m)
+        endif()
+        target_sources(megaplayer_core PRIVATE src/decoders/FluidSynthDecoder.cpp)
+        set(MP_DEFAULT_SOUNDFONT "${MP_THIRD_PARTY}/src/generaluser-gs/GeneralUser-GS.sf2")
+        set_source_files_properties(src/decoders/FluidSynthDecoder.cpp PROPERTIES
+            COMPILE_DEFINITIONS "MP_DEFAULT_SOUNDFONT=\"${MP_DEFAULT_SOUNDFONT}\"")
+        target_compile_definitions(megaplayer_core PRIVATE MP_WITH_FLUIDSYNTH)
+        target_link_libraries(megaplayer_core PUBLIC fluidsynth)
+        set(MP_FLUIDSYNTH_ENABLED ON)
+    endif()
+endif()
+
+# Il sequencer di libADLMIDI per i backend MIDI con un sintetizzatore
+# esterno, compilato una volta sola e con un altro nome di classe.
+if(MP_88EMU_ENABLED OR MP_FLUIDSYNTH_ENABLED)
+    target_sources(megaplayer_core PRIVATE src/decoders/SequencedMidiDecoder.cpp)
+    target_include_directories(megaplayer_core PRIVATE "${MP_THIRD_PARTY}/src/libadlmidi/src")
 endif()
 
 set(MP_ADPLUG_ENABLED OFF)
@@ -322,7 +393,7 @@ else()
     # --- Modulo WebAssembly con l'API C, per il browser (web/) ---
 
     set(MP_WEB_EXPORTS
-        _mp_set_uade_data_dir _mp_add_roland_rom_dir _mp_set_roland_device _mp_engine_roland_devices _mp_engine_create _mp_engine_destroy _mp_engine_last_error
+        _mp_set_uade_data_dir _mp_add_roland_rom_dir _mp_set_roland_device _mp_engine_roland_devices _mp_set_soundfont _mp_engine_soundfont _mp_engine_create _mp_engine_destroy _mp_engine_last_error
         _mp_engine_backends _mp_engine_collect _mp_engine_play _mp_engine_stop _mp_engine_set_paused
         _mp_engine_seek _mp_engine_select_subsong _mp_engine_set_volume _mp_engine_set_megasound
         _mp_engine_set_channel_muted _mp_engine_status _mp_engine_track_info _mp_engine_scope _malloc _free)
@@ -465,7 +536,7 @@ if(MP_ADLMIDI_ENABLED OR MP_ADPLUG_ENABLED)
     set_tests_properties(opl_decoders PROPERTIES FIXTURES_SETUP test_opl)
     if(MP_ADLMIDI_ENABLED)
         add_test(NAME cli_render_midi
-            COMMAND megaplayer render -o "${CMAKE_BINARY_DIR}/test-midi.wav" "${CMAKE_BINARY_DIR}/test.mid")
+            COMMAND megaplayer render -b adlmidi -o "${CMAKE_BINARY_DIR}/test-midi.wav" "${CMAKE_BINARY_DIR}/test.mid")
         set_tests_properties(cli_render_midi PROPERTIES
             FIXTURES_REQUIRED test_opl PASS_REGULAR_EXPRESSION "Backend: +adlmidi.*Titolo: +Prova MIDI.*Scritti 0:0[23]")
     endif()
@@ -537,6 +608,10 @@ endif()
 if(MP_ADPLUG_ENABLED)
     list(APPEND MP_CHANNELS_TEST_ARGS "adplug=${CMAKE_BINARY_DIR}/test.imf")
     list(APPEND MP_CHANNELS_FIXTURES test_opl)
+endif()
+# FluidSynth con il SoundFont di serie, che build-deps scarica.
+if(MP_FLUIDSYNTH_ENABLED)
+    list(APPEND MP_CHANNELS_TEST_ARGS "fluidsynth=${CMAKE_BINARY_DIR}/test.mid")
 endif()
 # 88emu suona solo con le ROM, che non sono nel repo: si prova se
 # MEGAPLAYER_ROLAND_ROMS (o MP_TEST_ROLAND_ROMS) indica una cartella che le ha.

@@ -59,6 +59,19 @@ void main() {
     await tester.tap(find.text('Jesper Kyd'));
     await tester.pump();
     expect(find.text('Nebula'), findsOneWidget);
+    await tester.tap(find.byTooltip('Cartella superiore'));
+    await tester.pump();
+    expect(controller.library.path, ['Amiga']);
+    await tester.tap(find.byIcon(Icons.home_rounded));
+    await tester.pump();
+    expect(controller.library.path, isEmpty);
+    // Anche un altro clic su «Libreria» torna alla radice.
+    controller.library.openFolder('Amiga/Jesper Kyd');
+    await tester.tap(find.text('Libreria').first); // la voce nella barra laterale
+    await tester.pump();
+    expect(controller.library.path, isEmpty);
+    controller.library.openFolder('Amiga/Jesper Kyd');
+    await tester.pump();
     await tester.tap(find.text('Tutto in coda'));
     await tester.pump();
     expect(controller.tracks.map((t) => t.fileName), containsAll(['nebula.mod', 'heroes.med']));

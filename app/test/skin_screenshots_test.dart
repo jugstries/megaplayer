@@ -44,7 +44,7 @@ void main() {
       libraryItem('', 'Compilation_I.sid', platform: 'c64', format: 'PSID', title: 'Compilation I', subsongs: 12),
       libraryItem('', 'Starball.sid', platform: 'c64', format: 'PSID', title: 'Starball', durations: [212]),
       for (var i = 0; i < 40; i++)
-        libraryItem('Music-AmigaModsAnthology.iso/Modules/Artist$i', 'mod.track$i', durations: [120.0 + i]),
+        libraryItem('Music-AmigaModsAnthology-1of4-Psychodk.mcsteam.iso/Modules/Artist$i', 'mod.track$i', durations: [120.0 + i]),
       libraryItem('Stormlord.lha/Stormlord', 'jt.title', format: 'Jeroen Tel', durations: [184.5]),
       libraryItem('TFMX Professional/Apidya', 'mdat.apidya', format: 'TFMX', subsongs: 9),
       libraryItem('Thunder Force IV.zip', 'tf4-01.vgz', platform: 'sega', format: 'VGM', title: 'Lightning Strikes Again'),
@@ -83,6 +83,12 @@ void main() {
 
   testWidgets('skin moderna, libreria', (tester) async {
     await shoot(tester, withLibrary(FakeLibraryStore()), 'moderna-libreria', open: 'Libreria');
+  });
+
+  testWidgets('skin moderna, dentro una cartella dal nome lungo', (tester) async {
+    final controller = withLibrary(FakeLibraryStore())
+      ..library.openFolder('Music-AmigaModsAnthology-1of4-Psychodk.mcsteam.iso/Modules/Artist7');
+    await shoot(tester, controller, 'moderna-cartella', open: 'Libreria', size: const Size(1180, 800));
   });
 
   testWidgets('skin moderna, ricerca nella libreria', (tester) async {

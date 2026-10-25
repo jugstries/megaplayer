@@ -71,10 +71,14 @@ class _ModernSkinState extends State<ModernSkin> {
   _Section _section = _Section.nowPlaying;
   int? _playlist;
 
-  void _show(_Section section, {int? playlist}) => setState(() {
-        _section = section;
-        _playlist = playlist;
-      });
+  void _show(_Section section, {int? playlist}) {
+    // Un altro clic su «Libreria» riporta alla cartella principale.
+    if (section == _Section.library && _section == _Section.library) widget.controller.library.openFolder('');
+    setState(() {
+      _section = section;
+      _playlist = playlist;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {

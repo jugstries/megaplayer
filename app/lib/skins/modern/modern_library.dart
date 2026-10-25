@@ -446,22 +446,41 @@ class _LibraryPanelState extends State<_LibraryPanel> {
 
     return Row(
       children: [
-        // Un percorso lungo scorre e mostra la fine; uno corto sta a sinistra.
+        _SmallIconButton(
+          icon: Icons.arrow_upward_rounded,
+          tooltip: 'Cartella superiore',
+          size: 32,
+          onPressed: path.isEmpty ? null : () => library.openFolder(path.take(path.length - 1).join('/')),
+        ),
+        const SizedBox(width: 2),
+        // La radice resta sempre in vista; il resto del percorso, se è lungo,
+        // scorre e mostra la fine.
+        crumb(_baseName(library.root), path.isEmpty ? null : '', icon: Icons.home_rounded),
+        if (path.isNotEmpty) const Icon(Icons.chevron_right_rounded, size: 16, color: _faint),
         Expanded(
-          child: LayoutBuilder(
-            builder: (context, constraints) => SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              reverse: true,
-              child: ConstrainedBox(
-                constraints: BoxConstraints(minWidth: constraints.maxWidth),
-                child: Row(
-                  children: [
-                    crumb(_baseName(library.root), path.isEmpty ? null : '', icon: Icons.home_rounded),
-                    for (var i = 0; i < path.length; i++) ...[
-                      const Icon(Icons.chevron_right_rounded, size: 16, color: _faint),
-                      crumb(path[i], i == path.length - 1 ? null : path.take(i + 1).join('/')),
+          // A sinistra il percorso tagliato sfuma; il margine tiene fuori
+          // dalla sfumatura un percorso che ci sta.
+          child: ShaderMask(
+            blendMode: BlendMode.dstIn,
+            shaderCallback: (bounds) => LinearGradient(
+              colors: const [Colors.transparent, Colors.white],
+              stops: [0, bounds.width > 0 ? math.min(1, 14 / bounds.width) : 0],
+            ).createShader(bounds),
+            child: LayoutBuilder(
+              builder: (context, constraints) => SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                reverse: true,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minWidth: constraints.maxWidth),
+                  child: Row(
+                    children: [
+                      if (path.isNotEmpty) const SizedBox(width: 8),
+                      for (var i = 0; i < path.length; i++) ...[
+                        if (i > 0) const Icon(Icons.chevron_right_rounded, size: 16, color: _faint),
+                        crumb(path[i], i == path.length - 1 ? null : path.take(i + 1).join('/')),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
               ),
             ),

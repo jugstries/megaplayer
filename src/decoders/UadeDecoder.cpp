@@ -20,6 +20,7 @@ extern volatile int uade_audible_voices;
 #include <cstdlib>
 #include <filesystem>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <vector>
 
@@ -106,6 +107,60 @@ UadeInput prepareInput(const SourceFile& file)
         input.name = file.path.string();
     }
     return input;
+}
+
+// Nei moduli ci sono sempre caratteri di controllo, a partire dagli zeri
+// delle intestazioni; nel testo solo spazi, a capo, il fine file del DOS e
+// gli escape dei file ANSI.
+bool looksLikeText(const std::vector<uint8_t>& data)
+{
+    const size_t checked = std::min<size_t>(data.size(), 4096);
+    for (size_t i = 0; i < checked; ++i) {
+        const uint8_t c = data[i];
+        if (c < 0x20 && c != '\t' && c != '\n' && c != '\r' && c != '\f' && c != 0x1A && c != 0x1B)
+            return false;
+    }
+    return true;
+}
+
+bool startsWith(const std::vector<uint8_t>& data, std::string_view prefix, size_t offset = 0)
+{
+    return data.size() >= offset + prefix.size()
+        && std::equal(prefix.begin(), prefix.end(), data.begin() + static_cast<std::ptrdiff_t>(offset),
+                      [](char a, uint8_t b) { return static_cast<uint8_t>(a) == b; });
+}
+
+// UADE riconosce molti formati anche solo dal nome, e allora prende per un
+// modulo qualunque file col prefisso giusto. Sui CD di moduli, nelle
+// cartelle dei programmi, "CP.BAT" (un batch del DOS) e "CP.EXE" hanno il
+// prefisso dei moduli Channel Player, l'icona del Workbench "HiP.info"
+// quello di Jochen Hippel. Quando il nome è l'unico indizio, non sono moduli
+// i file di testo e quelli che dall'intestazione sono altro.
+bool clearlyNotAModule(const std::vector<uint8_t>& data)
+{
+    static constexpr std::string_view kSignatures[] = {
+        std::string_view("\xE3\x10", 2), // icona del Workbench (DiskObject)
+        "MZ",                            // eseguibile del DOS o di Windows
+        "\x7F" "ELF",
+        "PWAD",
+        "IWAD",
+        "\x89PNG",
+        "\xFF\xD8\xFF", // JPEG
+        "GIF8",
+        "%PDF",
+        "PK\x03\x04",
+        "Rar!",
+    };
+    for (const std::string_view signature : kSignatures) {
+        if (startsWith(data, signature))
+            return true;
+    }
+    // Un'immagine IFF, o la configurazione di ProTracker ("PT2.3 Configuration File").
+    if (startsWith(data, "FORM") && startsWith(data, "ILBM", 8))
+        return true;
+    if (startsWith(data, "PT") && startsWith(data, " Configuration File", 5))
+        return true;
+    return looksLikeText(data);
 }
 
 class UadeDecoder final : public Decoder {
@@ -332,8 +387,15 @@ int UadeDecoderFactory::probe(const SourceFile& file)
         return 0;
     const UadeInput input = prepareInput(file);
     const std::vector<uint8_t>& data = input.data.empty() ? file.data : input.data;
-    const int ours = uade_is_our_file_from_buffer(input.name.c_str(), data.data(), data.size(), state);
-    return ours ? kProbeScore : 0;
+    // Come uade_is_our_file_from_buffer, ma senza i file presi per moduli
+    // solo dal nome che si vede che non lo sono.
+    if (uade_is_rmc(reinterpret_cast<const char*>(data.data()), data.size()))
+        return kProbeScore;
+    struct uade_detection_info detection = {};
+    uade_analyze_eagleplayer(&detection, data.data(), data.size(), input.name.c_str(), data.size(), state);
+    if (!detection.ep || (!detection.content && clearlyNotAModule(data)))
+        return 0;
+    return kProbeScore;
 }
 
 std::optional<TrackInfo> UadeDecoderFactory::describe(const SourceFile& file)

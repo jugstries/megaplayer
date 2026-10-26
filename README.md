@@ -433,6 +433,13 @@ solo la sua cartella dell'archivio, dove stanno anche i file che lo
 accompagnano, e tiene le ultime otto cartelle estratte. L'app usa tutto
 attraverso l'API C (`mp_library_*` in [src/capi/megaplayer.h](src/capi/megaplayer.h)).
 
+UADE riconosce molti formati anche solo dal nome, col prefisso dell'Amiga
+(`mod.`, `cp.`, `hip.`) o con l'estensione: così sui CD di moduli prendeva
+per brani anche i programmi e i loro file. Quando il nome è l'unico indizio,
+megaplayer scarta i file di testo, le icone del Workbench (`.info`), gli
+eseguibili del DOS e di Windows, i WAD, le immagini, gli archivi, i PDF e la
+configurazione di ProTracker.
+
 ## MegaSound
 
 Una sola manopola, da 0 a 100%, che aggiunge effetti a mano a mano che gira,

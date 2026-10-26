@@ -29,7 +29,7 @@ constexpr int kSchemaVersion = 2; // 2: playlist e coda
 // assegnata diversamente) si incrementa: la scansione successiva rilegge
 // tutto. Lo stesso succede quando cambiano i backend compilati, perché file
 // che prima non si riconoscevano ora magari si suonano.
-constexpr int kInspectorVersion = 1;
+constexpr int kInspectorVersion = 2; // 2: UADE non prende più testi, icone ed eseguibili per moduli
 // Oltre questo numero di sottobrani si indicizzano solo i primi: ognuno costa
 // un avvio per conoscerne la durata.
 constexpr int kMaxSubsongs = 256;

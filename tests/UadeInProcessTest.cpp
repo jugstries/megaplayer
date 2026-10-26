@@ -2,7 +2,10 @@
 // - riaprendo lo stesso brano molte volte l'emulatore riparte da zero e
 //   produce sempre lo stesso audio, senza far crescere la memoria;
 // - un secondo brano UADE aperto mentre il primo suona dà un errore pulito,
-//   e il primo continua a suonare.
+//   e il primo continua a suonare;
+// - un file di testo o un'icona del Workbench col prefisso di un formato
+//   ("CP.BAT", "HiP.info") non è un modulo, mentre altri dati binari con lo
+//   stesso nome sì.
 //
 // Uso: uade_inprocess_test BRANO
 
@@ -117,6 +120,26 @@ int main(int argc, char** argv)
 
     if (renderHash(factory, file) != expected) {
         std::fprintf(stderr, "dopo il rifiuto l'emulatore non riparte come prima\n");
+        ++failures;
+    }
+
+    // Il batch trovato su un CD di moduli: UADE lo prendeva per Channel Player.
+    const char batch[] = "@Echo Off\r\nCLS\r\nCD\\TOOLS\\PC\\CP17\r\nCP.EXE\r\nCD\\\r\n";
+    mp::SourceFile text{"CP.BAT", std::vector<uint8_t>(batch, batch + sizeof batch - 1), {}};
+    if (factory.probe(text) != 0) {
+        std::fprintf(stderr, "CP.BAT, un file di testo, riconosciuto come modulo\n");
+        ++failures;
+    }
+    std::vector<uint8_t> icon(2048, 0);
+    icon[0] = 0xE3;
+    icon[1] = 0x10;
+    if (factory.probe(mp::SourceFile{"HiP.info", icon, {}}) != 0) {
+        std::fprintf(stderr, "HiP.info, un'icona del Workbench, riconosciuta come modulo\n");
+        ++failures;
+    }
+    mp::SourceFile binary{"CP.BAT", std::vector<uint8_t>(1024, 0), {}};
+    if (factory.probe(binary) == 0) {
+        std::fprintf(stderr, "dati binari col prefisso CP non riconosciuti dal nome\n");
         ++failures;
     }
 

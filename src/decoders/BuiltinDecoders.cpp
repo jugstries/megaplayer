@@ -43,6 +43,12 @@
 #ifdef MP_WITH_FFMPEG
 #include "FfmpegDecoder.h"
 #endif
+#ifdef MP_WITH_MDX
+#include "MdxDecoder.h"
+#endif
+#ifdef MP_WITH_FMPLAYER
+#include "FmplayerDecoder.h"
+#endif
 #ifdef MP_WITH_GME
 #include "GmeDecoder.h"
 #endif
@@ -96,6 +102,12 @@ void registerBuiltinDecoders(DecoderRegistry& registry)
 #ifdef MP_WITH_FFMPEG
     registry.add(std::make_unique<FfmpegDecoderFactory>());
 #endif
+#ifdef MP_WITH_MDX
+    registry.add(std::make_unique<MdxDecoderFactory>());
+#endif
+#ifdef MP_WITH_FMPLAYER
+    registry.add(std::make_unique<FmplayerDecoderFactory>());
+#endif
 #ifdef MP_WITH_88EMU
     registry.add(std::make_unique<Emu88DecoderFactory>());
 #endif
@@ -127,11 +139,14 @@ void setUadeDataDirectory(const std::string& path)
 
 void addRolandRomDirectory(const std::string& path)
 {
+    // La stessa cartella serve anche alla ROM della batteria dello YM2608.
+#ifdef MP_WITH_FMPLAYER
+    fmplayer::addRomDirectory(path);
+#endif
 #ifdef MP_WITH_88EMU
     emu88::addRomDirectory(path);
-#else
-    (void)path;
 #endif
+    (void)path;
 }
 
 void setRolandDevice(const std::string& name)

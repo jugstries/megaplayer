@@ -1,0 +1,45 @@
+diff --git a/src/mdx.h b/src/mdx.h
+index 6a95a99..00d3ee0 100755
+--- a/src/mdx.h
++++ b/src/mdx.h
+@@ -126,6 +126,7 @@ typedef struct _MDX_DATA {
+   int            length;  /* data length */
+ 
+   char data_title[MDX_MAX_TITLE_LENGTH];
++  int  muted_tracks; /* megaplayer: tracks that don't play, one bit each */
+   char pdx_dir[MDX_MAX_PDX_FILENAME_LENGTH];
+   char pdx_name[MDX_MAX_PDX_FILENAME_LENGTH];
+   int  base_pointer;
+diff --git a/src/mdxmini.c b/src/mdxmini.c
+index e68892f..13386b2 100755
+--- a/src/mdxmini.c
++++ b/src/mdxmini.c
+@@ -460,6 +460,15 @@ _get_pdx(MDX_DATA* mdx, char* mdxpath)
+   mdx->pdx_enable = FLAG_FALSE;
+   if ( mdx->haspdx == FLAG_FALSE ) goto no_pdx_file;
+ 
++  /* megaplayer: pcmdir can be the PDX file itself, already found by the
++     caller (with whatever case it has on disk) */
++  {
++    size_t len = strlen( mdx->pdx_dir );
++    if ( len > 4 && strcasecmp( mdx->pdx_dir + len - 4, ".pdx" ) == 0
++         && (pdx=_open_pdx( mdx->pdx_dir )) != NULL )
++      goto get_pdx_file;
++  }
++
+    
+   /* mdx file path directory */
+   
+diff --git a/src/mdxmml_ym2151.c b/src/mdxmml_ym2151.c
+index f044755..d089498 100755
+--- a/src/mdxmml_ym2151.c
++++ b/src/mdxmml_ym2151.c
+@@ -721,7 +721,7 @@ note_on( int track, int note, songdata *data )
+   note -= MDX_MIN_NOTE;
+   mdx->track[track].note = note;
+ 
+-  if ( mdx->track[track].phase != MDX_PAN_N ) {
++  if ( mdx->track[track].phase != MDX_PAN_N && !(mdx->muted_tracks & (1 << track)) ) {
+     if ( track<8 ){
+       ym2151_note_on(track, mdx->track[track].note, data);
+     }

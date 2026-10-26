@@ -22,6 +22,8 @@ Flutter (per ora macOS) con due skin: moderna e retrò.
 | `gsf`     | viogsf (VBA-M e l'APU di Blargg, commit del 2018) | Game Boy Advance: GSF, con le sue librerie, anche multiboot |
 | `usf`     | lazyusf2 (Mupen64Plus, commit di marzo 2022) | Nintendo 64: USF, con le sue librerie, con l'RSP che esegue il microcodice audio del gioco |
 | `xa`      | (di megaplayer)       | l'audio in streaming dei CD della PlayStation: XA ADPCM, in RIFF/CDXA o in settori grezzi, un sottobrano per canale |
+| `mdx`     | mdxmini (commit di ottobre 2022) | Sharp X68000: MDX, sull'YM2151, con i campioni del PDX accanto al brano (anche PCM8) |
+| `fmplayer` | 98fmplayer (commit di luglio 2024) | NEC PC-98: PMD (M, M2, MZ) e FMP (OPI, OVI, OZI) sullo YM2608, con i campioni PPC, PVI e PZI accanto al brano. La batteria vuole la ROM dello YM2608 dell'utente |
 | `vgmstream` | vgmstream r2117     | l'audio in streaming dei giochi: centinaia di formati delle console (GENH, VAG, SVAG, ADS/SS2, NPSF, DSP, ADX, BRSTM, HCA, ...), anche i `.int` della PS2 senza intestazione. I codec che vgmstream ha dentro, più quelli che gli dà FFmpeg (ATRAC3 e ATRAC3plus, XMA, WMA, AAC, Opus): niente MP3, Vorbis e ATRAC9 |
 | `88emu`   | 88emu di gearmulator (commit del 10 ottobre 2026) | gli stessi MIDI sui moduli Roland: Sound Canvas (SC-55, SC-55mkII, SC-88, SC-88VL, SC-88 Pro, SC-8850, ...) e MT-32/CM-32L, emulati facendo girare il loro firmware. Servono le ROM dell'utente |
 | `fluidsynth` | FluidSynth 2.6.1, GeneralUser GS 2.0.3 | gli stessi MIDI su un SoundFont General MIDI e GS a campioni, per chi non ha le ROM: di serie GeneralUser GS, che viaggia con le app |
@@ -116,6 +118,18 @@ chiamate, e i brani dell'N64 sono uno stato salvato del gioco già avviato. I
 SNSF del Super Nintendo restano fuori: l'emulatore che li suona, Snes9x, ha una
 licenza non commerciale.
 
+Dei computer giapponesi suonano l'X68000 (MDX, con mdxmini) e il PC-98 (PMD e
+FMP, con 98fmplayer). Per il PC-98 la scelta è 98fmplayer e non PMDWin, più
+fedele: PMDWin usa fmgen, la cui licenza chiede che chi lo distribuisce lo
+faccia gratis, un vincolo che la GPL non ammette. 98fmplayer ha ricostruito i
+due driver e lo YM2608 da sé, con licenza BSD. La batteria dello YM2608 sta in
+una ROM di Yamaha, che non è nel repo: megaplayer cerca
+`ym2608_adpcm_rom.bin` (quella di MAME, 8 KB) nella cartella delle ROM scelta
+per i moduli Roland e nelle sue sottocartelle; senza, la batteria tace. I
+titoli in Shift-JIS diventano UTF-8 con una tabella cp932, con i caratteri
+speciali NEC ([scripts/make_sjis_table.py](scripts/make_sjis_table.py)). I
+brani in loop fanno due giri e sfumano in dieci secondi, come gli stream.
+
 Molti giochi della PS2 non suonano la musica con lo SPU ma la leggono dal
 disco già pronta, in stream: di questi non esistono PSF2, solo gli stream.
 I rip li conservano nel formato del gioco o in un GENH, un'intestazione
@@ -175,7 +189,7 @@ libzakalwe, bencode-tools, ancient, miniaudio, game-music-emu, libsidplayfp,
 libresidfp, libADLMIDI, AdPlug, libbinio, AtariAudio, vgmstream, FFmpeg e SQLite in `third_party/src` (di
 libsidplayfp, libresidfp, FFmpeg e SQLite gli archivi di rilascio, con la verifica
 dello SHA-256), gearmulator, Highly Experimental, Theoretical e Quixotic,
-psflib, vio2sf, viogsf e lazyusf2 a un commit fissato
+psflib, vio2sf, viogsf, lazyusf2, mdxmini e 98fmplayer a un commit fissato
 (di gearmulator i soli sottomoduli che servono a 88emu), FluidSynth, il
 SoundFont GeneralUser GS e OpenBIOS (dai mirror di Libreboot; entrambi con lo
 SHA-256), e applica le patch di `patches/`: due a UADE (l'emulatore nel
@@ -183,7 +197,8 @@ processo del player, vedi sotto, e le voci di Paula da zittire), una a
 libsidplayfp (il mute di una voce subito), due a gearmulator (MinGW), una
 per ciascuno dei nuclei di Neill Corlett (OpenBIOS, il mute dei canali, C68K
 fuori da x86), una seconda a Highly Experimental (la PS2) e una per vio2sf,
-viogsf e lazyusf2 (MinGW, ARM e i compilatori recenti). Tutto il resto lo fa CMake: compila
+viogsf e lazyusf2 (MinGW, ARM e i compilatori recenti) e una a mdxmini (le
+tracce zittite e il PDX già trovato). Tutto il resto lo fa CMake: compila
 UADE senza il suo script di configurazione (che funziona solo su UNIX, vedi
 [cmake/UadeInProcess.cmake](cmake/UadeInProcess.cmake)) e copia replayer e
 configurazione in `build/uade-data`. La CLI e i test li cercano lì; le app li
@@ -738,7 +753,8 @@ OpenBIOS MIT, i moduli IOP di ps2sdk Academic Free License 2.0 (dati che
 girano nell'IOP emulato, non codice del player), zlib con la sua licenza;
 vgmstream ha una licenza permissiva in stile ISC (con parti di altri autori
 sotto licenze simili); FFmpeg, nella configurazione senza parti GPL, è
-LGPL-2.1 o successiva; gearmulator
+LGPL-2.1 o successiva; mdxmini GPL-2.0 o successiva (con l'YM2151 di Jarek
+Burczynski, che in MAME è BSD-3-Clause); 98fmplayer BSD-2-Clause; gearmulator
 (88emu) GPL-3.0, con parti derivate da Nuked-SC55 e Nuked-MT32 sotto GPL-2.0
 o successiva; FluidSynth LGPL-2.1 o successiva; LAME LGPL-2.0 o successiva; il SoundFont GeneralUser GS
 (S. Christian Collins) ha la sua licenza, che ne permette l'uso nei

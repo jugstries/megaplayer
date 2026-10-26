@@ -25,6 +25,8 @@ option(MP_WITH_UADE "Backend UADE (formati Amiga)" ON)
 option(MP_WITH_GME "Backend game-music-emu (console a 8 e 16 bit)" ON)
 option(MP_WITH_SID "Backend libsidplayfp (Commodore 64)" ON)
 option(MP_WITH_ATARI "Backend AtariAudio (Atari ST: SNDH e YM)" ON)
+option(MP_WITH_MDX "Backend mdxmini (Sharp X68000: MDX)" ON)
+option(MP_WITH_FMPLAYER "Backend 98fmplayer (NEC PC-98: PMD e FMP)" ON)
 option(MP_WITH_PSF "Backend Highly Experimental (PlayStation: PSF con OpenBIOS; PlayStation 2: PSF2)" ON)
 option(MP_WITH_SSF "Backend Highly Theoretical (Saturn: SSF, Dreamcast: DSF)" ON)
 option(MP_WITH_QSF "Backend Highly Quixotic (QSound di Capcom: QSF)" ON)
@@ -86,6 +88,7 @@ add_library(megaplayer_core STATIC
     src/core/Platform.cpp
     src/core/Player.cpp
     src/core/Resampler.cpp
+    src/core/ShiftJis.cpp
     src/core/SourceFile.cpp
     src/core/TrackList.cpp
     src/core/WavWriter.cpp
@@ -221,6 +224,61 @@ if(MP_WITH_ATARI)
         target_compile_definitions(megaplayer_core PRIVATE MP_WITH_ATARI)
         target_link_libraries(megaplayer_core PUBLIC atariaudio)
         set(MP_ATARI_ENABLED ON)
+    endif()
+endif()
+
+set(MP_MDX_ENABLED OFF)
+if(MP_WITH_MDX)
+    if(NOT EXISTS "${MP_THIRD_PARTY}/src/mdxmini/src/mdxmini.h")
+        message(WARNING "mdxmini non scaricato (scripts/build-deps.sh): backend mdx disattivato")
+    else()
+        # La libreria senza il lettore SDL e senza il registro NLG; la patch
+        # aggiunge le tracce zittite e il PDX già trovato.
+        set(MP_MDXMINI_DIR "${MP_THIRD_PARTY}/src/mdxmini/src")
+        add_library(mdxmini STATIC
+            "${MP_MDXMINI_DIR}/mdxmini.c" "${MP_MDXMINI_DIR}/mdx2151.c" "${MP_MDXMINI_DIR}/mdxmml_ym2151.c"
+            "${MP_MDXMINI_DIR}/mdxfile.c" "${MP_MDXMINI_DIR}/pdxfile.c" "${MP_MDXMINI_DIR}/pcm8.c"
+            "${MP_MDXMINI_DIR}/ym2151.c")
+        target_include_directories(mdxmini SYSTEM PUBLIC "${MP_MDXMINI_DIR}")
+        if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
+            target_compile_options(mdxmini PRIVATE -w) # codice di terzi
+        endif()
+        if(UNIX)
+            target_link_libraries(mdxmini PUBLIC m)
+        endif()
+        target_sources(megaplayer_core PRIVATE src/decoders/MdxDecoder.cpp)
+        target_compile_definitions(megaplayer_core PRIVATE MP_WITH_MDX)
+        target_link_libraries(megaplayer_core PUBLIC mdxmini)
+        set(MP_MDX_ENABLED ON)
+    endif()
+endif()
+
+set(MP_FMPLAYER_ENABLED OFF)
+if(MP_WITH_FMPLAYER)
+    if(NOT EXISTS "${MP_THIRD_PARTY}/src/fmplayer/fmdriver/fmdriver.h")
+        message(WARNING "98fmplayer non scaricato (scripts/build-deps.sh): backend fmplayer disattivato")
+    else()
+        # I driver e lo YM2608, senza le interfacce grafiche; il ricampionatore
+        # dell'SSG in C, senza le versioni SSE2 e NEON.
+        set(MP_FMPLAYER_DIR "${MP_THIRD_PARTY}/src/fmplayer")
+        add_library(fmplayer STATIC
+            "${MP_FMPLAYER_DIR}/fmdriver/fmdriver_common.c" "${MP_FMPLAYER_DIR}/fmdriver/fmdriver_pmd.c"
+            "${MP_FMPLAYER_DIR}/fmdriver/fmdriver_fmp.c" "${MP_FMPLAYER_DIR}/fmdriver/ppz8.c"
+            "${MP_FMPLAYER_DIR}/libopna/opna.c" "${MP_FMPLAYER_DIR}/libopna/opnaadpcm.c"
+            "${MP_FMPLAYER_DIR}/libopna/opnadrum.c" "${MP_FMPLAYER_DIR}/libopna/opnafm.c"
+            "${MP_FMPLAYER_DIR}/libopna/opnassg.c" "${MP_FMPLAYER_DIR}/libopna/opnassg-sinc-c.c"
+            "${MP_FMPLAYER_DIR}/libopna/opnatimer.c")
+        target_include_directories(fmplayer SYSTEM PUBLIC "${MP_FMPLAYER_DIR}")
+        if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
+            target_compile_options(fmplayer PRIVATE -w) # codice di terzi
+        endif()
+        if(UNIX)
+            target_link_libraries(fmplayer PUBLIC m)
+        endif()
+        target_sources(megaplayer_core PRIVATE src/decoders/FmplayerDecoder.cpp src/decoders/FmplayerGlue.c)
+        target_compile_definitions(megaplayer_core PRIVATE MP_WITH_FMPLAYER)
+        target_link_libraries(megaplayer_core PUBLIC fmplayer)
+        set(MP_FMPLAYER_ENABLED ON)
     endif()
 endif()
 
@@ -923,6 +981,28 @@ if(Python3_FOUND)
     endif()
 endif()
 
+# I brani dei computer giapponesi generati da tests/make_test_japanese.py:
+# un MDX col titolo in Shift-JIS, una nota FM per 2,75 secondi; un PMD con
+# una nota SSG in loop, due giri e la dissolvenza.
+if(Python3_FOUND AND (MP_MDX_ENABLED OR MP_FMPLAYER_ENABLED))
+    set(MP_JAPANESE_TEST_DIR "${CMAKE_BINARY_DIR}/japanese-test")
+    add_test(NAME make_test_japanese
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/make_test_japanese.py" "${MP_JAPANESE_TEST_DIR}")
+    set_tests_properties(make_test_japanese PROPERTIES FIXTURES_SETUP test_japanese)
+    if(MP_MDX_ENABLED)
+        add_test(NAME cli_render_mdx
+            COMMAND megaplayer render -o "${CMAKE_BINARY_DIR}/test-mdx.wav" "${MP_JAPANESE_TEST_DIR}/test.mdx")
+        set_tests_properties(cli_render_mdx PROPERTIES FIXTURES_REQUIRED test_japanese
+            PASS_REGULAR_EXPRESSION "Backend: +mdx.*Formato: +MDX.*Titolo: +Prova テスト.*Durata: +0:02.*Scritti 0:02")
+    endif()
+    if(MP_FMPLAYER_ENABLED)
+        add_test(NAME cli_render_pmd
+            COMMAND megaplayer render -o "${CMAKE_BINARY_DIR}/test-pmd.wav" "${MP_JAPANESE_TEST_DIR}/test.m")
+        set_tests_properties(cli_render_pmd PROPERTIES FIXTURES_REQUIRED test_japanese
+            PASS_REGULAR_EXPRESSION "Backend: +fmplayer.*Formato: +PMD.*Durata: +0:14.*Scritti 0:14")
+    endif()
+endif()
+
 # Gli stream generati da tests/make_test_streams.py: un GENH in PS-ADPCM col
 # loop, uno in PCM mono e un .int senza intestazione, controllati campione
 # per campione dal test e suonati dalla CLI; un VAG e uno SVAG col loop, solo
@@ -1069,6 +1149,14 @@ endif()
 if(MP_2SF_ENABLED AND Python3_FOUND)
     list(APPEND MP_CHANNELS_TEST_ARGS "2sf=${MP_XSF_TEST_DIR}/test.2sf")
     list(APPEND MP_CHANNELS_FIXTURES test_xsf)
+endif()
+if(MP_MDX_ENABLED AND Python3_FOUND)
+    list(APPEND MP_CHANNELS_TEST_ARGS "mdx=${MP_JAPANESE_TEST_DIR}/test.mdx")
+    list(APPEND MP_CHANNELS_FIXTURES test_japanese)
+endif()
+if(MP_FMPLAYER_ENABLED AND Python3_FOUND)
+    list(APPEND MP_CHANNELS_TEST_ARGS "fmplayer=${MP_JAPANESE_TEST_DIR}/test.m")
+    list(APPEND MP_CHANNELS_FIXTURES test_japanese)
 endif()
 if(MP_ADLMIDI_ENABLED)
     list(APPEND MP_CHANNELS_TEST_ARGS "adlmidi=${CMAKE_BINARY_DIR}/test.mid")

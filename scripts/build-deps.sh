@@ -7,9 +7,9 @@
 # SoundFont GeneralUser GS, per i MIDI senza le ROM, AtariAudio per l'Atari ST,
 # Highly Experimental con psflib e OpenBIOS per la PlayStation, Highly
 # Theoretical per Saturn e Dreamcast, Highly Quixotic per il QSound di Capcom,
-# vio2sf per il DS, viogsf per il GBA, lazyusf2 per l'N64, vgmstream per
-# l'audio in streaming dei giochi e FFmpeg, che CMake compila col suo
-# configure, per M4A, Opus, AIFF e i codec degli stream)
+# vio2sf per il DS, viogsf per il GBA, lazyusf2 per l'N64, mdxmini per
+# l'X68000, 98fmplayer per il PC-98, vgmstream per l'audio in streaming dei giochi e FFmpeg, che CMake
+# compila col suo configure, per M4A, Opus, AIFF e i codec degli stream)
 # e applica a UADE le patch per farlo girare nel processo del player e per
 # zittirne le voci, a libsidplayfp quella per zittirle subito e a gearmulator
 # quelle per compilarlo con MinGW, a Highly Experimental quella per avviarlo
@@ -64,6 +64,11 @@ PSFLIB_COMMIT=3bea757c8b45c5e68da1b5a7b736ad960a06a124
 VIO2SF_COMMIT=1d68801f5fd370c3275affd51505353e2b366a7e
 VIOGSF_COMMIT=6c43a9926a6a85fbb736ea8f5f7f6c4f59ed3d64
 LAZYUSF2_COMMIT=421f00bcaa1988b8e1825e91780129f24fbd1aa0
+# mdxmini (BouKiCHi e Misty De Meo, da MDXplayer di Daisuke Nagano): l'MDX
+# dello Sharp X68000. Niente release: un commit preciso.
+MDXMINI_COMMIT=003531a471c1955f4ed4357d0e2a6cba809c34a0
+# 98fmplayer (Takamichi Horikawa): i driver PMD e FMP del PC-98 e lo YM2608.
+FMPLAYER_COMMIT=4fa914e4b2b994cb3ccf92d571a20a7cdf1fe36a
 # OpenBIOS di PCSX-Redux (MIT), la BIOS della PlayStation riscritta da zero
 # che Highly Experimental usa al posto di quella di Sony: compilata da
 # Libreboot nella release 20241206rev11, dal commit 6ec53480 di PCSX-Redux.
@@ -203,6 +208,8 @@ clone_commit psflib              https://gitlab.com/kode54/psflib.git           
 clone_commit vio2sf              https://gitlab.com/kode54/vio2sf.git              "$VIO2SF_COMMIT"
 clone_commit viogsf              https://gitlab.com/kode54/viogsf.git              "$VIOGSF_COMMIT"
 clone_commit lazyusf2            https://gitlab.com/kode54/lazyusf2.git            "$LAZYUSF2_COMMIT"
+clone_commit mdxmini             https://github.com/mistydemeo/mdxmini.git         "$MDXMINI_COMMIT"
+clone_commit fmplayer            https://github.com/takamichih/fmplayer.git        "$FMPLAYER_COMMIT"
 
 # gearmulator a un commit preciso, con i soli sottomoduli che il suo CMake
 # vuole per costruire 88lib: niente JUCE né le estensioni CLAP.
@@ -256,14 +263,16 @@ done
 # zittire, e compila fuori da x86 e con C68K. Highly Quixotic: una voce
 # zittita continua ad avanzare, in silenzio. vio2sf: BOOL ha la stessa misura
 # nella libreria e nel C++ che la usa, anche con MinGW. viogsf e lazyusf2:
-# compilano fuori da x86 e con i compilatori recenti.
+# compilano fuori da x86 e con i compilatori recenti. mdxmini: le tracce
+# zittite e il PDX già trovato da chi lo chiama.
 for NC_PATCH in "highly_experimental:$ROOT/patches/highly-experimental-openbios.patch" \
 	"highly_experimental:$ROOT/patches/highly-experimental-ps2.patch" \
 	"highly_theoretical:$ROOT/patches/highly-theoretical.patch" \
 	"highly_quixotic:$ROOT/patches/highly-quixotic.patch" \
 	"vio2sf:$ROOT/patches/vio2sf.patch" \
 	"viogsf:$ROOT/patches/viogsf.patch" \
-	"lazyusf2:$ROOT/patches/lazyusf2.patch"; do
+	"lazyusf2:$ROOT/patches/lazyusf2.patch" \
+	"mdxmini:$ROOT/patches/mdxmini.patch"; do
 	dir="$SRC/${NC_PATCH%%:*}" patch="${NC_PATCH#*:}"
 	if ! git -C "$dir" apply --reverse --check "$patch" 2>/dev/null; then
 		echo "==> applico $(basename "$patch")"

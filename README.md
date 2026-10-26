@@ -21,6 +21,7 @@ Flutter (per ora macOS) con due skin: moderna e retrò.
 | `gsf`     | viogsf (VBA-M e l'APU di Blargg, commit del 2018) | Game Boy Advance: GSF, con le sue librerie, anche multiboot |
 | `usf`     | lazyusf2 (Mupen64Plus, commit di marzo 2022) | Nintendo 64: USF, con le sue librerie, con l'RSP che esegue il microcodice audio del gioco |
 | `xa`      | (di megaplayer)       | l'audio in streaming dei CD della PlayStation: XA ADPCM, in RIFF/CDXA o in settori grezzi, un sottobrano per canale |
+| `vgmstream` | vgmstream r2117     | l'audio in streaming dei giochi: centinaia di formati delle console (GENH, VAG, SVAG, ADS/SS2, NPSF, DSP, ADX, BRSTM, HCA, ...), anche i `.int` della PS2 senza intestazione. Solo i codec che vgmstream ha dentro: niente MP3, Vorbis, ATRAC3/9, XMA e Opus |
 | `88emu`   | 88emu di gearmulator (commit del 10 ottobre 2026) | gli stessi MIDI sui moduli Roland: Sound Canvas (SC-55, SC-55mkII, SC-88, SC-88VL, SC-88 Pro, SC-8850, ...) e MT-32/CM-32L, emulati facendo girare il loro firmware. Servono le ROM dell'utente |
 | `fluidsynth` | FluidSynth 2.6.1, GeneralUser GS 2.0.3 | gli stessi MIDI su un SoundFont General MIDI e GS a campioni, per chi non ha le ROM: di serie GeneralUser GS, che viaggia con le app |
 | `adlmidi` | libADLMIDI 1.6.2.1    | MIDI (MID, RMI) e i suoi parenti dei giochi DOS: XMI, MUS di Doom, HMI/HMP, GMF, su quattro chip FM OPL3 emulati (Nuked OPL3) |
@@ -58,7 +59,9 @@ mezzo; i SID, che non dicono mai quanto durano, dopo tre minuti. Sempre con
 una dissolvenza. I SNDH dell'Atari ST finiscono alla durata del file, o a
 quella dell'archivio di durate di AtariAudio; se nessuno dei due la sa, dopo
 tre minuti con la dissolvenza, come i SID; così anche i PSF, che di solito
-la durata e la dissolvenza la scrivono nei tag. Per i SID non servono le ROM
+la durata e la dissolvenza la scrivono nei tag. Gli stream dei giochi con un
+loop (vgmstream) fanno due giri del ritornello e sfumano in dieci secondi,
+come nella CLI di vgmstream. Per i SID non servono le ROM
 del C64: libsidplayfp ha un kernal sostitutivo, che basta quasi sempre (le ROM
 originali sono protette da copyright).
 
@@ -112,6 +115,16 @@ chiamate, e i brani dell'N64 sono uno stato salvato del gioco già avviato. I
 SNSF del Super Nintendo restano fuori: l'emulatore che li suona, Snes9x, ha una
 licenza non commerciale.
 
+Molti giochi della PS2 non suonano la musica con lo SPU ma la leggono dal
+disco già pronta, in stream: di questi non esistono PSF2, solo gli stream.
+I rip li conservano nel formato del gioco o in un GENH, un'intestazione
+generica che i ripper mettono davanti ai dati grezzi (canali, frequenza,
+interleave, loop, codec); li suona vgmstream. I `.int` invece sono PCM a 16
+bit senza nessuna intestazione: vgmstream li riconosce solo dall'estensione e
+li suona con la convenzione dei giochi PS2 che li usano (stereo, interleave di
+0x200 byte, 48 kHz), scartando quelli che sembrano PS-ADPCM. Un `.int` con
+un'altra frequenza suonerebbe stonato.
+
 Con le ROM dei moduli Roland il MIDI suona come lo sentivano i compositori,
 su un Sound Canvas o un MT-32 (vedi sotto, «MIDI sui moduli Roland»). Senza,
 suona sul SoundFont GeneralUser GS con FluidSynth, o, se l'utente lo
@@ -158,7 +171,7 @@ ctest --test-dir build
 
 `scripts/build-deps.sh` scarica a versioni fissate i sorgenti di UADE,
 libzakalwe, bencode-tools, ancient, miniaudio, game-music-emu, libsidplayfp,
-libresidfp, libADLMIDI, AdPlug, libbinio, AtariAudio e SQLite in `third_party/src` (di
+libresidfp, libADLMIDI, AdPlug, libbinio, AtariAudio, vgmstream e SQLite in `third_party/src` (di
 libsidplayfp, libresidfp e SQLite gli archivi di rilascio, con la verifica
 dello SHA-256), gearmulator, Highly Experimental, Theoretical e Quixotic,
 psflib, vio2sf, viogsf e lazyusf2 a un commit fissato
@@ -683,7 +696,9 @@ superctr e Valley Bell, che in MAME è BSD-3-Clause), vio2sf, viogsf e
 lazyusf2 GPL-2.0 o successiva (con l'APU di Blargg, LGPL-2.1 o successiva,
 l'RSP di Iconoclast, CC0, e il CIC di X-Scale, BSD-2-Clause), psflib e
 OpenBIOS MIT, i moduli IOP di ps2sdk Academic Free License 2.0 (dati che
-girano nell'IOP emulato, non codice del player), zlib con la sua licenza; gearmulator
+girano nell'IOP emulato, non codice del player), zlib con la sua licenza;
+vgmstream ha una licenza permissiva in stile ISC (con parti di altri autori
+sotto licenze simili); gearmulator
 (88emu) GPL-3.0, con parti derivate da Nuked-SC55 e Nuked-MT32 sotto GPL-2.0
 o successiva; FluidSynth LGPL-2.1 o successiva; LAME LGPL-2.0 o successiva; il SoundFont GeneralUser GS
 (S. Christian Collins) ha la sua licenza, che ne permette l'uso nei

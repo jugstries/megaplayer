@@ -37,6 +37,9 @@
 #ifdef MP_WITH_USF
 #include "UsfDecoder.h"
 #endif
+#ifdef MP_WITH_VGMSTREAM
+#include "VgmstreamDecoder.h"
+#endif
 #ifdef MP_WITH_GME
 #include "GmeDecoder.h"
 #endif
@@ -83,6 +86,9 @@ void registerBuiltinDecoders(DecoderRegistry& registry)
 #endif
 #ifdef MP_WITH_USF
     registry.add(std::make_unique<UsfDecoderFactory>());
+#endif
+#ifdef MP_WITH_VGMSTREAM
+    registry.add(std::make_unique<VgmstreamDecoderFactory>());
 #endif
 #ifdef MP_WITH_88EMU
     registry.add(std::make_unique<Emu88DecoderFactory>());

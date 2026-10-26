@@ -7,7 +7,8 @@
 # SoundFont GeneralUser GS, per i MIDI senza le ROM, AtariAudio per l'Atari ST,
 # Highly Experimental con psflib e OpenBIOS per la PlayStation, Highly
 # Theoretical per Saturn e Dreamcast, Highly Quixotic per il QSound di Capcom,
-# vio2sf per il DS, viogsf per il GBA e lazyusf2 per l'N64)
+# vio2sf per il DS, viogsf per il GBA, lazyusf2 per l'N64 e vgmstream per
+# l'audio in streaming dei giochi)
 # e applica a UADE le patch per farlo girare nel processo del player e per
 # zittirne le voci, a libsidplayfp quella per zittirle subito e a gearmulator
 # quelle per compilarlo con MinGW, a Highly Experimental quella per avviarlo
@@ -43,6 +44,8 @@ LIBSIDPLAYFP_SHA256=12b79190593bf480b2d11481b5c2de62bac07f344437a66cd8d887329875
 GEARMULATOR_COMMIT=a8a9ae99a8f7fc05152fa641a5ec1fed0fd88164
 FLUIDSYNTH_REF=v2.6.1
 ATARIAUDIO_REF=1.26
+# vgmstream: l'audio in streaming dei giochi (GENH, ADS, VAG, DSP, ADX...).
+VGMSTREAM_REF=r2117
 # GeneralUser GS 2.0.3 (S. Christian Collins), il SoundFont General MIDI e GS
 # che viaggia con le app: non ha release, si prende da un commit preciso.
 GENERALUSER_COMMIT=684543d5e5efaef08d02be50dcda8d552478fa60
@@ -128,6 +131,7 @@ if [[ ! -f "$SRC/fluidsynth/gcem/CMakeLists.txt" ]]; then
 fi
 clone adplug       https://github.com/adplug/adplug.git               "$ADPLUG_REF"
 clone atariaudio   https://github.com/arnaud-carre/AtariAudio.git     "$ATARIAUDIO_REF"
+clone vgmstream    https://github.com/vgmstream/vgmstream.git         "$VGMSTREAM_REF"
 fetch libresidfp   "https://github.com/libsidplayfp/libresidfp/releases/download/v$LIBRESIDFP_VERSION/libresidfp-$LIBRESIDFP_VERSION.tar.gz" "$LIBRESIDFP_SHA256"
 fetch libsidplayfp "https://github.com/libsidplayfp/libsidplayfp/releases/download/v$LIBSIDPLAYFP_VERSION/libsidplayfp-$LIBSIDPLAYFP_VERSION.tar.gz" "$LIBSIDPLAYFP_SHA256"
 fetch sqlite       "https://sqlite.org/$SQLITE_YEAR/sqlite-autoconf-$SQLITE_VERSION.tar.gz" "$SQLITE_SHA256"

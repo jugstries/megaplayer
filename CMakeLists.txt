@@ -31,6 +31,7 @@ option(MP_WITH_QSF "Backend Highly Quixotic (QSound di Capcom: QSF)" ON)
 option(MP_WITH_2SF "Backend vio2sf (Nintendo DS: 2SF)" ON)
 option(MP_WITH_GSF "Backend viogsf (Game Boy Advance: GSF)" ON)
 option(MP_WITH_USF "Backend lazyusf2 (Nintendo 64: USF)" ON)
+option(MP_WITH_VGMSTREAM "Backend vgmstream (audio in streaming dei giochi: GENH, ADS, VAG, DSP, ADX...)" ON)
 option(MP_WITH_ADLMIDI "Backend libADLMIDI (MIDI su chip FM OPL3)" ON)
 option(MP_WITH_88EMU "Backend 88emu (MIDI su Roland Sound Canvas e MT-32 emulati, con le ROM dell'utente)" ON)
 option(MP_WITH_FLUIDSYNTH "Backend FluidSynth (MIDI su un SoundFont, per chi non ha le ROM)" ON)
@@ -401,6 +402,44 @@ if(MP_WITH_USF AND MP_XSF_ENABLED)
         target_sources(megaplayer_core PRIVATE src/decoders/UsfDecoder.cpp)
         target_compile_definitions(megaplayer_core PRIVATE MP_WITH_USF)
         set(MP_USF_ENABLED ON)
+    endif()
+endif()
+
+set(MP_VGMSTREAM_ENABLED OFF)
+if(MP_WITH_VGMSTREAM)
+    set(MP_VGMSTREAM_DIR "${MP_THIRD_PARTY}/src/vgmstream")
+    if(NOT EXISTS "${MP_VGMSTREAM_DIR}/src/libvgmstream.h")
+        message(WARNING "vgmstream non scaricato (scripts/build-deps.sh): backend vgmstream disattivato")
+    else()
+        # Solo i codec che vgmstream ha dentro (PS-ADPCM, DSP, IMA, ADX,
+        # HCA, PCM, G.722.1...): niente mpg123, Vorbis, FFmpeg, ATRAC9, CELT
+        # e Speex, che sarebbero altre dipendenze da portare su ogni
+        # piattaforma. Il suo CMake le scaricherebbe da solo: si compilano i
+        # sorgenti.
+        set(MP_VGMSTREAM_SRC "${MP_VGMSTREAM_DIR}/src")
+        file(GLOB MP_VGMSTREAM_SOURCES
+            "${MP_VGMSTREAM_SRC}/*.c"
+            "${MP_VGMSTREAM_SRC}/base/*.c"
+            "${MP_VGMSTREAM_SRC}/coding/*.c"
+            "${MP_VGMSTREAM_SRC}/coding/libs/*.c"
+            "${MP_VGMSTREAM_SRC}/layout/*.c"
+            "${MP_VGMSTREAM_SRC}/meta/*.c"
+            "${MP_VGMSTREAM_SRC}/util/*.c")
+        add_library(vgmstream STATIC ${MP_VGMSTREAM_SOURCES})
+        target_include_directories(vgmstream SYSTEM PUBLIC "${MP_VGMSTREAM_SRC}")
+        target_include_directories(vgmstream PRIVATE "${MP_VGMSTREAM_DIR}/ext_includes" "${MP_VGMSTREAM_SRC}/base"
+            "${MP_VGMSTREAM_SRC}/coding" "${MP_VGMSTREAM_SRC}/layout" "${MP_VGMSTREAM_SRC}/meta" "${MP_VGMSTREAM_SRC}/util")
+        target_compile_definitions(vgmstream PRIVATE VGM_USE_G7221)
+        if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
+            target_compile_options(vgmstream PRIVATE -w) # codice di terzi
+        endif()
+        if(UNIX)
+            target_link_libraries(vgmstream PUBLIC m)
+        endif()
+        target_sources(megaplayer_core PRIVATE src/decoders/VgmstreamDecoder.cpp)
+        target_compile_definitions(megaplayer_core PRIVATE MP_WITH_VGMSTREAM)
+        target_link_libraries(megaplayer_core PUBLIC vgmstream)
+        set(MP_VGMSTREAM_ENABLED ON)
     endif()
 endif()
 
@@ -867,6 +906,43 @@ if(Python3_FOUND)
         set_tests_properties(cli_render_minipsf2 PROPERTIES FIXTURES_REQUIRED test_psx
             PASS_REGULAR_EXPRESSION "Formato: +MiniPSF2.*Titolo: +Onda larga.*Scritti 0:06")
     endif()
+endif()
+
+# Gli stream generati da tests/make_test_streams.py: un GENH in PS-ADPCM col
+# loop, uno in PCM mono e un .int senza intestazione, controllati campione
+# per campione dal test e suonati dalla CLI; un VAG e uno SVAG col loop, solo
+# dalla CLI (la durata dice che il loop c'è: due giri e la dissolvenza).
+if(Python3_FOUND AND MP_VGMSTREAM_ENABLED)
+    set(MP_STREAMS_TEST_DIR "${CMAKE_BINARY_DIR}/streams-test")
+    add_test(NAME make_test_streams
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/make_test_streams.py" "${MP_STREAMS_TEST_DIR}")
+    set_tests_properties(make_test_streams PROPERTIES FIXTURES_SETUP test_streams)
+    add_executable(vgmstream_decoder_test tests/VgmstreamDecoderTest.cpp)
+    target_link_libraries(vgmstream_decoder_test PRIVATE megaplayer_core)
+    if(EMSCRIPTEN)
+        target_link_options(vgmstream_decoder_test PRIVATE ${MP_NODE_LINK_OPTIONS})
+    endif()
+    add_test(NAME vgmstream_decoder COMMAND vgmstream_decoder_test "${MP_STREAMS_TEST_DIR}")
+    set_tests_properties(vgmstream_decoder PROPERTIES FIXTURES_REQUIRED test_streams)
+    add_test(NAME cli_render_genh
+        COMMAND megaplayer render -o "${CMAKE_BINARY_DIR}/test-genh.wav" "${MP_STREAMS_TEST_DIR}/test.genh")
+    set_tests_properties(cli_render_genh PROPERTIES FIXTURES_REQUIRED test_streams
+        PASS_REGULAR_EXPRESSION "Backend: +vgmstream.*Formato: +GENH.*Durata: +0:15.*Scritti 0:15")
+    add_test(NAME cli_render_int
+        COMMAND megaplayer render -o "${CMAKE_BINARY_DIR}/test-int.wav" "${MP_STREAMS_TEST_DIR}/test.int")
+    set_tests_properties(cli_render_int PROPERTIES FIXTURES_REQUIRED test_streams
+        PASS_REGULAR_EXPRESSION "Backend: +vgmstream.*Formato: +PS2 \\.int.*Durata: +0:02.*Scritti 0:02")
+    foreach(entry "vag:Sony VAG:0:13" "svag:Konami SVAG:0:18")
+        string(REPLACE ":" ";" parts "${entry}")
+        list(GET parts 0 extension)
+        list(GET parts 1 format)
+        list(GET parts 2 minutes)
+        list(GET parts 3 seconds)
+        add_test(NAME cli_render_${extension}
+            COMMAND megaplayer render -o "${CMAKE_BINARY_DIR}/test-${extension}.wav" "${MP_STREAMS_TEST_DIR}/test.${extension}")
+        set_tests_properties(cli_render_${extension} PROPERTIES FIXTURES_REQUIRED test_streams
+            PASS_REGULAR_EXPRESSION "Backend: +vgmstream.*Formato: +${format}.*Durata: +${minutes}:${seconds}.*Scritti ${minutes}:${seconds}")
+    endforeach()
 endif()
 
 # I file di Saturn, Dreamcast, QSound, GBA e DS generati da

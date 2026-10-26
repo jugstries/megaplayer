@@ -904,9 +904,13 @@ M3uImport Library::importM3u(const fs::path& file)
             ++result.missing;
             continue;
         }
-        // Come la libreria scrive i suoi riferimenti, per ritrovarci il brano.
+        // Come la libreria scrive i suoi riferimenti, per ritrovarci il brano:
+        // dentro gli archivi sempre con "/", anche su Windows.
         if (const fs::path canonical = fs::weakly_canonical(path, error); !error)
             path = canonical;
+#ifdef _WIN32
+        std::replace(inner.begin(), inner.end(), '\\', '/');
+#endif
         PlaylistEntry entry;
         entry.ref = inner.empty() ? path.string() : path.string() + "/" + inner;
         entry.name = inner.empty() ? path.string() : path.string() + " > " + inner;

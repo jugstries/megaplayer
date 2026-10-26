@@ -7,8 +7,9 @@
 # SoundFont GeneralUser GS, per i MIDI senza le ROM, AtariAudio per l'Atari ST,
 # Highly Experimental con psflib e OpenBIOS per la PlayStation, Highly
 # Theoretical per Saturn e Dreamcast, Highly Quixotic per il QSound di Capcom,
-# vio2sf per il DS, viogsf per il GBA, lazyusf2 per l'N64 e vgmstream per
-# l'audio in streaming dei giochi)
+# vio2sf per il DS, viogsf per il GBA, lazyusf2 per l'N64, vgmstream per
+# l'audio in streaming dei giochi e FFmpeg, che CMake compila col suo
+# configure, per M4A, Opus, AIFF e i codec degli stream)
 # e applica a UADE le patch per farlo girare nel processo del player e per
 # zittirne le voci, a libsidplayfp quella per zittirle subito e a gearmulator
 # quelle per compilarlo con MinGW, a Highly Experimental quella per avviarlo
@@ -68,6 +69,9 @@ LAZYUSF2_COMMIT=421f00bcaa1988b8e1825e91780129f24fbd1aa0
 # Libreboot nella release 20241206rev11, dal commit 6ec53480 di PCSX-Redux.
 OPENBIOS_SHA256=57253fe00a1b2148e61da9955d0f327e21400ae84324e27c09a15c26252710ca
 OPENBIOS_LICENSE_SHA256=33f0e77cc0a9552d63d2d73ca6979dd03e3cd00cd1f6f30808cc92837d6c20aa
+# FFmpeg 9.0.2, l'archivio della release (i file coincidono con il tag n9.0.2).
+FFMPEG_VERSION=9.0.2
+FFMPEG_SHA256=84960df915059e8754fef2cd7c9afeb614062b1b5458ec471eecee619ee04e98
 # SQLite 3.53.4: l'amalgamation (un solo sqlite3.c) dall'archivio autoconf.
 SQLITE_VERSION=3530400
 SQLITE_YEAR=2026
@@ -135,6 +139,7 @@ clone vgmstream    https://github.com/vgmstream/vgmstream.git         "$VGMSTREA
 fetch libresidfp   "https://github.com/libsidplayfp/libresidfp/releases/download/v$LIBRESIDFP_VERSION/libresidfp-$LIBRESIDFP_VERSION.tar.gz" "$LIBRESIDFP_SHA256"
 fetch libsidplayfp "https://github.com/libsidplayfp/libsidplayfp/releases/download/v$LIBSIDPLAYFP_VERSION/libsidplayfp-$LIBSIDPLAYFP_VERSION.tar.gz" "$LIBSIDPLAYFP_SHA256"
 fetch sqlite       "https://sqlite.org/$SQLITE_YEAR/sqlite-autoconf-$SQLITE_VERSION.tar.gz" "$SQLITE_SHA256"
+fetch ffmpeg       "https://ffmpeg.org/releases/ffmpeg-$FFMPEG_VERSION.tar.gz" "$FFMPEG_SHA256"
 
 # download <file> <sha256> <url>...: scarica un file singolo, una volta sola,
 # dal primo indirizzo che risponde.

@@ -32,6 +32,7 @@ option(MP_WITH_2SF "Backend vio2sf (Nintendo DS: 2SF)" ON)
 option(MP_WITH_GSF "Backend viogsf (Game Boy Advance: GSF)" ON)
 option(MP_WITH_USF "Backend lazyusf2 (Nintendo 64: USF)" ON)
 option(MP_WITH_VGMSTREAM "Backend vgmstream (audio in streaming dei giochi: GENH, ADS, VAG, DSP, ADX...)" ON)
+option(MP_WITH_FFMPEG "Backend FFmpeg (M4A/AAC, ALAC, Opus, AIFF, WMA, APE, WavPack...) e i codec di vgmstream" ON)
 option(MP_WITH_ADLMIDI "Backend libADLMIDI (MIDI su chip FM OPL3)" ON)
 option(MP_WITH_88EMU "Backend 88emu (MIDI su Roland Sound Canvas e MT-32 emulati, con le ROM dell'utente)" ON)
 option(MP_WITH_FLUIDSYNTH "Backend FluidSynth (MIDI su un SoundFont, per chi non ha le ROM)" ON)
@@ -405,17 +406,27 @@ if(MP_WITH_USF AND MP_XSF_ENABLED)
     endif()
 endif()
 
+set(MP_FFMPEG_ENABLED OFF)
+if(MP_WITH_FFMPEG)
+    include(cmake/FFmpeg.cmake)
+    if(MP_FFMPEG_ENABLED)
+        target_sources(megaplayer_core PRIVATE src/decoders/FfmpegDecoder.cpp)
+        target_compile_definitions(megaplayer_core PRIVATE MP_WITH_FFMPEG)
+        target_link_libraries(megaplayer_core PUBLIC ffmpeg)
+    endif()
+endif()
+
 set(MP_VGMSTREAM_ENABLED OFF)
 if(MP_WITH_VGMSTREAM)
     set(MP_VGMSTREAM_DIR "${MP_THIRD_PARTY}/src/vgmstream")
     if(NOT EXISTS "${MP_VGMSTREAM_DIR}/src/libvgmstream.h")
         message(WARNING "vgmstream non scaricato (scripts/build-deps.sh): backend vgmstream disattivato")
     else()
-        # Solo i codec che vgmstream ha dentro (PS-ADPCM, DSP, IMA, ADX,
-        # HCA, PCM, G.722.1...): niente mpg123, Vorbis, FFmpeg, ATRAC9, CELT
-        # e Speex, che sarebbero altre dipendenze da portare su ogni
-        # piattaforma. Il suo CMake le scaricherebbe da solo: si compilano i
-        # sorgenti.
+        # I codec che vgmstream ha dentro (PS-ADPCM, DSP, IMA, ADX, HCA, PCM,
+        # G.722.1...) e, se c'è, il nostro FFmpeg (ATRAC3 e ATRAC3plus, XMA,
+        # WMA, AAC, Opus); niente mpg123, Vorbis, ATRAC9, CELT e Speex, che
+        # sarebbero altre dipendenze da portare su ogni piattaforma. Il suo
+        # CMake le scaricherebbe da solo: si compilano i sorgenti.
         set(MP_VGMSTREAM_SRC "${MP_VGMSTREAM_DIR}/src")
         file(GLOB MP_VGMSTREAM_SOURCES
             "${MP_VGMSTREAM_SRC}/*.c"
@@ -430,6 +441,10 @@ if(MP_WITH_VGMSTREAM)
         target_include_directories(vgmstream PRIVATE "${MP_VGMSTREAM_DIR}/ext_includes" "${MP_VGMSTREAM_SRC}/base"
             "${MP_VGMSTREAM_SRC}/coding" "${MP_VGMSTREAM_SRC}/layout" "${MP_VGMSTREAM_SRC}/meta" "${MP_VGMSTREAM_SRC}/util")
         target_compile_definitions(vgmstream PRIVATE VGM_USE_G7221)
+        if(MP_FFMPEG_ENABLED)
+            target_compile_definitions(vgmstream PRIVATE VGM_USE_FFMPEG)
+            target_link_libraries(vgmstream PUBLIC ffmpeg)
+        endif()
         if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
             target_compile_options(vgmstream PRIVATE -w) # codice di terzi
         endif()
@@ -924,6 +939,15 @@ if(Python3_FOUND AND MP_VGMSTREAM_ENABLED)
     endif()
     add_test(NAME vgmstream_decoder COMMAND vgmstream_decoder_test "${MP_STREAMS_TEST_DIR}")
     set_tests_properties(vgmstream_decoder PROPERTIES FIXTURES_REQUIRED test_streams)
+    if(MP_FFMPEG_ENABLED)
+        # Con FFmpeg dentro, vgmstream decodifica anche l'Opus dei giochi:
+        # qui un Ogg Opus qualunque, chiesto a lui invece che al backend ffmpeg.
+        add_test(NAME cli_vgmstream_ffmpeg
+            COMMAND megaplayer render -b vgmstream -o "${CMAKE_BINARY_DIR}/test-vgmstream-opus.wav"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/tono.opus")
+        set_tests_properties(cli_vgmstream_ffmpeg PROPERTIES
+            PASS_REGULAR_EXPRESSION "Backend: +vgmstream.*Formato: +Ogg Opus header.*Scritti 0:01")
+    endif()
     add_test(NAME cli_render_genh
         COMMAND megaplayer render -o "${CMAKE_BINARY_DIR}/test-genh.wav" "${MP_STREAMS_TEST_DIR}/test.genh")
     set_tests_properties(cli_render_genh PROPERTIES FIXTURES_REQUIRED test_streams

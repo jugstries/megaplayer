@@ -10,6 +10,7 @@ Flutter (per ora macOS) con due skin: moderna e retrò.
 | Backend   | Libreria              | Cosa suona                                                     |
 |-----------|-----------------------|----------------------------------------------------------------|
 | `miniaudio` | miniaudio, stb_vorbis | file audio: MP3 (e MP1/MP2), FLAC, WAV, Ogg Vorbis, con titolo e autore dai tag |
+| `ffmpeg`  | FFmpeg 9.0.2 (solo i decoder audio) | gli altri file audio: M4A e MP4 (AAC, ALAC), Ogg Opus, AIFF e AIFF-C, Matroska e WebM, WMA, Monkey's Audio, WavPack, TTA, Musepack, TAK, CAF e AU, con titolo e autore dai tag e il seek esatto |
 | `sid`     | libsidplayfp 3.1.1, libresidfp 1.2.3 | Commodore 64: PSID e RSID, con l'emulazione reSIDfp del chip SID (6581 e 8580) |
 | `gme`     | game-music-emu 0.6.5  | console: NES (NSF, NSFE), SNES (SPC), Game Boy (GBS), Master System e Mega Drive (VGM, VGZ, GYM), PC Engine (HES), MSX (KSS), ZX Spectrum (AY), Atari (SAP) |
 | `atariaudio` | AtariAudio 1.26 | Atari ST: SNDH, con il replayer originale su un 68000 emulato (YM2149, timer, DAC dell'STE, blitter), e YM (YM2–YM6, Digimix, YM Tracker), anche compressi con ICE! o LHA |
@@ -21,7 +22,7 @@ Flutter (per ora macOS) con due skin: moderna e retrò.
 | `gsf`     | viogsf (VBA-M e l'APU di Blargg, commit del 2018) | Game Boy Advance: GSF, con le sue librerie, anche multiboot |
 | `usf`     | lazyusf2 (Mupen64Plus, commit di marzo 2022) | Nintendo 64: USF, con le sue librerie, con l'RSP che esegue il microcodice audio del gioco |
 | `xa`      | (di megaplayer)       | l'audio in streaming dei CD della PlayStation: XA ADPCM, in RIFF/CDXA o in settori grezzi, un sottobrano per canale |
-| `vgmstream` | vgmstream r2117     | l'audio in streaming dei giochi: centinaia di formati delle console (GENH, VAG, SVAG, ADS/SS2, NPSF, DSP, ADX, BRSTM, HCA, ...), anche i `.int` della PS2 senza intestazione. Solo i codec che vgmstream ha dentro: niente MP3, Vorbis, ATRAC3/9, XMA e Opus |
+| `vgmstream` | vgmstream r2117     | l'audio in streaming dei giochi: centinaia di formati delle console (GENH, VAG, SVAG, ADS/SS2, NPSF, DSP, ADX, BRSTM, HCA, ...), anche i `.int` della PS2 senza intestazione. I codec che vgmstream ha dentro, più quelli che gli dà FFmpeg (ATRAC3 e ATRAC3plus, XMA, WMA, AAC, Opus): niente MP3, Vorbis e ATRAC9 |
 | `88emu`   | 88emu di gearmulator (commit del 10 ottobre 2026) | gli stessi MIDI sui moduli Roland: Sound Canvas (SC-55, SC-55mkII, SC-88, SC-88VL, SC-88 Pro, SC-8850, ...) e MT-32/CM-32L, emulati facendo girare il loro firmware. Servono le ROM dell'utente |
 | `fluidsynth` | FluidSynth 2.6.1, GeneralUser GS 2.0.3 | gli stessi MIDI su un SoundFont General MIDI e GS a campioni, per chi non ha le ROM: di serie GeneralUser GS, che viaggia con le app |
 | `adlmidi` | libADLMIDI 1.6.2.1    | MIDI (MID, RMI) e i suoi parenti dei giochi DOS: XMI, MUS di Doom, HMI/HMP, GMF, su quattro chip FM OPL3 emulati (Nuked OPL3) |
@@ -171,8 +172,8 @@ ctest --test-dir build
 
 `scripts/build-deps.sh` scarica a versioni fissate i sorgenti di UADE,
 libzakalwe, bencode-tools, ancient, miniaudio, game-music-emu, libsidplayfp,
-libresidfp, libADLMIDI, AdPlug, libbinio, AtariAudio, vgmstream e SQLite in `third_party/src` (di
-libsidplayfp, libresidfp e SQLite gli archivi di rilascio, con la verifica
+libresidfp, libADLMIDI, AdPlug, libbinio, AtariAudio, vgmstream, FFmpeg e SQLite in `third_party/src` (di
+libsidplayfp, libresidfp, FFmpeg e SQLite gli archivi di rilascio, con la verifica
 dello SHA-256), gearmulator, Highly Experimental, Theoretical e Quixotic,
 psflib, vio2sf, viogsf e lazyusf2 a un commit fissato
 (di gearmulator i soli sottomoduli che servono a 88emu), FluidSynth, il
@@ -186,7 +187,13 @@ viogsf e lazyusf2 (MinGW, ARM e i compilatori recenti). Tutto il resto lo fa CMa
 UADE senza il suo script di configurazione (che funziona solo su UNIX, vedi
 [cmake/UadeInProcess.cmake](cmake/UadeInProcess.cmake)) e copia replayer e
 configurazione in `build/uade-data`. La CLI e i test li cercano lì; le app li
-indicano a runtime con `mp_set_uade_data_dir()`.
+indicano a runtime con `mp_set_uade_data_dir()`. FFmpeg invece lo compila il
+suo `configure`, che CMake lancia dentro la build con lo stesso compilatore
+([cmake/FFmpeg.cmake](cmake/FFmpeg.cmake)): solo i decoder audio e i
+contenitori che servono, senza programmi, rete, filtri, video, thread né
+assembly x86, e senza le parti GPL o non libere. Ci vogliono `sh` e `make`
+(su Windows quelli di MSYS2); ci mette mezzo minuto, un paio sotto MinGW ed
+Emscripten.
 
 La CI di GitHub Actions ([.github/workflows/build.yml](.github/workflows/build.yml))
 compila e prova tutto su Linux, Windows e WebAssembly (con Node); macOS si
@@ -220,8 +227,9 @@ worker (pthread di Emscripten); le pthread vogliono `SharedArrayBuffer`, cioè
 una pagina isolata cross-origin: `scripts/serve-web.py` manda le intestazioni
 COOP/COEP, e un hosting vero dovrà fare lo stesso.
 
-Per ora nella build web suonano UADE e i file audio di miniaudio: libopenmpt e
-libarchive vanno ancora compilate per WebAssembly. L'audio coincide con quello
+Per ora nella build web suonano UADE, i file audio di miniaudio e FFmpeg e gli
+altri backend compilati da CMake: libopenmpt e libarchive vanno ancora
+compilate per WebAssembly. L'audio coincide con quello
 nativo salvo scarti di 1-2 unità su 65536 nel 5% dei campioni: su Apple Silicon
 il compilatore fonde moltiplicazioni e somme (FMA), WebAssembly no.
 
@@ -729,7 +737,8 @@ l'RSP di Iconoclast, CC0, e il CIC di X-Scale, BSD-2-Clause), psflib e
 OpenBIOS MIT, i moduli IOP di ps2sdk Academic Free License 2.0 (dati che
 girano nell'IOP emulato, non codice del player), zlib con la sua licenza;
 vgmstream ha una licenza permissiva in stile ISC (con parti di altri autori
-sotto licenze simili); gearmulator
+sotto licenze simili); FFmpeg, nella configurazione senza parti GPL, è
+LGPL-2.1 o successiva; gearmulator
 (88emu) GPL-3.0, con parti derivate da Nuked-SC55 e Nuked-MT32 sotto GPL-2.0
 o successiva; FluidSynth LGPL-2.1 o successiva; LAME LGPL-2.0 o successiva; il SoundFont GeneralUser GS
 (S. Christian Collins) ha la sua licenza, che ne permette l'uso nei

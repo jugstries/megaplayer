@@ -53,6 +53,8 @@ jobs:
             mingw-w64-ucrt-x86_64-libarchive
             mingw-w64-ucrt-x86_64-lame
             mingw-w64-ucrt-x86_64-zlib
+            make
+            diffutils
 
       - name: Sorgenti delle dipendenze
         run: scripts/build-deps.sh

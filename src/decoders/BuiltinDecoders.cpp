@@ -19,6 +19,7 @@
 #include "AtariAudioDecoder.h"
 #endif
 #ifdef MP_WITH_PSF
+#include "Psf2Decoder.h"
 #include "PsfDecoder.h"
 #endif
 #ifdef MP_WITH_SSF
@@ -66,6 +67,7 @@ void registerBuiltinDecoders(DecoderRegistry& registry)
 #endif
 #ifdef MP_WITH_PSF
     registry.add(std::make_unique<PsfDecoderFactory>());
+    registry.add(std::make_unique<Psf2DecoderFactory>());
 #endif
 #ifdef MP_WITH_SSF
     registry.add(std::make_unique<SsfDecoderFactory>());

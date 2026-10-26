@@ -1,0 +1,225 @@
+diff --git a/iop/system/intrman/src/intrman.c b/iop/system/intrman/src/intrman.c
+index 9eb81d42..52b9741e 100644
+--- a/iop/system/intrman/src/intrman.c
++++ b/iop/system/intrman/src/intrman.c
+@@ -578,7 +578,8 @@ int dma_interrupt_handler(void *userdata)
+ 		dma2_intr_flags = ((iop_mmio_hwport->dmac2.dicr2 & masked_icr_2_tmp) >> 24) & 0x3F;
+ #endif
+ 		dma1_intr_flags_tmp = iop_mmio_hwport->dmac1.dicr1 & masked_icr_1_tmp;
+-		dma1_intr_flags = ((dma1_intr_flags_tmp & 0xFF00) >> 8) & 0x7F;
++		// As in Sony's intrman: the channel 0-6 flags are bits 24-30 of DICR.
++		dma1_intr_flags = (dma1_intr_flags_tmp >> 24) & 0x7F;
+ 		bus_error_intr_flag = (dma1_intr_flags_tmp >> 15) & 1;
+ #ifndef BUILDING_INTRMANP
+ 		dmac2_enable_set(p_intrman_internals, 2);
+diff --git a/iop/system/loadcore/src/loadcore.c b/iop/system/loadcore/src/loadcore.c
+index 4a2c22d8..23600269 100644
+--- a/iop/system/loadcore/src/loadcore.c
++++ b/iop/system/loadcore/src/loadcore.c
+@@ -353,7 +353,9 @@ void loadcore_init(boot_params *in_params)
+ #pragma GCC diagnostic pop
+ 	if ( params.IOPRPBuffer )
+ 		params.IOPRPBuffer = AllocSysMemory(2, params.IOPRPBufferSize, params.IOPRPBuffer);
+-	frame_pointer_curfunc = __builtin_frame_address(0);
++	// As in Sony's loadcore: the boot stack keeps about 3.5 KB below the
++	// current frame, so that block is reserved too.
++	frame_pointer_curfunc = (int *)((u8 *)__builtin_frame_address(0) - 0xE00);
+ #if 0
+ 	// FIXME: wipe current stack contents
+ 	lc_memset32((int *)((unsigned int)frame_pointer_curfunc & 0x1FFFFF00), stack_pointer_curfunc, 0x11111111);
+@@ -400,7 +402,7 @@ void loadcore_init(boot_params *in_params)
+ 		BlockSize = QueryBlockSize(blocksize_mask_1);
+ 		blocksize_mask_2 = BlockSize & 0x7FFFFFFF;
+ 		if ( BlockSize < 0 )
+-			lc_memset32((int *)blocksize_mask_1, 0x400D, blocksize_mask_2);
++			lc_memset32((int *)blocksize_mask_1, 0x400D, blocksize_mask_2 >> 2);
+ 	}
+ 	curmodaddr_align = 0;
+ 	stack_reboot_handlers[0] = 0;
+@@ -414,7 +416,7 @@ void loadcore_init(boot_params *in_params)
+ 		{
+ 			if ( params.IOPRPBuffer )
+ 			{
+-				lc_memset32((int *)params.IOPRPBuffer, 0x400D, params.IOPRPBufferSize);
++				lc_memset32((int *)params.IOPRPBuffer, 0x400D, params.IOPRPBufferSize >> 2);
+ 				FreeSysMemory(params.IOPRPBuffer);
+ 			}
+ 			for ( i = 0; i < 4; i += 1 )
+@@ -428,13 +430,11 @@ void loadcore_init(boot_params *in_params)
+ 				{
+ 					if ( (*reboot_handler_ptr & 3) == i )
+ 					{
+-						iop_init_entry_t next;
+-
+-						next.callback = (void *)*stack_reboot_handlers;
+-						if ( i == 3 )
+-							next.callback = (void *)*reboot_handler_ptr;
++						// As in Sony's loadcore: the list itself, or for the last
++						// stage the entry after this one (empty if it is the last).
+ 						SetGP((void *)reboot_handler_ptr[1]);
+-						((BootupCallback_t)(*reboot_handler_ptr & (~3)))(&next, 1);
++						((BootupCallback_t)(*reboot_handler_ptr & (~3)))(
++							(iop_init_entry_t *)(i == 3 ? reboot_handler_ptr + 2 : stack_reboot_handlers), 1);
+ 					}
+ 					reboot_handler_ptr += 2;
+ 				}
+@@ -595,12 +595,12 @@ void RegisterModule(ModuleInfo_t *mi)
+ 	int module_index;
+ 
+ 	image_info = loadcore_internals.image_info;
+-	while ( image_info && image_info->next && (image_info->next < mi) )
++	while ( image_info->next && (image_info->next < mi) )
+ 	{
+ 		image_info = image_info->next;
+ 	}
+-	mi->next = image_info;
+-	loadcore_internals.image_info = mi;
++	mi->next = image_info->next;
++	image_info->next = mi;
+ 	module_index = loadcore_internals.module_index;
+ 	mi->id = loadcore_internals.module_index & 0xFFFF;
+ 	loadcore_internals.module_index = module_index + 1;
+@@ -806,7 +806,7 @@ int LinkLibraryEntries(void *addr, int size)
+ 	{
+ 		struct irx_import_table *importtmp1;
+ 
+-		importtmp1 = (struct irx_import_table *)((u32 *)addr)[i];
++		importtmp1 = (struct irx_import_table *)&((u32 *)addr)[i];
+ 		if ( importtmp1->magic == 0x41E00000 && CheckCallerStub(importtmp1) && (importtmp1->mode & 7) == 0 )
+ 		{
+ 			if ( aLinkLibEntries(importtmp1) )
+@@ -1305,7 +1305,8 @@ static void loadrelelf(const void *module, FileInfo_t *ModuleInfo)
+ 			(ELF_phdr[1].memsz - ELF_phdr[1].filesz) >> 2);
+ 	}
+ 
+-	for ( SectionNum = 0, CurrentELF_shdr = ELF_shdr + 1; SectionNum < ELF_hdr->shnum;
++	// Section 0 is the null one: the others go from 1 to shnum - 1.
++	for ( SectionNum = 1, CurrentELF_shdr = ELF_shdr + 1; SectionNum < ELF_hdr->shnum;
+ 				SectionNum += 1, CurrentELF_shdr += 1 )
+ 	{
+ 		if ( CurrentELF_shdr->type == SHT_REL )
+diff --git a/iop/system/modload/src/modload.c b/iop/system/modload/src/modload.c
+index d2081a5a..4ff75725 100644
+--- a/iop/system/modload/src/modload.c
++++ b/iop/system/modload/src/modload.c
+@@ -1598,7 +1598,7 @@ static void *read_entire_loadfile(
+ 		functbl->close(userdata, module_fd);
+ 		return NULL;
+ 	}
+-	if ( seek_read(functbl, userdata, module_fd, 0, tmp_mem, module_filesize, result_out) == 0 )
++	if ( seek_read(functbl, userdata, module_fd, 0, tmp_mem, module_filesize, result_out) != 0 )
+ 	{
+ 		CpuSuspendIntr(&state);
+ 		FreeSysMemory(tmp_mem);
+diff --git a/iop/system/sysclib/src/exports.tab b/iop/system/sysclib/src/exports.tab
+index e4488286..ecdcb16b 100644
+--- a/iop/system/sysclib/src/exports.tab
++++ b/iop/system/sysclib/src/exports.tab
+@@ -47,8 +47,9 @@ DECLARE_EXPORT_TABLE(sysclib, 1, 1)
+     DECLARE_EXPORT(_retnegativeone)
+ END_EXPORT_TABLE
+ 
+-// A stubbed stdio is registered in sysclib
+-DECLARE_EXPORT_TABLE(stdio, 1, 2)
++// A stubbed stdio is registered in sysclib, one version below the real
++// stdio module (1.2) so that this one replaces it and relinks its clients.
++DECLARE_EXPORT_TABLE(stdio, 1, 1)
+     DECLARE_EXPORT(_start)
+     DECLARE_EXPORT(_retonly)
+     DECLARE_EXPORT(_retonly)
+diff --git a/iop/system/sysmem/src/sysmem.c b/iop/system/sysmem/src/sysmem.c
+index 59544a47..7d2516d2 100644
+--- a/iop/system/sysmem/src/sysmem.c
++++ b/iop/system/sysmem/src/sysmem.c
+@@ -38,16 +38,20 @@ typedef struct intrman_callbacks_
+ 	int (*cbQueryIntrContext)(void);
+ } intrman_callbacks_t;
+ 
++extern char _end[];
++
+ int _start(unsigned int memsize)
+ {
+ 	if ( memsize > 0x7FFF00 )
+ 		memsize = 0x7FFF00;
+-	sysmem_internals.alloclist = (sysmem_alloc_table_t *)0x401100;
++	// As in Sony's sysmem: the table goes in the first 256-byte block past
++	// the end of this module, wherever it was loaded.
++	sysmem_internals.alloclist = (sysmem_alloc_table_t *)(((u32)_end + 0x103) & 0xFFFFFF00);
+ 	sysmem_internals.memsize = memsize & 0xFFFFFF00;
+ 	sysmem_internals.intr_suspend_tbl = 0;
+ 	sysmem_internals.allocation_count = 0;
+ 	sysmem_internals.smemupdate_cur = 0;
+-	if ( (memsize & 0xFFFFFF00) >= 0x401200 )
++	if ( (memsize & 0xFFFFFF00) >= (u32)sysmem_internals.alloclist + 0x100 )
+ 		return sysmem_reinit();
+ 	sysmem_internals.alloclist = 0;
+ 	return 0;
+diff --git a/iop/system/threadman/src/thevent.c b/iop/system/threadman/src/thevent.c
+index 9f949ee6..c668e735 100644
+--- a/iop/system/threadman/src/thevent.c
++++ b/iop/system/threadman/src/thevent.c
+@@ -284,7 +284,7 @@ int WaitEventFlag(int ef, u32 bits, int mode, u32 *resbits)
+         return KE_UNKNOWN_EVFID;
+     }
+ 
+-    if ((evt->event.attr & EA_MULTI) == 0 && evt->event.waiter_count >= 0) {
++    if ((evt->event.attr & EA_MULTI) == 0 && evt->event.waiter_count > 0) {
+         CpuResumeIntr(state);
+         return KE_EVF_MULTI;
+     }
+@@ -349,7 +349,7 @@ int PollEventFlag(int ef, u32 bits, int mode, u32 *resbits)
+         return KE_UNKNOWN_EVFID;
+     }
+ 
+-    if ((evt->event.attr & EA_MULTI) == 0 && evt->event.waiter_count >= 0) {
++    if ((evt->event.attr & EA_MULTI) == 0 && evt->event.waiter_count > 0) {
+         CpuResumeIntr(state);
+         return KE_EVF_MULTI;
+     }
+diff --git a/iop/system/timrman/src/timrman.c b/iop/system/timrman/src/timrman.c
+index 132f97fe..c1b1799c 100644
+--- a/iop/system/timrman/src/timrman.c
++++ b/iop/system/timrman/src/timrman.c
+@@ -487,6 +487,7 @@ int SetOverflowHandler(int timid, unsigned int (*handler)(void *userdata), void
+         timer->overflow_flags = 0;
+     }
+ 
++    CpuResumeIntr(oldstat);
+     return 0;
+ }
+ 
+@@ -589,6 +590,8 @@ int SetupHardTimer(int timid, int source, int mode, int prescale)
+     }
+ 
+     switch (prescale) {
++        case 1:
++            break;
+         case 8:
+ #if NUM_TIMERS > 3
+             if (timer_idx >= 3)
+@@ -633,7 +636,7 @@ int StartHardTimer(int timid)
+         return -154;
+     }
+ 
+-    if (timer->ctrl_config != 0) {
++    if (timer->ctrl_config == 0) {
+         CpuResumeIntr(oldstat);
+         return -155;
+     }
+@@ -642,7 +645,7 @@ int StartHardTimer(int timid)
+ 
+     if (timer->timeup_flags) {
+ #if NUM_TIMERS > 3
+-        if (timer_idx > 3)
++        if (timer_idx >= 3)
+         {
+             _sw(timer->compare_value, timer->addr + TMR_CMP_OFFSET);
+         }
+@@ -686,6 +689,7 @@ int StopHardTimer(int timid)
+ 
+     timer->mode = 0;
+     _sh(0, timer->addr + 4);
++    CpuResumeIntr(oldstat);
+ 
+     return 0;
+ }

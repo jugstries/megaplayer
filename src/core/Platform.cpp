@@ -20,6 +20,7 @@ std::string_view platformName(std::string_view id)
         {platform::kAtari8, "Atari 8 bit"},
         {platform::kAtariSt, "Atari ST"},
         {platform::kPlayStation, "PlayStation"},
+        {platform::kPlayStation2, "PlayStation 2"},
         {platform::kSaturn, "Saturn"},
         {platform::kDreamcast, "Dreamcast"},
         {platform::kArcade, "Arcade"},

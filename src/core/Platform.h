@@ -22,6 +22,7 @@ constexpr const char* kZxSpectrum = "zxspectrum";
 constexpr const char* kAtari8 = "atari8";
 constexpr const char* kAtariSt = "atarist";
 constexpr const char* kPlayStation = "playstation";
+constexpr const char* kPlayStation2 = "ps2";
 constexpr const char* kSaturn = "saturn";
 constexpr const char* kDreamcast = "dreamcast";
 constexpr const char* kArcade = "arcade";

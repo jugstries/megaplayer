@@ -25,7 +25,7 @@ option(MP_WITH_UADE "Backend UADE (formati Amiga)" ON)
 option(MP_WITH_GME "Backend game-music-emu (console a 8 e 16 bit)" ON)
 option(MP_WITH_SID "Backend libsidplayfp (Commodore 64)" ON)
 option(MP_WITH_ATARI "Backend AtariAudio (Atari ST: SNDH e YM)" ON)
-option(MP_WITH_PSF "Backend Highly Experimental (PlayStation: PSF), con OpenBIOS" ON)
+option(MP_WITH_PSF "Backend Highly Experimental (PlayStation: PSF con OpenBIOS; PlayStation 2: PSF2)" ON)
 option(MP_WITH_SSF "Backend Highly Theoretical (Saturn: SSF, Dreamcast: DSF)" ON)
 option(MP_WITH_QSF "Backend Highly Quixotic (QSound di Capcom: QSF)" ON)
 option(MP_WITH_2SF "Backend vio2sf (Nintendo DS: 2SF)" ON)
@@ -278,10 +278,18 @@ if(MP_WITH_PSF AND MP_XSF_ENABLED)
         # ricava hebios da una BIOS della PS2).
         mp_neill_core(highly_experimental "${MP_HE_DIR}"
             bios.c iop.c ioptimer.c psx.c r3000.c spu.c spucore.c vfs.c)
-        # OpenBIOS dentro la libreria: niente file da cercare a runtime.
+        # OpenBIOS dentro la libreria: niente file da cercare a runtime. Per
+        # il PSF2 i moduli IOP liberi (src/ps2/irx, rifatti da
+        # scripts/build-ps2-iop.sh), nell'ordine in cui loadcore li avvia.
         include(cmake/EmbedBinary.cmake)
         mp_embed_binary("${MP_OPENBIOS}" mp_openbios "${CMAKE_BINARY_DIR}/openbios.c")
-        target_sources(megaplayer_core PRIVATE src/decoders/PsfDecoder.cpp "${CMAKE_BINARY_DIR}/openbios.c")
+        set(MP_IOP_MODULES sysmem loadcore excepman intrman ssbusc dmacman timrman sysclib heaplib
+            threadman vblank ioman modload stdio sifman sifcmd loadfile sifinit fileio hefile)
+        list(TRANSFORM MP_IOP_MODULES PREPEND "${CMAKE_CURRENT_SOURCE_DIR}/src/ps2/irx/")
+        list(TRANSFORM MP_IOP_MODULES APPEND ".irx")
+        mp_embed_binaries("${CMAKE_BINARY_DIR}/iop_modules.c" mp_iop_modules ${MP_IOP_MODULES})
+        target_sources(megaplayer_core PRIVATE src/decoders/HighlyExperimental.cpp src/decoders/PsfDecoder.cpp
+            src/decoders/Psf2Decoder.cpp "${CMAKE_BINARY_DIR}/openbios.c" "${CMAKE_BINARY_DIR}/iop_modules.c")
         target_compile_definitions(megaplayer_core PRIVATE MP_WITH_PSF)
         set(MP_PSF_ENABLED ON)
     endif()
@@ -829,7 +837,9 @@ endif()
 
 # I file PlayStation generati da tests/make_test_psf.py: un PSF il cui
 # programma suona solo se la BIOS (OpenBIOS) è partita, un MiniPSF con la sua
-# libreria, che ha un nome dalle maiuscole diverse, e un XA con due canali.
+# libreria, che ha un nome dalle maiuscole diverse, un XA con due canali, e
+# per la PS2 un PSF2 il cui psf2.irx suona solo se i moduli IOP sono partiti e
+# un MiniPSF2 che sostituisce il psf2.irx della sua libreria.
 if(Python3_FOUND)
     set(MP_PSX_TEST_DIR "${CMAKE_BINARY_DIR}/psx-test")
     add_test(NAME make_test_psf
@@ -848,6 +858,14 @@ if(Python3_FOUND)
             COMMAND megaplayer render -o "${CMAKE_BINARY_DIR}/test-minipsf.wav" "${MP_PSX_TEST_DIR}/test.minipsf")
         set_tests_properties(cli_render_minipsf PROPERTIES FIXTURES_REQUIRED test_psx
             PASS_REGULAR_EXPRESSION "Formato: +MiniPSF.*Titolo: +Onda larga.*Scritti 0:06")
+        add_test(NAME cli_render_psf2
+            COMMAND megaplayer render -o "${CMAKE_BINARY_DIR}/test-psf2.wav" "${MP_PSX_TEST_DIR}/test.psf2")
+        set_tests_properties(cli_render_psf2 PROPERTIES FIXTURES_REQUIRED test_psx
+            PASS_REGULAR_EXPRESSION "Backend: +psf2.*Formato: +PSF2.*Titolo: +Onda quadra.*Durata: +0:06.*Scritti 0:06")
+        add_test(NAME cli_render_minipsf2
+            COMMAND megaplayer render -o "${CMAKE_BINARY_DIR}/test-minipsf2.wav" "${MP_PSX_TEST_DIR}/test.minipsf2")
+        set_tests_properties(cli_render_minipsf2 PROPERTIES FIXTURES_REQUIRED test_psx
+            PASS_REGULAR_EXPRESSION "Formato: +MiniPSF2.*Titolo: +Onda larga.*Scritti 0:06")
     endif()
 endif()
 
@@ -933,7 +951,7 @@ if(MP_ATARI_ENABLED)
     list(APPEND MP_CHANNELS_TEST_ARGS "atariaudio=${MP_ATARI_SONGS}/Enchanted_Land.sndh")
 endif()
 if(MP_PSF_ENABLED AND Python3_FOUND)
-    list(APPEND MP_CHANNELS_TEST_ARGS "psf=${MP_PSX_TEST_DIR}/test.psf")
+    list(APPEND MP_CHANNELS_TEST_ARGS "psf=${MP_PSX_TEST_DIR}/test.psf" "psf2=${MP_PSX_TEST_DIR}/test.psf2")
     list(APPEND MP_CHANNELS_FIXTURES test_psx)
 endif()
 if(MP_SSF_ENABLED AND Python3_FOUND)

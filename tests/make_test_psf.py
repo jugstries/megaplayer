@@ -1,5 +1,5 @@
 """Genera i file PlayStation di prova: un PSF, un MiniPSF con la sua
-libreria e un flusso XA ADPCM con due canali.
+libreria, un flusso XA ADPCM con due canali e i PSF2 della PlayStation 2.
 
 Uso: make_test_psf.py DIR
 
@@ -11,7 +11,13 @@ In DIR scrive:
   nome dalle maiuscole diverse da quello del tag _lib, come capita nei set),
   e nel MiniPSF solo il campione, con un'onda quadra più larga;
 - test.xa: un RIFF/CDXA con due canali intrecciati, uno stereo a 37,8 kHz e
-  uno mono a 18,9 kHz, ciascuno un'onda quadra.
+  uno mono a 18,9 kHz, ciascuno un'onda quadra;
+- test.psf2: un filesystem con psf2.irx, un modulo dell'IOP che mette il
+  campione nella RAM dello SPU2 dalla sua porta dati e suona un'onda quadra
+  sulla prima voce, per sempre (se non partono i moduli di sistema, non
+  parte neanche lui);
+- test.minipsf2 + Test.PSF2LIB: la libreria con quel psf2.irx, e nel
+  MiniPSF2 un altro psf2.irx, con un'onda quadra più larga, che lo sostituisce.
 
 Serve ai test (CMakeLists.txt), così nel repository non ci sono brani con
 copyright.
@@ -52,6 +58,9 @@ def jalr(rs):
 
 def j(target):
     return 0x02 << 26 | (target >> 2) & 0x03FFFFFF
+
+
+BRANCH_SELF = 0x1000FFFF  # b .
 
 
 NOP = 0
@@ -122,6 +131,84 @@ def psf(exe, tags):
     head = b"PSF\x01" + struct.pack("<III", 0, len(packed), zlib.crc32(packed))
     tag = "[TAG]" + "".join(f"{key}={value}\n" for key, value in tags.items())
     return head + packed + tag.encode()
+
+
+# --- PSF2: un modulo dell'IOP (IRX) e il filesystem virtuale ---
+
+SPU2 = 0xBF90  # i registri dello SPU2, da 0xBF900000; il core 1 a +0x400
+SPU2_RAM = 0x5010
+
+
+def iop_program(high):
+    """Il codice di psf2.irx: senza indirizzi assoluti, perché modload lo
+    carica dove capita, e senza import, perché non chiama nessuno."""
+    code = [lui(S0, SPU2)]
+
+    def write(offset, value):
+        code.extend([ori(T0, ZERO, value), sh(T0, offset, S0)])
+
+    # I due core accesi, con l'uscita; il core 1 prende anche il suo ingresso
+    # esterno, che è l'uscita del core 0.
+    write(0x19A, 0xC000)
+    write(0x59A, 0xC001)
+    # Il campione: indirizzo di trasferimento (in halfword), poi i dati.
+    write(0x1A8, 0)
+    write(0x1AA, SPU2_RAM >> 1)
+    block = adpcm_square(high)
+    for half in struct.unpack("<%dH" % (len(block) // 2), block):
+        write(0x1AC, half)
+    # La voce nel mix asciutto; il core 0 nel core 1; volumi generali.
+    for offset in (0x188, 0x190):
+        write(offset, 0xFFFF)
+        write(offset + 2, 0x00FF)
+    write(0x198, 0x0FF0)
+    write(0x598, 0x0FFC)
+    for offset in (0x760, 0x762, 0x788, 0x78A):
+        write(offset, 0x3FFF)
+    # Il volume con cui il core 1 prende il core 0, dal suo ingresso esterno.
+    write(0x790, 0x7FFF)
+    write(0x792, 0x7FFF)
+    # Voce 1: volume, frequenza (12 kHz), inviluppo con attacco immediato e
+    # sostegno pieno, inizio del campione; key on, poi niente più.
+    write(0x000, 0x3FFF)
+    write(0x002, 0x3FFF)
+    write(0x004, 0x0400)
+    write(0x006, 0x000F)
+    write(0x008, 0x5FC0)
+    write(0x1C0, 0)
+    write(0x1C2, SPU2_RAM >> 1)
+    write(0x1A0, 1)
+    code += [BRANCH_SELF, NOP]
+    return struct.pack("<%dI" % len(code), *code)
+
+
+def irx(name, code):
+    """Un modulo IRX: intestazione ELF con il tipo dell'IOP, .iopmod e il
+    codice, che parte dall'inizio."""
+    iopmod = struct.pack("<6IH", 0xFFFFFFFF, 0, 0, len(code), 0, 0, 0x0101) + name.encode() + b"\0"
+    iopmod += bytes(-len(iopmod) % 4)
+    text = 52 + 2 * 32 + len(iopmod)
+    text += -text % 16
+    header = b"\x7FELF" + bytes([1, 1, 1]) + bytes(9)
+    header += struct.pack("<HHIIIIIHHHHHH", 0xFF80, 8, 1, 0, 52, 0, 0, 52, 32, 2, 40, 0, 0)
+    phdrs = struct.pack("<8I", 0x70000080, 52 + 64, 0, 0, len(iopmod), 0, 4, 4)
+    phdrs += struct.pack("<8I", 1, text, 0, 0, len(code), len(code), 7, 16)
+    body = header + phdrs + iopmod
+    return body + bytes(text - len(body)) + code
+
+
+def psf2(files, tags):
+    """Un PSF2: i file nella radice del filesystem virtuale, ciascuno a
+    blocchi compressi con zlib, nell'area riservata; nessun programma."""
+    head = 4 + 48 * len(files)
+    entries = data = b""
+    for name, body in files:
+        blocks = [zlib.compress(body[i:i + 0x8000], 9) for i in range(0, len(body), 0x8000)]
+        entries += name.encode().ljust(36, b"\0") + struct.pack("<III", head + len(data), len(body), 0x8000)
+        data += b"".join(struct.pack("<I", len(b)) for b in blocks) + b"".join(blocks)
+    reserved = struct.pack("<I", len(files)) + entries + data
+    tag = "[TAG]" + "".join(f"{key}={value}\n" for key, value in tags.items())
+    return b"PSF\x02" + struct.pack("<III", len(reserved), 0, 0) + reserved + tag.encode()
 
 
 # --- XA ADPCM ---
@@ -198,6 +285,13 @@ def main():
         f.write(psf(ps_x_exe(SAMPLE, adpcm_square(20)), mini_tags))
     with open(os.path.join(out, "test.xa"), "wb") as f:
         f.write(xa_file(150))  # 8 s a 37,8 kHz in stereo, 32 s a 18,9 kHz in mono
+    with open(os.path.join(out, "test.psf2"), "wb") as f:
+        f.write(psf2([("psf2.irx", irx("psf2", iop_program(14)))], tags))
+    with open(os.path.join(out, "Test.PSF2LIB"), "wb") as f:
+        f.write(psf2([("psf2.irx", irx("psf2", iop_program(14)))], {}))
+    mini_tags = dict(tags, title="Onda larga", _lib="test.psf2lib")
+    with open(os.path.join(out, "test.minipsf2"), "wb") as f:
+        f.write(psf2([("psf2.irx", irx("psf2", iop_program(20)))], mini_tags))
 
 
 if __name__ == "__main__":

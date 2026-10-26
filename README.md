@@ -14,6 +14,7 @@ Flutter (per ora macOS) con due skin: moderna e retrò.
 | `gme`     | game-music-emu 0.6.5  | console: NES (NSF, NSFE), SNES (SPC), Game Boy (GBS), Master System e Mega Drive (VGM, VGZ, GYM), PC Engine (HES), MSX (KSS), ZX Spectrum (AY), Atari (SAP) |
 | `atariaudio` | AtariAudio 1.26 | Atari ST: SNDH, con il replayer originale su un 68000 emulato (YM2149, timer, DAC dell'STE, blitter), e YM (YM2–YM6, Digimix, YM Tracker), anche compressi con ICE! o LHA |
 | `psf`     | Highly Experimental (Neill Corlett, commit di gennaio 2022), psflib, OpenBIOS di PCSX-Redux | PlayStation: PSF e MiniPSF con le loro librerie, emulando la CPU R3000 e lo SPU. Al posto della BIOS di Sony gira OpenBIOS: non serve nessuna ROM |
+| `psf2`    | Highly Experimental, psflib, i moduli IOP di ps2sdk v2.0.0 | PlayStation 2: PSF2 e MiniPSF2 con le loro librerie, emulando l'IOP e lo SPU2. Anche qui niente BIOS di Sony: l'IOP parte con i moduli di sistema liberi di ps2sdk |
 | `ssf`     | Highly Theoretical (Neill Corlett, commit di gennaio 2022), con il 68000 C68K di Yabause | Saturn (SSF, il 68000 e lo SCSP) e Dreamcast (DSF, l'ARM7 e l'AICA), con le loro librerie |
 | `qsf`     | Highly Quixotic (Neill Corlett, commit di gennaio 2022), con il QSound di superctr | le schede arcade Capcom con il QSound (CPS-1 e CPS-2): QSF, con lo Z80 e la cifratura Kabuki |
 | `2sf`     | vio2sf (DeSmuME, commit del 2019) | Nintendo DS: 2SF, con le sue librerie e lo stato salvato |
@@ -71,9 +72,36 @@ kernel è pronto, prima della shell, e lì carica il brano. Per farla girare
 serve una piccola patch ([patches/highly-experimental-openbios.patch](patches/highly-experimental-openbios.patch)):
 il punto dove fermarla si dà da fuori, e le scritture fatte con la cache
 isolata dal bit IsC del registro di stato non arrivano alla RAM, come sulla
-console (OpenBIOS svuota la cache così, quella di Sony in un altro modo). I
-PSF2 della PS2 restano fuori: lì la BIOS fa molto di più, e OpenBIOS non la
-sostituisce. Saturn, Dreamcast e QSound una BIOS non la vogliono: il programma
+console (OpenBIOS svuota la cache così, quella di Sony in un altro modo).
+
+Neanche per i PSF2 della PS2 serve la BIOS. Un PSF2 non è un programma ma un
+piccolo filesystem: psf2.irx, il driver audio del gioco e i suoi campioni.
+Lo legge l'IOP, il processore che sulla PS2 fa l'audio, e per farlo gli serve
+il suo sistema operativo, una ventina di moduli che stanno nella BIOS (la
+memoria, i thread, gli interrupt, i timer, i file, il caricatore dei
+moduli). Highly Experimental li prende da hebios, ricavata dalla BIOS di una
+PS2, con in più versioni di quei moduli che non sono in nessuna BIOS in
+commercio. megaplayer usa invece quelli di ps2sdk (Academic Free License
+2.0, riscritti da zero): li fa partire da una ROM tutta sua, con sei
+istruzioni al reset e i moduli in fila, e il lavoro che sulla console fa
+IOPBOOT (caricare sysmem e loadcore e passargli l'elenco dei moduli) lo fa il
+decoder ([src/decoders/Psf2Decoder.cpp](src/decoders/Psf2Decoder.cpp)). Al
+posto del modulo che in hebios collega l'IOP all'emulatore c'è hefile.irx
+([src/ps2/hefile](src/ps2/hefile)), che dà all'IOP i file del PSF2 e avvia
+psf2.irx. Molti moduli di ps2sdk sono decompilazioni mai provate così:
+[patches/ps2sdk-iop.patch](patches/ps2sdk-iop.patch) corregge quello che
+impediva l'avvio e la musica (in loadcore, modload, threadman, sysmem,
+sysclib, intrman e timrman). I moduli compilati stanno in
+[src/ps2/irx](src/ps2/irx), con la licenza di ps2sdk;
+[scripts/build-ps2-iop.sh](scripts/build-ps2-iop.sh) li rifà, con la
+toolchain della release v2.0.0 di ps2dev, identici. Anche Highly Experimental
+ha bisogno di una seconda patch
+([patches/highly-experimental-ps2.patch](patches/highly-experimental-ps2.patch)):
+ogni stato può avere la sua BIOS, così la ROM della PS2 sta accanto a
+OpenBIOS; gli scorrimenti a quantità variabile usano solo i 5 bit bassi, come
+l'R3000 (il codice di GCC ci conta); i registri degli indirizzi dello SPU2
+tengono solo i 4 bit alti che ha la console, invece di leggere fuori dalla sua
+RAM. Saturn, Dreamcast e QSound una BIOS non la vogliono: il programma
 del brano basta. Il 68000 del Saturn è C68K di Yabause, perché il Musashi che
 Highly Theoretical ha accanto ha una licenza solo non commerciale; i suoi
 opcode passano per due `switch` annidati invece che per uno solo
@@ -140,8 +168,8 @@ SHA-256), e applica le patch di `patches/`: due a UADE (l'emulatore nel
 processo del player, vedi sotto, e le voci di Paula da zittire), una a
 libsidplayfp (il mute di una voce subito), due a gearmulator (MinGW), una
 per ciascuno dei nuclei di Neill Corlett (OpenBIOS, il mute dei canali, C68K
-fuori da x86) e una per vio2sf, viogsf e lazyusf2 (MinGW, ARM e i compilatori
-recenti). Tutto il resto lo fa CMake: compila
+fuori da x86), una seconda a Highly Experimental (la PS2) e una per vio2sf,
+viogsf e lazyusf2 (MinGW, ARM e i compilatori recenti). Tutto il resto lo fa CMake: compila
 UADE senza il suo script di configurazione (che funziona solo su UNIX, vedi
 [cmake/UadeInProcess.cmake](cmake/UadeInProcess.cmake)) e copia replayer e
 configurazione in `build/uade-data`. La CLI e i test li cercano lì; le app li
@@ -244,6 +272,7 @@ per uno o da mettere in solo (`Decoder::channels()` e `setChannelMuted()`):
 | sid      | 3 voci per chip e i campioni digitalizzati | il mute di libsidplayfp, che filtra i registri; la patch ([patches/libsidplayfp-instant-mute.patch](patches/libsidplayfp-instant-mute.patch)) lo applica subito invece che alla nota dopo |
 | atariaudio | le 3 voci del YM2149 e, nei SNDH, il DAC dell'STE (nei YM Digimix e YM Tracker i campioni) | il mute di AtariAudio, rimesso a ogni cambio di sottobrano |
 | psf      | le 24 voci dello SPU | il mute di Highly Experimental, rimesso quando il brano riparte |
+| psf2     | le 48 voci dello SPU2 (24 per core) | come per il PSF |
 | ssf      | i 32 slot dello SCSP, i 64 canali dell'AICA | una maschera nel mixer di Highly Theoretical: il canale si genera ancora, per la modulazione FM degli altri |
 | qsf      | le 16 voci del QSound | il mute del QSound di superctr, che con la patch lascia avanzare la voce |
 | 2sf      | i 16 canali del DS | il mute di vio2sf |
@@ -372,8 +401,8 @@ sottobrani si sanno solo suonando il brano.
 
 Le piattaforme le dichiarano i backend ([src/core/Platform.h](src/core/Platform.h)):
 Amiga, PC / DOS, Commodore 64, NES, SNES, Game Boy, Sega, PC Engine, MSX, ZX
-Spectrum, Atari 8 bit, Atari ST, PlayStation, Saturn, Dreamcast, Arcade, Game
-Boy Advance, Nintendo DS, Nintendo 64 e file audio. Tra i moduli tracker, MOD, MED,
+Spectrum, Atari 8 bit, Atari ST, PlayStation, PlayStation 2, Saturn,
+Dreamcast, Arcade, Game Boy Advance, Nintendo DS, Nintendo 64 e file audio. Tra i moduli tracker, MOD, MED,
 OKT e gli altri nati sull'Amiga vanno all'Amiga, S3M, XM e IT al PC.
 
 Il database sta nella cartella dei dati dell'utente (`~/Library/Application
@@ -653,7 +682,8 @@ Quixotic GPL-3.0 (con C68K di Yabause, GPL-2.0 o successiva, e il QSound di
 superctr e Valley Bell, che in MAME è BSD-3-Clause), vio2sf, viogsf e
 lazyusf2 GPL-2.0 o successiva (con l'APU di Blargg, LGPL-2.1 o successiva,
 l'RSP di Iconoclast, CC0, e il CIC di X-Scale, BSD-2-Clause), psflib e
-OpenBIOS MIT, zlib con la sua licenza; gearmulator
+OpenBIOS MIT, i moduli IOP di ps2sdk Academic Free License 2.0 (dati che
+girano nell'IOP emulato, non codice del player), zlib con la sua licenza; gearmulator
 (88emu) GPL-3.0, con parti derivate da Nuked-SC55 e Nuked-MT32 sotto GPL-2.0
 o successiva; FluidSynth LGPL-2.1 o successiva; LAME LGPL-2.0 o successiva; il SoundFont GeneralUser GS
 (S. Christian Collins) ha la sua licenza, che ne permette l'uso nei

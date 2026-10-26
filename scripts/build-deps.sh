@@ -240,12 +240,16 @@ done
 # Le patch dei nuclei di Neill Corlett. Highly Experimental: i punti dove
 # fermare la BIOS si possono dare da fuori (OpenBIOS non ha l'ambiente di
 # hebios) e le scritture con la cache isolata dal bit IsC non arrivano alla
-# RAM, come sulla console. Highly Theoretical: i canali si possono zittire, e
-# compila fuori da x86 e con C68K. Highly Quixotic: una voce zittita continua
-# ad avanzare, in silenzio. vio2sf: BOOL ha la stessa misura nella libreria e
-# nel C++ che la usa, anche con MinGW. viogsf e lazyusf2: compilano fuori da
-# x86 e con i compilatori recenti.
+# RAM, come sulla console; per la PS2 ogni stato può avere la sua BIOS (la
+# ROM con i moduli liberi accanto a OpenBIOS), gli scorrimenti variabili
+# usano 5 bit come l'R3000 e gli indirizzi dello SPU2 ne hanno 20, senza
+# letture fuori dalla sua RAM. Highly Theoretical: i canali si possono
+# zittire, e compila fuori da x86 e con C68K. Highly Quixotic: una voce
+# zittita continua ad avanzare, in silenzio. vio2sf: BOOL ha la stessa misura
+# nella libreria e nel C++ che la usa, anche con MinGW. viogsf e lazyusf2:
+# compilano fuori da x86 e con i compilatori recenti.
 for NC_PATCH in "highly_experimental:$ROOT/patches/highly-experimental-openbios.patch" \
+	"highly_experimental:$ROOT/patches/highly-experimental-ps2.patch" \
 	"highly_theoretical:$ROOT/patches/highly-theoretical.patch" \
 	"highly_quixotic:$ROOT/patches/highly-quixotic.patch" \
 	"vio2sf:$ROOT/patches/vio2sf.patch" \

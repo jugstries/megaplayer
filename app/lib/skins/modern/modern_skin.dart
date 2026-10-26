@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
 import '../../core/models.dart';
+import '../../player/file_drop.dart';
 import '../../player/library_browser.dart';
 import '../../player/megasound.dart';
 import '../../player/player_controller.dart';
@@ -98,52 +99,66 @@ class _ModernSkinState extends State<ModernSkin> {
       data: _theme,
       child: Scaffold(
         backgroundColor: _background,
-        body: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _Header(controller: controller),
-              if (controller.error != null) ...[
-                const SizedBox(height: 12),
-                _ErrorBanner(message: controller.error!),
-              ],
-              const SizedBox(height: 20),
-              Expanded(
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final wide = constraints.maxWidth >= 1180;
-                    return Row(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        SizedBox(
-                          width: wide ? 232 : 216,
-                          child: _Sidebar(
-                            controller: controller,
-                            section: section,
-                            playlist: playlist?.id,
-                            onShow: _show,
-                          ),
-                        ),
-                        const SizedBox(width: 20),
-                        Expanded(child: _content(section, playlist, wide)),
-                        if (wide) ...[
-                          const SizedBox(width: 20),
+        body: FileDrop(
+          onDrop: (paths) => _dropped(context, paths),
+          overlay: const _DropOverlay(),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _Header(controller: controller),
+                if (controller.error != null) ...[
+                  const SizedBox(height: 12),
+                  _ErrorBanner(message: controller.error!),
+                ],
+                const SizedBox(height: 20),
+                Expanded(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final wide = constraints.maxWidth >= 1180;
+                      return Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
                           SizedBox(
-                            width: 320,
-                            child: _Aside(controller: controller, fill: true, details: section == _Section.nowPlaying),
+                            width: wide ? 232 : 216,
+                            child: _Sidebar(
+                              controller: controller,
+                              section: section,
+                              playlist: playlist?.id,
+                              onShow: _show,
+                            ),
                           ),
+                          const SizedBox(width: 20),
+                          Expanded(child: _content(section, playlist, wide)),
+                          if (wide) ...[
+                            const SizedBox(width: 20),
+                            SizedBox(
+                              width: 320,
+                              child: _Aside(controller: controller, fill: true, details: section == _Section.nowPlaying),
+                            ),
+                          ],
                         ],
-                      ],
-                    );
-                  },
+                      );
+                    },
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
     );
+  }
+
+  /// I file lasciati sulla finestra: in coda, o playlist se sono M3U.
+  void _dropped(BuildContext context, List<String> paths) {
+    final result = widget.controller.addPaths(paths);
+    if (result.requested == 0 && result.playlists.isNotEmpty) {
+      _show(_Section.playlist, playlist: result.playlists.last.id);
+    }
+    final message = addedFilesMessage(result.added, result.requested, result.playlists);
+    if (message.isNotEmpty) _notify(context, message);
   }
 
   /// Quello che sta tra la barra laterale e la coda. Stretta, la finestra
@@ -176,6 +191,42 @@ class _ModernSkinState extends State<ModernSkin> {
   }
 }
 
+/// Sopra la finestra mentre ci si trascinano dei file.
+class _DropOverlay extends StatelessWidget {
+  const _DropOverlay();
+
+  @override
+  Widget build(BuildContext context) => Container(
+        color: _background.withValues(alpha: 0.85),
+        padding: const EdgeInsets.all(24),
+        child: Container(
+          decoration: BoxDecoration(
+            color: _orange.withValues(alpha: 0.06),
+            borderRadius: BorderRadius.circular(28),
+            border: Border.all(color: _orange, width: 2),
+          ),
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ShaderMask(
+                  shaderCallback: _accentGradient.createShader,
+                  child: const Icon(Icons.file_download_rounded, size: 72, color: Colors.white),
+                ),
+                const SizedBox(height: 16),
+                Text('Lascia qui i file', style: _sora(30, weight: 700, spacing: -0.6)),
+                const SizedBox(height: 8),
+                Text(
+                  'Brani, archivi e cartelle vanno in coda; i file M3U diventano playlist',
+                  style: _sora(15, color: _muted),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+}
+
 class _Header extends StatelessWidget {
   const _Header({required this.controller});
 
@@ -201,7 +252,7 @@ class _Header extends StatelessWidget {
         _PillButton(
           icon: Icons.folder_open_rounded,
           label: 'Apri file…',
-          onPressed: controller.openFiles,
+          onPressed: () => _openFiles(context, controller),
         ),
         if (controller.rolandSupported || controller.soundFontSupported) ...[
           const SizedBox(width: 12),
@@ -346,6 +397,13 @@ class _Sidebar extends StatelessWidget {
       if (id != null) onShow(_Section.playlist, playlist: id);
     }
 
+    Future<void> importPlaylist() async {
+      final playlist = await controller.importPlaylist();
+      if (playlist == null || !context.mounted) return;
+      onShow(_Section.playlist, playlist: playlist.id);
+      _notify(context, importedPlaylistMessage(playlist));
+    }
+
     return _Panel(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -372,13 +430,19 @@ class _Sidebar extends StatelessWidget {
                     )
                   : null,
             ),
-          _NavItem(icon: Icons.folder_open_rounded, label: 'Apri file…', onTap: controller.openFiles),
+          _NavItem(icon: Icons.folder_open_rounded, label: 'Apri file…', onTap: () => _openFiles(context, controller)),
           if (controller.store != null) ...[
             const SizedBox(height: 24),
             Row(
               children: [
                 Expanded(
                   child: Padding(padding: const EdgeInsets.only(left: 12), child: Text('PLAYLIST', style: _label())),
+                ),
+                _SmallIconButton(
+                  icon: Icons.file_open_rounded,
+                  tooltip: 'Importa una playlist M3U',
+                  size: 32,
+                  onPressed: importPlaylist,
                 ),
                 _SmallIconButton(icon: Icons.add_rounded, tooltip: 'Nuova playlist', size: 32, onPressed: newPlaylist),
               ],
@@ -389,7 +453,7 @@ class _Sidebar extends StatelessWidget {
                   ? Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                       child: Text(
-                        'Nessuna playlist. Creane una col +, o salva la coda.',
+                        'Nessuna playlist. Creane una col +, salva la coda o importa un M3U.',
                         style: _sora(13, color: _faint, height: 1.4),
                       ),
                     )
@@ -616,7 +680,11 @@ class _EmptyState extends StatelessWidget {
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _PillButton(icon: Icons.folder_open_rounded, label: 'Apri file…', onPressed: controller.openFiles),
+              _PillButton(
+                icon: Icons.folder_open_rounded,
+                label: 'Apri file…',
+                onPressed: () => _openFiles(context, controller),
+              ),
               if (controller.library.available) ...[
                 const SizedBox(width: 12),
                 _PillButton(icon: Icons.library_music_rounded, label: 'Sfoglia la libreria', onPressed: onShowLibrary),

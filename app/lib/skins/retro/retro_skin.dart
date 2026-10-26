@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
 import '../../core/models.dart';
+import '../../player/file_drop.dart';
 import '../../player/library_browser.dart';
 import '../../player/megasound.dart';
 import '../../player/player_controller.dart';
@@ -79,6 +80,16 @@ class _RetroSkinState extends State<RetroSkin> {
     });
   }
 
+  /// I file lasciati sulla finestra: in coda, o playlist se sono M3U.
+  void _dropped(List<String> paths) {
+    final result = widget.controller.addPaths(paths);
+    if (result.requested == 0 && result.playlists.isNotEmpty) {
+      _show(_View.playlist, playlist: result.playlists.last.id);
+    }
+    final message = addedFilesMessage(result.added, result.requested, result.playlists);
+    if (message.isNotEmpty) _sayNotice(message);
+  }
+
   @override
   void dispose() {
     _noticeTimer?.cancel();
@@ -99,86 +110,144 @@ class _RetroSkinState extends State<RetroSkin> {
         say: _sayNotice,
         child: Scaffold(
           backgroundColor: _desk,
-          body: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _MenuBar(controller: controller),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      if (constraints.maxWidth >= 1100) {
-                        return Row(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
+          body: FileDrop(
+            onDrop: _dropped,
+            overlay: const _DropOverlay(),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _MenuBar(controller: controller),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        if (constraints.maxWidth >= 1100) {
+                          return Row(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Expanded(
+                                flex: 5,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  children: [
+                                    _NowPlayingWindow(controller: controller),
+                                    const SizedBox(height: 24),
+                                    Expanded(child: browser),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 24),
+                              Expanded(
+                                flex: 3,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  children: [
+                                    Expanded(child: _ScopeWindow(controller: controller)),
+                                    const SizedBox(height: 24),
+                                    _InfoWindow(controller: controller),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 24),
+                              SizedBox(
+                                width: 260,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  children: [
+                                    _MegaSoundWindow(controller: controller),
+                                    const SizedBox(height: 24),
+                                    _OutputWindow(controller: controller),
+                                    const SizedBox(height: 24),
+                                    Expanded(child: _HelloWindow(controller: controller, notice: _notice)),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          );
+                        }
+                        return ListView(
                           children: [
-                            Expanded(
-                              flex: 5,
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  _NowPlayingWindow(controller: controller),
-                                  const SizedBox(height: 24),
-                                  Expanded(child: browser),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 24),
-                            Expanded(
-                              flex: 3,
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  Expanded(child: _ScopeWindow(controller: controller)),
-                                  const SizedBox(height: 24),
-                                  _InfoWindow(controller: controller),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 24),
-                            SizedBox(
-                              width: 260,
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  _MegaSoundWindow(controller: controller),
-                                  const SizedBox(height: 24),
-                                  _OutputWindow(controller: controller),
-                                  const SizedBox(height: 24),
-                                  Expanded(child: _HelloWindow(controller: controller, notice: _notice)),
-                                ],
-                              ),
-                            ),
+                            _NowPlayingWindow(controller: controller),
+                            const SizedBox(height: 24),
+                            SizedBox(height: 540, child: browser),
+                            const SizedBox(height: 24),
+                            SizedBox(height: 200, child: _HelloWindow(controller: controller, notice: _notice)),
+                            const SizedBox(height: 24),
+                            SizedBox(height: 260, child: _ScopeWindow(controller: controller)),
+                            const SizedBox(height: 24),
+                            _InfoWindow(controller: controller),
+                            const SizedBox(height: 24),
+                            _MegaSoundWindow(controller: controller),
+                            const SizedBox(height: 24),
+                            _OutputWindow(controller: controller),
                           ],
                         );
-                      }
-                      return ListView(
-                        children: [
-                          _NowPlayingWindow(controller: controller),
-                          const SizedBox(height: 24),
-                          SizedBox(height: 540, child: browser),
-                          const SizedBox(height: 24),
-                          SizedBox(height: 200, child: _HelloWindow(controller: controller, notice: _notice)),
-                          const SizedBox(height: 24),
-                          SizedBox(height: 260, child: _ScopeWindow(controller: controller)),
-                          const SizedBox(height: 24),
-                          _InfoWindow(controller: controller),
-                          const SizedBox(height: 24),
-                          _MegaSoundWindow(controller: controller),
-                          const SizedBox(height: 24),
-                          _OutputWindow(controller: controller),
-                        ],
-                      );
-                    },
+                      },
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
     );
   }
+}
+
+/// Sopra la finestra mentre ci si trascinano dei file: la scrivania
+/// retinata e un avviso al centro.
+class _DropOverlay extends StatelessWidget {
+  const _DropOverlay();
+
+  @override
+  Widget build(BuildContext context) => CustomPaint(
+        painter: _ShadePainter(),
+        child: Center(
+          child: SizedBox(
+            width: 460,
+            child: _Window(
+              title: 'Aggiungi',
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(28, 24, 28, 28),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const _PixelIcon(_PixelIcon.folder, size: 48),
+                    const SizedBox(height: 14),
+                    Text('Lascia qui i file', style: _pixel(26, weight: 700)),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Brani, archivi e cartelle vanno in coda; i file M3U diventano playlist',
+                      style: _vt(20, height: 1.1),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+}
+
+/// Un pixel nero ogni quattro, come le finestre inattive del vecchio Mac.
+class _ShadePainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = _ink
+      ..isAntiAlias = false;
+    for (var y = 0.0; y < size.height; y += 2) {
+      for (var x = (y % 4 == 0) ? 0.0 : 2.0; x < size.width; x += 4) {
+        canvas.drawRect(Rect.fromLTWH(x, y, 1, 1), paint);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(_ShadePainter old) => false;
 }
 
 class _MenuBar extends StatelessWidget {
@@ -205,7 +274,7 @@ class _MenuBar extends StatelessWidget {
           const SizedBox(width: 6),
           Text('megaplayer', style: _pixel(19, weight: 700)),
           const SizedBox(width: 10),
-          _MenuItem(label: 'Apri…', onTap: controller.openFiles),
+          _MenuItem(label: 'Apri…', onTap: () => _openFiles(context, controller)),
           _MenuItem(label: 'Skin moderna', onTap: () => controller.setSkin(Skin.modern)),
           if (controller.currentTrack != null)
             _MenuItem(label: 'Esporta…', onTap: () => _showExport(context, controller)),

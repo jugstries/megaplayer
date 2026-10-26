@@ -237,6 +237,20 @@ void main() {
       expect(controller.playlists.map((p) => p.name), ['I miei preferiti']);
     });
 
+    test('i file M3U aperti o trascinati diventano playlist, gli altri vanno in coda', () {
+      store.m3uFiles['/Liste/Sera.m3u8'] = [
+        const Track(ref: '${FakeCore.archive}/Stormlord/jt.title', name: 'jt.title', subsong: 0),
+      ];
+      final result = controller.addPaths(['/Liste/Sera.m3u8', FakeCore.archive, '/Liste/Vuota.M3U']);
+      expect(result.playlists.single.name, 'Sera');
+      expect(result.playlists.single.count, 1);
+      expect([result.added, result.requested], [6, 6]);
+      expect(controller.tracks, hasLength(6), reason: "l'M3U non va in coda");
+      expect(controller.playlists.map((p) => p.name), ['Sera']);
+      expect(controller.playlistTracks(result.playlists.single.id).single.subsong, 0);
+      expect(controller.error, 'nessun brano di Vuota.M3U si trova');
+    });
+
     test('dalla libreria: suona subito, in coda, sottobrani', () {
       controller.addPaths([FakeCore.archive]);
       controller.playIndex(1);

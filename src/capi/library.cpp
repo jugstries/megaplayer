@@ -45,6 +45,7 @@ struct mp_library {
     std::string trackJson;
     std::string playlistsJson;
     std::string entriesJson;
+    std::string importJson;
     std::string settingText;
 };
 
@@ -401,6 +402,31 @@ int32_t mp_library_playlist_set_entries(mp_library* library, int64_t id, const c
         library,
         [&] {
             library->library.setPlaylistEntries(id, parseEntries(entries));
+            return int32_t{0};
+        },
+        int32_t{-1});
+}
+
+const char* mp_library_playlist_import(mp_library* library, const char* path)
+{
+    return guarded(
+        library,
+        [&] {
+            const mp::M3uImport imported = library->library.importM3u(path ? path : "");
+            library->importJson = "{\"id\":" + std::to_string(imported.playlist)
+                + ",\"name\":" + mp::json::string(imported.name) + ",\"count\":" + std::to_string(imported.count)
+                + ",\"missing\":" + std::to_string(imported.missing) + "}";
+            return library->importJson.c_str();
+        },
+        static_cast<const char*>(nullptr));
+}
+
+int32_t mp_library_playlist_export(mp_library* library, int64_t id, const char* path)
+{
+    return guarded(
+        library,
+        [&] {
+            library->library.exportM3u(id, path ? path : "");
             return int32_t{0};
         },
         int32_t{-1});

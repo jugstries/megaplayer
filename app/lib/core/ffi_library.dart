@@ -66,6 +66,10 @@ class FfiLibraryStore implements LibraryStore {
             'mp_library_playlist_entries'),
         _setEntries = lib.lookupFunction<Int32 Function(_Library, Int64, Pointer<Utf8>),
             int Function(_Library, int, Pointer<Utf8>)>('mp_library_playlist_set_entries'),
+        _import = lib.lookupFunction<_Text Function(_Library, _Text), _Text Function(_Library, _Text)>(
+            'mp_library_playlist_import'),
+        _export = lib.lookupFunction<Int32 Function(_Library, Int64, _Text), int Function(_Library, int, _Text)>(
+            'mp_library_playlist_export'),
         _setting = lib.lookupFunction<Pointer<Utf8> Function(_Library, Pointer<Utf8>),
             Pointer<Utf8> Function(_Library, Pointer<Utf8>)>('mp_library_setting'),
         _setSetting = lib.lookupFunction<Int32 Function(_Library, Pointer<Utf8>, Pointer<Utf8>),
@@ -104,6 +108,8 @@ class FfiLibraryStore implements LibraryStore {
   final int Function(_Library) _queue;
   final Pointer<Utf8> Function(_Library, int) _entries;
   final int Function(_Library, int, Pointer<Utf8>) _setEntries;
+  final _Text Function(_Library, _Text) _import;
+  final int Function(_Library, int, _Text) _export;
   final Pointer<Utf8> Function(_Library, Pointer<Utf8>) _setting;
   final int Function(_Library, Pointer<Utf8>, Pointer<Utf8>) _setSetting;
 
@@ -234,6 +240,16 @@ class FfiLibraryStore implements LibraryStore {
     final lines = [for (final entry in entries) '${entry.subsong ?? ''}\t${clean(entry.ref)}\t${clean(entry.name)}'];
     _check(_withString(lines.join('\n'), (native) => _setEntries(_library, id, native)));
   }
+
+  @override
+  PlaylistImport importPlaylist(String path) {
+    final json = _withString(path, (native) => _import(_library, native));
+    if (json == nullptr) throw _error();
+    return PlaylistImport.fromJson(jsonDecode(json.toDartString()) as Map<String, dynamic>);
+  }
+
+  @override
+  void exportPlaylist(int id, String path) => _check(_withString(path, (native) => _export(_library, id, native)));
 
   @override
   String setting(String key) => _withString(key, (native) => _setting(_library, native)).toDartString();

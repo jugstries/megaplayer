@@ -433,6 +433,21 @@ solo la sua cartella dell'archivio, dove stanno anche i file che lo
 accompagnano, e tiene le ultime otto cartelle estratte. L'app usa tutto
 attraverso l'API C (`mp_library_*` in [src/capi/megaplayer.h](src/capi/megaplayer.h)).
 
+Le playlist entrano ed escono in M3U ([src/library/M3u.cpp](src/library/M3u.cpp)).
+L'export scrive un M3U8 in UTF-8 con `#EXTINF` (durata, autore e titolo dalla
+libreria) e i percorsi relativi per i file che stanno nella cartella della
+playlist o sotto, completi per gli altri; i brani dentro un archivio hanno il
+loro riferimento `ARCHIVIO/percorso/interno`, che capisce solo megaplayer. Il
+sottobrano va in una riga `#MEGAPLAYER-SUBSONG:N` (da 1), che gli altri lettori
+ignorano, suonando il file intero. L'import legge anche gli M3U degli altri
+lettori: in Latin-1 se non sono UTF-8, con le barre di Windows, con gli
+indirizzi `file://`; salta gli indirizzi web e i file che non trova.
+
+La raccolta dei brani da una cartella (quando la si trascina sulla finestra)
+prende i suoi file e quelli delle sottocartelle, in ordine, archivi compresi,
+senza quelli nascosti e quelli che nessun backend riconosce, come fa la
+libreria.
+
 UADE riconosce molti formati anche solo dal nome, col prefisso dell'Amiga
 (`mod.`, `cp.`, `hip.`) o con l'estensione: così sui CD di moduli prendeva
 per brani anche i programmi e i loro file. Quando il nome è l'unico indizio,
@@ -566,11 +581,19 @@ playlist, e dei brani con più sottobrani si apre l'elenco per sceglierne uno.
 Coda e playlist si riordinano trascinando le voci dal loro numero; dal menu
 di ogni voce si sceglie il sottobrano o la si toglie. «Riproduci» mette una
 playlist al posto della coda; dal lettore si aggiunge a una playlist il
-sottobrano che suona.
+sottobrano che suona. L'icona accanto al + delle playlist importa un M3U, e
+il menu di una playlist o della coda la esporta.
+
+In tutte e due le skin i file trascinati dal Finder o da Esplora risorse
+sulla finestra vanno in coda (delle cartelle, i brani che hanno dentro),
+mentre gli M3U diventano playlist, come quelli scelti con «Apri file…» o
+passati all'avvio. Il trascinamento arriva dai runner nativi sul canale
+`megaplayer/drop` ([app/lib/player/file_drop.dart](app/lib/player/file_drop.dart)).
 
 Nella skin retrò le stesse cose stanno nella finestra sotto «In
 riproduzione», con le linguette Coda, Libreria e Playlist (un menu con le
-playlist e «Nuova playlist…»). La libreria è un elenco alla Finder con
+playlist, «Nuova playlist…» e «Importa M3U…»; «ESPORTA M3U…» sta sotto la
+coda e sopra le voci di una playlist). La libreria è un elenco alla Finder con
 nome, formato e durata: il triangolino apre i sottobrani, piattaforma e
 formato si scelgono da menu a comparsa con la spunta. Gli avvisi («Aggiunto
 alla coda») li dà la mascotte nella finestra «Ciao!».
@@ -610,8 +633,9 @@ Limiti attuali:
 - gli oscilloscopi mostrano i canali sinistro e destro dell'uscita: per le
   voci separate (quelle di Paula ora si zittiscono una per una) il core
   dovrebbe darne l'audio a parte;
-- niente trascinamento dei file sulla finestra, né dalla libreria alle
-  playlist, e niente import o export M3U.
+- dalla libreria alle playlist non si trascina: si aggiunge con l'icona o
+  dal menu. Una cartella grande trascinata sulla finestra si legge tutta
+  prima di andare in coda, e intanto l'app aspetta.
 
 ## Release e aggiornamenti
 

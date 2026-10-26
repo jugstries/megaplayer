@@ -57,6 +57,21 @@ void _notify(BuildContext context, String message) {
     ..showSnackBar(SnackBar(content: Text(message), duration: const Duration(seconds: 2)));
 }
 
+/// «Apri file…»: i brani vanno in coda, i file M3U diventano playlist, e
+/// lo dice.
+Future<void> _openFiles(BuildContext context, PlayerController controller) async {
+  final result = await controller.openFiles();
+  if (result.playlists.isNotEmpty && context.mounted) {
+    _notify(context, addedFilesMessage(result.added, result.requested, result.playlists));
+  }
+}
+
+/// Scrive la playlist [id] (la coda, se null) in un M3U e lo dice.
+Future<void> _exportPlaylist(BuildContext context, PlayerController controller, int? id, String name) async {
+  final path = await controller.exportPlaylist(id, name: name);
+  if (path != null && context.mounted) _notify(context, exportedPlaylistMessage(path));
+}
+
 /// Mette in coda e lo dice.
 void _enqueue(BuildContext context, PlayerController controller, List<Track> entries) =>
     _notify(context, enqueuedMessage(controller.enqueue(entries), entries.length));
@@ -647,6 +662,11 @@ class _QueuePanel extends StatelessWidget {
                       child: const Text('Salva come playlist…'),
                     ),
                     MenuItemButton(
+                      leadingIcon: const Icon(Icons.ios_share_rounded, size: 18),
+                      onPressed: canSave ? () => _exportPlaylist(context, controller, null, 'Coda') : null,
+                      child: const Text('Esporta in M3U…'),
+                    ),
+                    MenuItemButton(
                       leadingIcon: const Icon(Icons.clear_all_rounded, size: 18),
                       onPressed: tracks.isEmpty ? null : controller.clearQueue,
                       child: const Text('Svuota la coda'),
@@ -737,6 +757,11 @@ class _PlaylistPanel extends StatelessWidget {
                     leadingIcon: const Icon(Icons.edit_rounded, size: 18),
                     onPressed: rename,
                     child: const Text('Rinomina…'),
+                  ),
+                  MenuItemButton(
+                    leadingIcon: const Icon(Icons.ios_share_rounded, size: 18),
+                    onPressed: entries.isEmpty ? null : () => _exportPlaylist(context, controller, id, playlist.name),
+                    child: const Text('Esporta in M3U…'),
                   ),
                   MenuItemButton(
                     leadingIcon: const Icon(Icons.delete_outline_rounded, size: 18),

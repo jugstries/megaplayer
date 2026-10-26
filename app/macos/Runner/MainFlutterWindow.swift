@@ -3,6 +3,10 @@ import FlutterMacOS
 import UniformTypeIdentifiers
 
 class MainFlutterWindow: NSWindow {
+  // Canale "megaplayer/drop": i file trascinati dal Finder sulla finestra,
+  // con "enter" ed "exit" mentre passano e "drop" con i percorsi.
+  private var dropChannel: FlutterMethodChannel?
+
   override func awakeFromNib() {
     let flutterViewController = FlutterViewController()
     self.contentViewController = flutterViewController
@@ -13,8 +17,35 @@ class MainFlutterWindow: NSWindow {
     RegisterGeneratedPlugins(registry: flutterViewController)
     FilesChannel.register(with: flutterViewController.engine.binaryMessenger, window: self)
     IconChannel.register(with: flutterViewController.engine.binaryMessenger)
+    dropChannel = FlutterMethodChannel(
+      name: "megaplayer/drop", binaryMessenger: flutterViewController.engine.binaryMessenger)
+    registerForDraggedTypes([.fileURL])
 
     super.awakeFromNib()
+  }
+
+  // I metodi di NSDraggingDestination: AppKit li chiama sulla finestra
+  // registrata per i file, se ci sono.
+  @objc func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+    guard !droppedPaths(sender).isEmpty else { return [] }
+    dropChannel?.invokeMethod("enter", arguments: nil)
+    return .copy
+  }
+
+  @objc func draggingExited(_ sender: NSDraggingInfo?) {
+    dropChannel?.invokeMethod("exit", arguments: nil)
+  }
+
+  @objc func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+    let paths = droppedPaths(sender)
+    dropChannel?.invokeMethod("drop", arguments: paths)
+    return !paths.isEmpty
+  }
+
+  private func droppedPaths(_ info: NSDraggingInfo) -> [String] {
+    let urls = info.draggingPasteboard.readObjects(
+      forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]
+    return urls?.map { $0.path } ?? []
   }
 }
 

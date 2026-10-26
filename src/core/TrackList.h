@@ -35,6 +35,9 @@ public:
     // per scegliere un file o una cartella dentro l'archivio. Un file
     // normale viene restituito senza controllarne il formato. Lancia
     // std::runtime_error se l'archivio è danneggiato o la selezione vuota.
+    // Può essere anche una cartella: allora i suoi file e quelli delle
+    // sottocartelle, in ordine e archivi compresi, scartando quelli che
+    // nessun backend riconosce.
     std::vector<Track> collect(const std::string& input);
 
     // File scartati dall'ultima collect().
@@ -58,6 +61,11 @@ private:
         std::filesystem::path archive; // il file su disco
         ExtractedArchive files;
     };
+
+    // Le voci dell'archivio sotto `inner` (tutte, se è vuoto) che un backend
+    // riconosce; false se sotto `inner` non c'è niente.
+    bool addArchiveEntries(const std::filesystem::path& path, const std::string& inner,
+                           const ExtractedArchive& archive, std::vector<Track>& tracks);
 
     // Il file estratto per una voce dell'archivio, se c'è già.
     const ExtractedArchive::Entry* findExtracted(const std::filesystem::path& archive, const std::string& name) const;

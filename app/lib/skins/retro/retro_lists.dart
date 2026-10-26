@@ -68,6 +68,21 @@ class _Notices extends InheritedWidget {
 void _say(BuildContext context, String message) =>
     context.getInheritedWidgetOfExactType<_Notices>()?.say(message);
 
+/// «Apri…»: i brani vanno in coda, i file M3U diventano playlist, e lo
+/// dice.
+Future<void> _openFiles(BuildContext context, PlayerController controller) async {
+  final result = await controller.openFiles();
+  if (result.playlists.isNotEmpty && context.mounted) {
+    _say(context, addedFilesMessage(result.added, result.requested, result.playlists));
+  }
+}
+
+/// Scrive la playlist [id] (la coda, se null) in un M3U e lo dice.
+Future<void> _exportPlaylist(BuildContext context, PlayerController controller, int? id, String name) async {
+  final path = await controller.exportPlaylist(id, name: name);
+  if (path != null && context.mounted) _say(context, exportedPlaylistMessage(path));
+}
+
 void _enqueue(BuildContext context, PlayerController controller, List<Track> entries) =>
     _say(context, enqueuedMessage(controller.enqueue(entries), entries.length));
 
@@ -725,6 +740,13 @@ class _Tabs extends StatelessWidget {
       if (id != null) onShow(_View.playlist, playlist: id);
     }
 
+    Future<void> importPlaylist() async {
+      final playlist = await controller.importPlaylist();
+      if (playlist == null || !context.mounted) return;
+      onShow(_View.playlist, playlist: playlist.id);
+      _say(context, importedPlaylistMessage(playlist));
+    }
+
     return Container(
       height: 36,
       decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: _ink, width: 2))),
@@ -756,6 +778,7 @@ class _Tabs extends StatelessWidget {
                   ),
                 if (controller.playlists.isNotEmpty) const _MenuSeparator(),
                 MenuItemButton(onPressed: newPlaylist, child: const Text('Nuova playlist…')),
+                MenuItemButton(onPressed: importPlaylist, child: const Text('Importa M3U…')),
               ],
               builder: (context, menu, _) => _Tab(
                 label: view == _View.playlist ? playlist!.name.toUpperCase() : 'PLAYLIST',
@@ -987,8 +1010,13 @@ class _QueueView extends StatelessWidget {
         _FooterBar(
           text: tracks.isEmpty ? 'vuota' : tracksLabel(tracks.length),
           actions: [
-            if (controller.store != null)
+            if (controller.store != null) ...[
               _TextButton(label: 'SALVA COME PLAYLIST…', onPressed: tracks.isEmpty ? null : saveAsPlaylist),
+              _TextButton(
+                label: 'ESPORTA M3U…',
+                onPressed: tracks.isEmpty ? null : () => _exportPlaylist(context, controller, null, 'Coda'),
+              ),
+            ],
             _TextButton(label: 'SVUOTA', onPressed: tracks.isEmpty ? null : controller.clearQueue),
           ],
         ),
@@ -1043,6 +1071,11 @@ class _PlaylistView extends StatelessWidget {
                 onPressed: entries.isEmpty ? null : () => _enqueue(context, controller, entries),
               ),
               const Spacer(),
+              _TextButton(
+                label: 'ESPORTA M3U…',
+                onPressed: entries.isEmpty ? null : () => _exportPlaylist(context, controller, id, playlist.name),
+              ),
+              const SizedBox(width: 8),
               _TextButton(label: 'RINOMINA…', onPressed: rename),
               const SizedBox(width: 8),
               _TextButton(label: 'ELIMINA…', onPressed: delete),

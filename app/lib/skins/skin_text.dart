@@ -37,6 +37,26 @@ String createdPlaylistMessage(String name, int count) => switch (count) {
       _ => 'Playlist «$name» con ${tracksLabel(count)}',
     };
 
+/// Dopo aver creato una playlist da un file M3U.
+String importedPlaylistMessage(PlaylistImport playlist) {
+  final missing = switch (playlist.missing) {
+    0 => '',
+    1 => ', 1 non trovato',
+    final count => ', ${formatCount(count)} non trovati',
+  };
+  return 'Playlist «${playlist.name}» con ${tracksLabel(playlist.count)}$missing';
+}
+
+/// Dopo aver scritto una playlist in un file M3U.
+String exportedPlaylistMessage(String path) => 'Salvata in ${baseName(path)}';
+
+/// Dopo «Apri file…» o un trascinamento: le playlist create e i brani
+/// messi in coda; "" se non è entrato niente.
+String addedFilesMessage(int added, int requested, List<PlaylistImport> playlists) => [
+      for (final playlist in playlists) importedPlaylistMessage(playlist),
+      if (requested > 0) enqueuedMessage(added, requested),
+    ].join(' · ');
+
 const _archiveExtensions = {'lha', 'lzh', 'lzx', 'zip', '7z', 'rar', 'tar', 'gz', 'tgz', 'bz2', 'xz', 'iso'};
 
 /// Una cartella della libreria che in realtà è un archivio.

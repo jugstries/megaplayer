@@ -28,6 +28,7 @@ bool FlutterWindow::OnCreate() {
   flutter::BinaryMessenger* messenger = flutter_controller_->engine()->messenger();
   files_channel_ = CreateFilesChannel(messenger, GetHandle());
   icon_channel_ = CreateIconChannel(messenger, GetHandle());
+  drop_channel_ = CreateDropChannel(messenger, GetHandle());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
@@ -43,8 +44,10 @@ bool FlutterWindow::OnCreate() {
 }
 
 void FlutterWindow::OnDestroy() {
+  RevokeDropTarget(GetHandle());
   files_channel_ = nullptr;
   icon_channel_ = nullptr;
+  drop_channel_ = nullptr;
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
   }

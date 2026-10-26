@@ -1,6 +1,8 @@
 #include "platform_channels.h"
 
 #include <flutter/standard_method_codec.h>
+#include <ole2.h>
+#include <shellapi.h>
 #include <shobjidl.h>
 #include <wrl/client.h>
 
@@ -223,6 +225,91 @@ std::unique_ptr<Channel> NewChannel(flutter::BinaryMessenger* messenger,
       messenger, name, &flutter::StandardMethodCodec::GetInstance());
 }
 
+// Riceve da OLE i file trascinati sulla finestra e li passa all'app.
+class FileDropTarget : public IDropTarget {
+ public:
+  explicit FileDropTarget(Channel* channel) : channel_(channel) {}
+
+  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID id, void** object) override {
+    if (id == IID_IUnknown || id == IID_IDropTarget) {
+      *object = static_cast<IDropTarget*>(this);
+      AddRef();
+      return S_OK;
+    }
+    *object = nullptr;
+    return E_NOINTERFACE;
+  }
+
+  ULONG STDMETHODCALLTYPE AddRef() override { return ++references_; }
+
+  ULONG STDMETHODCALLTYPE Release() override {
+    const ULONG references = --references_;
+    if (references == 0) {
+      delete this;
+    }
+    return references;
+  }
+
+  HRESULT STDMETHODCALLTYPE DragEnter(IDataObject* data, DWORD, POINTL,
+                                      DWORD* effect) override {
+    accepting_ = !Paths(data).empty();
+    if (accepting_) {
+      channel_->InvokeMethod("enter", nullptr);
+    }
+    *effect = accepting_ ? DROPEFFECT_COPY : DROPEFFECT_NONE;
+    return S_OK;
+  }
+
+  HRESULT STDMETHODCALLTYPE DragOver(DWORD, POINTL, DWORD* effect) override {
+    *effect = accepting_ ? DROPEFFECT_COPY : DROPEFFECT_NONE;
+    return S_OK;
+  }
+
+  HRESULT STDMETHODCALLTYPE DragLeave() override {
+    if (accepting_) {
+      channel_->InvokeMethod("exit", nullptr);
+    }
+    accepting_ = false;
+    return S_OK;
+  }
+
+  HRESULT STDMETHODCALLTYPE Drop(IDataObject* data, DWORD, POINTL,
+                                 DWORD* effect) override {
+    const std::vector<std::string> paths = Paths(data);
+    *effect = paths.empty() ? DROPEFFECT_NONE : DROPEFFECT_COPY;
+    channel_->InvokeMethod("drop", std::make_unique<EncodableValue>(List(paths)));
+    accepting_ = false;
+    return S_OK;
+  }
+
+ private:
+  // I file e le cartelle trascinati, se sono file (CF_HDROP).
+  static std::vector<std::string> Paths(IDataObject* data) {
+    FORMATETC format = {CF_HDROP, nullptr, DVASPECT_CONTENT, -1, TYMED_HGLOBAL};
+    STGMEDIUM medium = {};
+    std::vector<std::string> paths;
+    if (FAILED(data->GetData(&format, &medium))) {
+      return paths;
+    }
+    if (auto drop = static_cast<HDROP>(::GlobalLock(medium.hGlobal))) {
+      const UINT count = ::DragQueryFileW(drop, 0xFFFFFFFF, nullptr, 0);
+      for (UINT i = 0; i < count; ++i) {
+        const UINT length = ::DragQueryFileW(drop, i, nullptr, 0);
+        std::wstring path(length, L'\0');
+        ::DragQueryFileW(drop, i, path.data(), length + 1);
+        paths.push_back(Utf8FromUtf16(path.c_str()));
+      }
+      ::GlobalUnlock(medium.hGlobal);
+    }
+    ::ReleaseStgMedium(&medium);
+    return paths;
+  }
+
+  Channel* channel_;
+  ULONG references_ = 1;
+  bool accepting_ = false;
+};
+
 }  // namespace
 
 std::unique_ptr<Channel> CreateFilesChannel(flutter::BinaryMessenger* messenger,
@@ -292,4 +379,22 @@ std::unique_ptr<Channel> CreateIconChannel(flutter::BinaryMessenger* messenger,
         result->Success();
       });
   return channel;
+}
+
+std::unique_ptr<Channel> CreateDropChannel(flutter::BinaryMessenger* messenger,
+                                           HWND window) {
+  auto channel = NewChannel(messenger, "megaplayer/drop");
+  // Il trascinamento passa da OLE, che va avviato sul thread della finestra.
+  if (SUCCEEDED(::OleInitialize(nullptr))) {
+    auto* target = new FileDropTarget(channel.get());
+    ::RegisterDragDrop(window, target);
+    target->Release();  // RegisterDragDrop tiene il suo riferimento
+  }
+  return channel;
+}
+
+void RevokeDropTarget(HWND window) {
+  if (SUCCEEDED(::RevokeDragDrop(window))) {
+    ::OleUninitialize();
+  }
 }

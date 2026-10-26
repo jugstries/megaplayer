@@ -52,6 +52,42 @@ void main() {
     await tester.pump();
   }
 
+  /// Quello che manda il runner quando si trascinano file sulla finestra.
+  Future<void> drop(WidgetTester tester, String method, [Object? arguments]) =>
+      tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+        'megaplayer/drop',
+        const StandardMethodCodec().encodeMethodCall(MethodCall(method, arguments)),
+        (_) {},
+      );
+
+  testWidgets('M3U e file trascinati, con la mascotte che lo dice', (tester) async {
+    store.m3uFiles['/Liste/Sera.m3u8'] = [const Track(ref: '/Musica/giro.sid', name: '/Musica/giro.sid', subsong: 1)];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(const MethodChannel('megaplayer/files'), (call) async {
+      if (call.method == 'openFiles') return ['/Liste/Sera.m3u8'];
+      return call.method == 'saveFile' ? '/Liste/Copia.m3u8' : null;
+    });
+    addTearDown(() => tester.binding.defaultBinaryMessenger
+        .setMockMethodCallHandler(const MethodChannel('megaplayer/files'), null));
+    await open(tester, tab: 'PLAYLIST');
+    await choose(tester, find.text('Importa M3U…'));
+    expect(find.text('Playlist «Sera» con 1 brano'), findsOneWidget);
+    expect(find.text('SERA'), findsOneWidget);
+
+    await tester.tap(find.text('ESPORTA M3U…'));
+    await tester.pump();
+    expect(store.exported['/Liste/Copia.m3u8'], hasLength(1));
+    expect(find.text('Salvata in Copia.m3u8'), findsOneWidget);
+
+    await drop(tester, 'enter');
+    await tester.pump();
+    expect(find.text('Lascia qui i file'), findsOneWidget);
+    await drop(tester, 'drop', [FakeCore.archive]);
+    await tester.pump();
+    expect(find.text('Lascia qui i file'), findsNothing);
+    expect(controller.tracks, hasLength(6));
+    expect(find.text('Aggiunti alla coda 6 brani'), findsOneWidget);
+  });
+
   testWidgets('cartelle, sottobrani e tutto in coda, con la mascotte che lo dice', (tester) async {
     await open(tester);
     await tester.tap(find.textContaining('giro.sid'));

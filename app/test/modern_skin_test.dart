@@ -43,6 +43,61 @@ void main() {
     await tester.pump();
   }
 
+  /// Quello che manda il runner quando si trascinano file sulla finestra.
+  Future<void> drop(WidgetTester tester, String method, [Object? arguments]) =>
+      tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+        'megaplayer/drop',
+        const StandardMethodCodec().encodeMethodCall(MethodCall(method, arguments)),
+        (_) {},
+      );
+
+  testWidgets('M3U: importato dalla barra laterale, esportato dal menu della playlist', (tester) async {
+    store.m3uFiles['/Liste/Sera.m3u8'] = [const Track(ref: '/Musica/giro.sid', name: '/Musica/giro.sid', subsong: 1)];
+    Object? saving;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(const MethodChannel('megaplayer/files'), (call) async {
+      if (call.method == 'openFiles') return ['/Liste/Sera.m3u8'];
+      saving = call.arguments;
+      return call.method == 'saveFile' ? '/Liste/Copia.m3u8' : null;
+    });
+    addTearDown(() => tester.binding.defaultBinaryMessenger
+        .setMockMethodCallHandler(const MethodChannel('megaplayer/files'), null));
+    await open(tester);
+
+    await tester.tap(find.byTooltip('Importa una playlist M3U'));
+    await tester.pump();
+    expect(find.text('Playlist «Sera» con 1 brano'), findsOneWidget);
+    expect(find.text('PLAYLIST'), findsWidgets);
+    expect(controller.playlists.single.name, 'Sera');
+
+    await tester.tap(find.byTooltip('Playlist'));
+    await tester.pump();
+    await tester.tap(find.text('Esporta in M3U…'));
+    await tester.pump();
+    // L'avviso di prima se ne va, poi arriva quello nuovo.
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect((saving as Map)['name'], 'Sera.m3u8');
+    expect(store.exported['/Liste/Copia.m3u8']!.single.subsong, 1);
+    expect(find.text('Salvata in Copia.m3u8'), findsOneWidget);
+  });
+
+  testWidgets('file trascinati sulla finestra: la sagoma mentre passano, poi in coda', (tester) async {
+    await open(tester);
+    await drop(tester, 'enter');
+    await tester.pump();
+    expect(find.text('Lascia qui i file'), findsOneWidget);
+    await drop(tester, 'exit');
+    await tester.pump();
+    expect(find.text('Lascia qui i file'), findsNothing);
+
+    await drop(tester, 'enter');
+    await drop(tester, 'drop', [FakeCore.archive]);
+    await tester.pump();
+    expect(find.text('Lascia qui i file'), findsNothing);
+    expect(controller.tracks, hasLength(6));
+    expect(find.text('Aggiunti alla coda 6 brani'), findsOneWidget);
+  });
+
   testWidgets('cartelle, brani e sottobrani dalla libreria', (tester) async {
     await open(tester);
     expect(find.text('Amiga'), findsOneWidget);

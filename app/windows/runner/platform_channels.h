@@ -23,4 +23,11 @@ std::unique_ptr<Channel> CreateFilesChannel(flutter::BinaryMessenger* messenger,
 std::unique_ptr<Channel> CreateIconChannel(flutter::BinaryMessenger* messenger,
                                            HWND window);
 
+// "megaplayer/drop": i file trascinati da Esplora risorse sulla finestra,
+// con "enter" ed "exit" mentre passano e "drop" con i percorsi. Prima di
+// distruggere la finestra va chiamato RevokeDropTarget.
+std::unique_ptr<Channel> CreateDropChannel(flutter::BinaryMessenger* messenger,
+                                           HWND window);
+void RevokeDropTarget(HWND window);
+
 #endif  // RUNNER_PLATFORM_CHANNELS_H_

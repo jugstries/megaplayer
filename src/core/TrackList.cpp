@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <stdexcept>
+#include <system_error>
 
 namespace mp {
 
@@ -13,6 +14,28 @@ namespace {
 // Quante cartelle estratte da resolve() tenere su disco: si riascoltano
 // spesso i brani vicini, ma un'immagine ISO intera non serve.
 constexpr size_t kMaxResolved = 8;
+
+// I file di una cartella e delle sue sottocartelle, in ordine, senza quelli
+// nascosti, come li vede la libreria.
+std::vector<std::filesystem::path> folderFiles(const std::filesystem::path& folder)
+{
+    namespace fs = std::filesystem;
+    std::vector<fs::path> files;
+    std::error_code error;
+    for (auto it = fs::recursive_directory_iterator(folder, fs::directory_options::skip_permission_denied, error);
+         !error && it != fs::recursive_directory_iterator(); it.increment(error)) {
+        const std::string name = it->path().filename().string();
+        if (!name.empty() && name[0] == '.') {
+            if (it->is_directory(error))
+                it.disable_recursion_pending();
+            continue;
+        }
+        if (it->is_regular_file(error))
+            files.push_back(it->path());
+    }
+    std::sort(files.begin(), files.end());
+    return files;
+}
 
 } // namespace
 
@@ -29,6 +52,25 @@ std::pair<std::filesystem::path, std::string> splitArchivePath(const std::string
 std::vector<Track> TrackCollector::collect(const std::string& input)
 {
     lastSkipped_ = 0;
+    std::vector<Track> tracks;
+    if (std::error_code error; std::filesystem::is_directory(input, error)) {
+        for (const std::filesystem::path& file : folderFiles(input)) {
+            try {
+                if (std::optional<ExtractedArchive> archive = openArchive(file)) {
+                    addArchiveEntries(file, {}, *archive, tracks);
+                    collected_.push_back({file, std::move(*archive)});
+                } else if (!isSampleHalf(file) && !registry_.probe(loadSourceFile(file)).empty()) {
+                    tracks.push_back({file, file.string(), false, file.string()});
+                } else {
+                    ++lastSkipped_;
+                }
+            } catch (const std::exception&) {
+                ++lastSkipped_; // un archivio rovinato non ferma il resto della cartella
+            }
+        }
+        return tracks;
+    }
+
     const auto [path, inner] = splitArchivePath(input);
     std::optional<ExtractedArchive> archive = openArchive(path);
     if (!archive) {
@@ -38,10 +80,17 @@ std::vector<Track> TrackCollector::collect(const std::string& input)
         }
         return {{input, input, false, input}};
     }
+    if (!addArchiveEntries(path, inner, *archive, tracks))
+        throw std::runtime_error(inner.empty() ? "archivio vuoto" : "nessun file " + inner + " nell'archivio");
+    collected_.push_back({path, std::move(*archive)});
+    return tracks;
+}
 
-    std::vector<Track> tracks;
+bool TrackCollector::addArchiveEntries(const std::filesystem::path& path, const std::string& inner,
+                                       const ExtractedArchive& archive, std::vector<Track>& tracks)
+{
     bool selected = false;
-    for (const ExtractedArchive::Entry& entry : archive->entries()) {
+    for (const ExtractedArchive::Entry& entry : archive.entries()) {
         if (!inner.empty() && entry.name != inner && entry.name.rfind(inner + "/", 0) != 0)
             continue;
         selected = true;
@@ -57,11 +106,7 @@ std::vector<Track> TrackCollector::collect(const std::string& input)
         else
             ++lastSkipped_;
     }
-    if (!selected)
-        throw std::runtime_error(inner.empty() ? "archivio vuoto" : "nessun file " + inner + " nell'archivio");
-
-    collected_.push_back({path, std::move(*archive)});
-    return tracks;
+    return selected;
 }
 
 const ExtractedArchive::Entry* TrackCollector::findExtracted(const std::filesystem::path& archive,

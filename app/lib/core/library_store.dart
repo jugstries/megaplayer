@@ -43,6 +43,13 @@ abstract interface class LibraryStore {
   /// Sostituisce le voci; i doppioni (stesso brano e sottobrano) si scartano.
   void setEntries(int id, List<Track> entries);
 
+  /// Una playlist nuova da un file M3U o M3U8, senza le voci che non si
+  /// trovano; se non se ne trova nessuna lancia e non crea niente.
+  PlaylistImport importPlaylist(String path);
+
+  /// Scrive una playlist, o la coda, in un file M3U8.
+  void exportPlaylist(int id, String path);
+
   /// "" se l'impostazione non è mai stata scritta.
   String setting(String key);
   void setSetting(String key, String value);

@@ -183,6 +183,25 @@ class FakeLibraryStore implements LibraryStore {
     _entries[id] = kept;
   }
 
+  /// I file M3U che importPlaylist sa leggere: percorso → voci.
+  final Map<String, List<Track>> m3uFiles = {};
+
+  /// Le playlist scritte da exportPlaylist: percorso → voci.
+  final Map<String, List<Track>> exported = {};
+
+  @override
+  PlaylistImport importPlaylist(String path) {
+    final tracks = m3uFiles[path];
+    if (tracks == null || tracks.isEmpty) throw CoreException('nessun brano di ${path.split('/').last} si trova');
+    final name = path.split('/').last.replaceAll(RegExp(r'\.m3u8?$'), '');
+    final id = createPlaylist(name);
+    setEntries(id, tracks);
+    return PlaylistImport(id: id, name: name, count: _entries[id]!.length, missing: 0);
+  }
+
+  @override
+  void exportPlaylist(int id, String path) => exported[path] = entries(id);
+
   @override
   String setting(String key) => settings[key] ?? '';
 

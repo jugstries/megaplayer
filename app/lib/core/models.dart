@@ -97,6 +97,25 @@ class PlaylistInfo {
   final int count;
 }
 
+/// Una playlist creata da un file M3U.
+class PlaylistImport {
+  const PlaylistImport({required this.id, required this.name, required this.count, required this.missing});
+
+  factory PlaylistImport.fromJson(Map<String, dynamic> json) => PlaylistImport(
+        id: json['id'] as int,
+        name: json['name'] as String,
+        count: json['count'] as int,
+        missing: json['missing'] as int,
+      );
+
+  final int id;
+  final String name;
+  final int count;
+
+  /// Le voci saltate perché non si trovano.
+  final int missing;
+}
+
 /// Una ricerca nella libreria: le parole cercate, i filtri e la cartella.
 class LibraryQuery {
   const LibraryQuery({

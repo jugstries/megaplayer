@@ -302,10 +302,10 @@ class PlayerController extends ChangeNotifier {
     }
   }
 
-  /// La finestra di apertura file del sistema.
-  Future<void> openFiles() async {
+  /// La finestra di apertura file del sistema, poi [addPaths].
+  Future<AddedFiles> openFiles() async {
     final paths = await _files.invokeListMethod<String>('openFiles') ?? const [];
-    addPaths(paths);
+    return addPaths(paths);
   }
 
   /// La finestra del sistema per scegliere la cartella della musica; null
@@ -321,19 +321,39 @@ class PlayerController extends ChangeNotifier {
     addPaths(paths);
   }
 
-  /// Aggiunge file e archivi alla coda, come [enqueue].
-  void addPaths(List<String> paths) {
+  /// I file M3U, che diventano playlist invece di andare in coda.
+  static bool isPlaylistFile(String path) => RegExp(r'\.m3u8?$', caseSensitive: false).hasMatch(path);
+
+  /// Aggiunge file e archivi alla coda, come [enqueue]; i file M3U
+  /// diventano playlist. Vale per quelli scelti, passati all'avvio o
+  /// trascinati sulla finestra.
+  AddedFiles addPaths(List<String> paths) {
     final entries = <Track>[];
+    final imported = <PlaylistImport>[];
     final problems = <String>[];
     for (final path in paths) {
+      final name = path.split(pathSeparators).last;
       try {
-        entries.addAll(core.collect(path));
+        if (isPlaylistFile(path)) {
+          final store = this.store;
+          if (store == null) throw const CoreException('le playlist non si possono salvare');
+          imported.add(store.importPlaylist(path));
+        } else {
+          entries.addAll(core.collect(path));
+        }
       } on CoreException catch (e) {
-        problems.add('${path.split(pathSeparators).last}: $e');
+        problems.add(isPlaylistFile(path) ? '$e' : '$name: $e');
       }
     }
-    error = problems.isEmpty ? null : problems.join('\n');
-    enqueue(entries);
+    if (imported.isNotEmpty) refreshPlaylists();
+    error = null;
+    final added = enqueue(entries);
+    // Dopo enqueue, che facendo partire un brano toglierebbe il messaggio.
+    if (problems.isNotEmpty) {
+      error = [...problems, ?error].join('\n');
+      notifyListeners();
+    }
+    return AddedFiles(added: added, requested: entries.length, playlists: imported);
   }
 
   /// Mette in fondo alla coda le voci che non ci sono già, e quante sono; se
@@ -590,6 +610,38 @@ class PlayerController extends ChangeNotifier {
   /// Salva la coda così com'è in una nuova playlist.
   int? saveQueueAsPlaylist(String name) => createPlaylist(name, entries: tracks);
 
+  /// La finestra del sistema per scegliere un file M3U o M3U8, che diventa
+  /// una playlist; null se si annulla o non si legge (allora c'è [error]).
+  Future<PlaylistImport?> importPlaylist() async {
+    final paths = await _files.invokeListMethod<String>('openFiles', {
+      'message': 'Scegli una playlist M3U',
+      'single': true,
+      'extensions': ['m3u', 'm3u8'],
+    });
+    if (paths == null || paths.isEmpty) return null;
+    return addPaths(paths).playlists.firstOrNull;
+  }
+
+  /// La finestra del sistema per scegliere dove salvare, poi la playlist
+  /// [id] (la coda, se null) in un file M3U8 che altri lettori aprono. Il
+  /// file scritto, o null.
+  Future<String?> exportPlaylist(int? id, {required String name}) async {
+    if (store == null) return null;
+    final fileName = name.replaceAll(RegExp(r'[/\\:*?"<>|]'), '-').trim();
+    final path = await _files.invokeMethod<String>('saveFile', {
+      'name': '${fileName.isEmpty ? 'playlist' : fileName}.m3u8',
+      'message': 'Esporta in M3U',
+      'extensions': ['m3u8'],
+    });
+    if (path == null) return null;
+    final written = _withStore((store) {
+      store.exportPlaylist(id ?? store.queueId(), path);
+      return path;
+    });
+    notifyListeners();
+    return written;
+  }
+
   /// Mette la playlist al posto della coda e fa partire la voce [start].
   void loadPlaylist(int id, {int start = 0}) {
     final entries = _withStore((store) => store.entries(id));
@@ -793,4 +845,14 @@ String formatTime(double? seconds, {bool padMinutes = false}) {
   final minutes = (total ~/ 60).toString();
   final rest = (total % 60).toString().padLeft(2, '0');
   return '${padMinutes ? minutes.padLeft(2, '0') : minutes}:$rest';
+}
+
+/// Quello che è entrato con [PlayerController.addPaths]: le voci nuove in
+/// coda su quelle chieste, e le playlist create dai file M3U.
+class AddedFiles {
+  const AddedFiles({this.added = 0, this.requested = 0, this.playlists = const []});
+
+  final int added;
+  final int requested;
+  final List<PlaylistImport> playlists;
 }

@@ -259,6 +259,14 @@ MP_API const char* mp_library_playlist_entries(mp_library* library, int64_t id);
  * sottobrano vuoto per il file intero. I doppioni si scartano.
  */
 MP_API int32_t mp_library_playlist_set_entries(mp_library* library, int64_t id, const char* entries);
+/*
+ * Una playlist nuova da un file M3U o M3U8: {"id": 4, "name": "Preferiti",
+ * "count": 12, "missing": 1}, dove missing sono le voci saltate perché non
+ * si trovano. NULL in caso di errore, anche se non se ne trova nessuna.
+ */
+MP_API const char* mp_library_playlist_import(mp_library* library, const char* path);
+/* Scrive una playlist, o la coda, in un file M3U8. */
+MP_API int32_t mp_library_playlist_export(mp_library* library, int64_t id, const char* path);
 
 /* Impostazioni dell'app (skin, volume, ...): "" se mai scritte. */
 MP_API const char* mp_library_setting(mp_library* library, const char* key);

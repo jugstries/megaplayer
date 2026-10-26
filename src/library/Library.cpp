@@ -1,8 +1,10 @@
 #include "Library.h"
 
+#include "M3u.h"
 #include "core/Archive.h"
 #include "core/DecoderRegistry.h"
 #include "core/SourceFile.h"
+#include "core/TrackList.h"
 #include "decoders/TfmxFiles.h"
 
 #include <sqlite3.h>
@@ -11,6 +13,8 @@
 #include <cctype>
 #include <cstdint>
 #include <cstdlib>
+#include <fstream>
+#include <iterator>
 #include <map>
 #include <set>
 #include <sstream>
@@ -876,6 +880,100 @@ void Library::setPlaylistEntries(int64_t id, const std::vector<PlaylistEntry>& e
         insert.bind(5, entry.name).run();
     }
     transaction.commit();
+}
+
+M3uImport Library::importM3u(const fs::path& file)
+{
+    std::ifstream in(file, std::ios::binary);
+    if (!in)
+        throw std::runtime_error("impossibile leggere " + file.filename().string());
+    const std::string content{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+    std::error_code error;
+    fs::path folder = fs::absolute(file, error).parent_path();
+    if (const fs::path canonical = fs::weakly_canonical(folder, error); !error)
+        folder = canonical;
+    const M3uPlaylist playlist = parseM3u(content, folder);
+
+    M3uImport result;
+    result.missing = playlist.skipped;
+    std::vector<PlaylistEntry> entries;
+    std::set<std::pair<std::string, int>> added;
+    for (const M3uEntry& item : playlist.entries) {
+        auto [path, inner] = splitArchivePath(item.path);
+        if (!fs::is_regular_file(path, error)) {
+            ++result.missing;
+            continue;
+        }
+        // Come la libreria scrive i suoi riferimenti, per ritrovarci il brano.
+        if (const fs::path canonical = fs::weakly_canonical(path, error); !error)
+            path = canonical;
+        PlaylistEntry entry;
+        entry.ref = inner.empty() ? path.string() : path.string() + "/" + inner;
+        entry.name = inner.empty() ? path.string() : path.string() + " > " + inner;
+        entry.subsong = item.subsong;
+        if (added.emplace(entry.ref, entry.subsong.value_or(-1)).second)
+            entries.push_back(std::move(entry));
+    }
+    if (entries.empty())
+        throw std::runtime_error("nessun brano di " + file.filename().string() + " si trova su questo computer");
+
+    result.name = playlist.name.empty() ? file.stem().string() : playlist.name;
+    result.playlist = createPlaylist(result.name);
+    setPlaylistEntries(result.playlist, entries);
+    result.count = static_cast<int>(entries.size());
+    return result;
+}
+
+void Library::exportM3u(int64_t id, const fs::path& file) const
+{
+    M3uPlaylist playlist;
+    {
+        const std::lock_guard lock(mutex_);
+        requirePlaylist(id);
+        Statement select(db_, "SELECT name FROM playlists WHERE id = ? AND queue = 0");
+        select.bind(1, id);
+        if (select.step())
+            playlist.name = select.text(0);
+    }
+    for (const PlaylistEntry& entry : playlistEntries(id)) {
+        M3uEntry item;
+        item.path = entry.ref;
+        item.subsong = entry.subsong;
+        const std::optional<LibraryTrack>& track = entry.track;
+        if (track && !track->title.empty())
+            item.title = track->author.empty() ? track->title : track->author + " - " + track->title;
+        else
+            item.title = fs::path(entry.ref).filename().string();
+        // Il file intero dura quanto i suoi sottobrani, se si sanno tutti.
+        if (track && entry.subsong) {
+            const std::vector<std::optional<double>> durations = subsongDurations(entry.ref);
+            if (static_cast<size_t>(*entry.subsong) < durations.size())
+                item.duration = durations[static_cast<size_t>(*entry.subsong)];
+        } else if (track && track->subsongCount == 1) {
+            item.duration = track->duration;
+        } else if (track && track->subsongCount > 1) {
+            const std::vector<std::optional<double>> durations = subsongDurations(entry.ref);
+            if (static_cast<int>(durations.size()) == track->subsongCount
+                && std::all_of(durations.begin(), durations.end(), [](const auto& d) { return d.has_value(); })) {
+                double total = 0;
+                for (const std::optional<double>& duration : durations)
+                    total += *duration;
+                item.duration = total;
+            }
+        }
+        playlist.entries.push_back(std::move(item));
+    }
+
+    std::error_code error;
+    fs::path folder = fs::absolute(file, error).parent_path();
+    if (const fs::path canonical = fs::weakly_canonical(folder, error); !error)
+        folder = canonical;
+    const std::string text = formatM3u(playlist, folder);
+    std::ofstream out(file, std::ios::binary | std::ios::trunc);
+    out << text;
+    out.close();
+    if (!out)
+        throw std::runtime_error("impossibile scrivere " + file.filename().string());
 }
 
 } // namespace mp

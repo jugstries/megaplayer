@@ -86,6 +86,14 @@ struct PlaylistEntry {
     std::optional<LibraryTrack> track; // in lettura: i dati della libreria, se c'è
 };
 
+// Una playlist creata da un file M3U.
+struct M3uImport {
+    int64_t playlist = 0;
+    std::string name;
+    int count = 0;   // le voci della playlist
+    int missing = 0; // le voci saltate: file che non ci sono, indirizzi web
+};
+
 struct ScanResult {
     int filesFound = 0;
     int filesRead = 0;
@@ -154,6 +162,17 @@ public:
     // Sostituisce le voci. Lo stesso brano entra più volte solo con
     // sottobrani diversi: i doppioni (stesso ref e sottobrano) si scartano.
     void setPlaylistEntries(int64_t id, const std::vector<PlaylistEntry>& entries);
+
+    // Una playlist nuova dalle voci di un file M3U o M3U8 (vedi M3u.h), col
+    // nome che il file dichiara o, se non lo dice, quello del file. Le voci
+    // che non si trovano su disco si saltano. Lancia std::runtime_error se
+    // il file non si legge o non ha nessun brano che si trovi, e allora non
+    // crea niente.
+    M3uImport importM3u(const std::filesystem::path& file);
+    // Scrive una playlist, o la coda, in un file M3U8, con titoli e durate
+    // della libreria. Lancia std::runtime_error se la playlist non c'è o il
+    // file non si scrive.
+    void exportM3u(int64_t id, const std::filesystem::path& file) const;
 
     // Impostazioni dell'app (skin, volume, ...), vuote se mai scritte.
     std::string setting(const std::string& key) const;

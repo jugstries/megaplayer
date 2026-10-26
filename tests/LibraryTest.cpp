@@ -11,6 +11,7 @@
 #include "core/DecoderRegistry.h"
 #include "core/TrackList.h"
 #include "library/Library.h"
+#include "library/M3u.h"
 
 #include <chrono>
 #include <cmath>
@@ -18,6 +19,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <sstream>
 #include <string>
 #include <thread>
 
@@ -242,6 +244,21 @@ void testResolve(const fs::path& root, bool withArchive)
     mp::TrackCollector collector(registry);
     const std::string flac = (root / "Archivio" / "Toni" / "tono.flac").string();
     check(collector.resolve(flac) == flac, "resolve di un file normale");
+
+    // Una cartella trascinata sulla finestra: i brani, anche negli archivi,
+    // senza i file nascosti e quelli che non sono musica.
+    std::vector<std::string> refs;
+    for (const mp::Track& track : collector.collect(root.string()))
+        refs.push_back(track.ref);
+    std::vector<std::string> expected = {flac};
+    if (withArchive)
+        expected.push_back((root / "toni.zip").string() + "/dentro/zippato.wav");
+    expected.push_back((root / "tono.wav").string());
+    std::string listed;
+    for (const std::string& ref : refs)
+        listed += "\n  " + ref;
+    check(refs == expected && collector.lastSkipped() >= 1, "collect() di una cartella:" + listed);
+
     if (!withArchive)
         return;
     const std::string zip = (root / "toni.zip").string();
@@ -306,11 +323,108 @@ void testCApi(const fs::path& root, const fs::path& database)
     check(mp_library_playlist_set_entries(library, playlist, "riga senza tabulazioni") == -1,
           "voci non valide");
     check(mp_library_playlist_rename(library, playlist + 100, "x") == -1, "rinomina di una playlist che non c'è");
+    const std::string m3u = (root / "prova.m3u8").string();
+    check(mp_library_playlist_export(library, playlist, m3u.c_str()) == 0, "mp_library_playlist_export");
+    const char* imported = mp_library_playlist_import(library, m3u.c_str());
+    check(imported && std::string(imported).find("\"name\":\"Prova\",\"count\":2,\"missing\":0}") != std::string::npos,
+          "mp_library_playlist_import: " + std::string(imported ? imported : mp_library_last_error(library)));
+    fs::remove(m3u);
+    check(!mp_library_playlist_import(library, (root / "non-esiste.m3u").string().c_str()),
+          "mp_library_playlist_import di un file che non c'è");
     check(mp_library_queue(library) > 0, "mp_library_queue");
     check(mp_library_set_setting(library, "app.volume", "0.5") == 0
               && std::string(mp_library_setting(library, "app.volume")) == "0.5",
           "impostazioni dall'API C");
     mp_library_close(library);
+}
+
+std::string readText(const fs::path& path)
+{
+    std::ifstream in(path, std::ios::binary);
+    std::ostringstream text;
+    text << in.rdbuf();
+    return text.str();
+}
+
+// Le playlist in M3U: lettura degli M3U degli altri, esportazione e
+// reimportazione con sottobrani, archivi e voci che non si trovano.
+void testM3u(const fs::path& root, const fs::path& database, bool withArchive)
+{
+    const fs::path folder = root / "Liste";
+    const mp::M3uPlaylist parsed = mp::parseM3u("\xEF\xBB\xBF#EXTM3U\r\n"
+                                                "#PLAYLIST: Serata \r\n"
+                                                "#EXTINF:125,Caf\xE9 - Brano\r\n"
+                                                "Moduli\\uno.mod\r\n"
+                                                "\r\n"
+                                                "# un commento\r\n"
+                                                "#MEGAPLAYER-SUBSONG:3\r\n"
+                                                "../Altro/due.sid\r\n"
+                                                "http://radio.example/flusso\r\n"
+                                                "file:///Musica/con%20spazi.flac\r\n",
+                                                folder);
+    check(parsed.name == "Serata" && parsed.skipped == 1 && parsed.entries.size() == 3, "lettura di un M3U");
+    if (parsed.entries.size() == 3) {
+        check(parsed.entries[0].title == "Caf\xC3\xA9 - Brano" && parsed.entries[0].duration == 125.0
+                  && !parsed.entries[0].subsong,
+              "#EXTINF in Latin-1: " + parsed.entries[0].title);
+        check(parsed.entries[0].path == (folder / "Moduli" / "uno.mod").string(),
+              "percorso relativo con le barre di Windows: " + parsed.entries[0].path);
+        check(parsed.entries[1].path == (root / "Altro" / "due.sid").string() && parsed.entries[1].subsong == 2
+                  && parsed.entries[1].title.empty(),
+              "percorso con .. e sottobrano: " + parsed.entries[1].path);
+        check(fs::path(parsed.entries[2].path).filename() == "con spazi.flac", "file:// decodificato: " + parsed.entries[2].path);
+    }
+
+    mp::Library library(database);
+    library.setRoot(root);
+    scan(library);
+    const std::string flacRef = (root / "Archivio" / "Toni" / "tono.flac").string();
+    const std::string zipRef = (root / "toni.zip").string() + "/dentro/zippato.wav";
+    const int64_t evening = library.createPlaylist("Sera, tardi");
+    std::vector<mp::PlaylistEntry> entries = {
+        {flacRef, std::nullopt, "tono.flac", std::nullopt},
+        {flacRef, 0, "tono.flac", std::nullopt},
+        {(root / "sparito.mod").string(), std::nullopt, "sparito.mod", std::nullopt},
+        {"/fuori/lontano.mod", 1, "lontano.mod", std::nullopt},
+    };
+    if (withArchive)
+        entries.push_back({zipRef, std::nullopt, "toni.zip > dentro/zippato.wav", std::nullopt});
+    library.setPlaylistEntries(evening, entries);
+
+    const fs::path file = root / "sera.m3u8";
+    library.exportM3u(evening, file);
+    const std::string text = readText(file);
+    const std::string relative = (fs::path("Archivio") / "Toni" / "tono.flac").string();
+    check(text.rfind("#EXTM3U\n#PLAYLIST:Sera, tardi\n#EXTINF:1,Megaplayer - Prova \xc3\xa0\xc3\xa8\xc3\xac\n" + relative
+                         + "\n#EXTINF:1,Megaplayer - Prova \xc3\xa0\xc3\xa8\xc3\xac\n#MEGAPLAYER-SUBSONG:1\n" + relative + "\n",
+                     0)
+              == 0,
+          "M3U esportato:\n" + text);
+    check(text.find("#EXTINF:-1,sparito.mod\nsparito.mod\n") != std::string::npos, "voce fuori dalla libreria nell'M3U");
+    check(text.find("#MEGAPLAYER-SUBSONG:2\n" + fs::path("/fuori/lontano.mod").string() + "\n") != std::string::npos,
+          "voce fuori dalla cartella, con il percorso completo");
+
+    const mp::M3uImport imported = library.importM3u(file);
+    check(imported.name == "Sera, tardi" && imported.count == (withArchive ? 3 : 2) && imported.missing == 2,
+          "M3U reimportato: " + std::to_string(imported.count) + " voci, " + std::to_string(imported.missing) + " mancanti");
+    const std::vector<mp::PlaylistEntry> back = library.playlistEntries(imported.playlist);
+    check(back.size() >= 2 && back[0].ref == flacRef && !back[0].subsong && back[0].track && back[1].subsong == 0,
+          "voci reimportate, con i dati della libreria");
+    if (withArchive && back.size() == 3)
+        check(back[2].ref == zipRef && back[2].track && back[2].name == (root / "toni.zip").string() + " > dentro/zippato.wav",
+              "voce nello zip reimportata: " + back[2].ref);
+
+    writeText(root / "vuota.m3u", "#EXTM3U\nnon/esiste.mod\n");
+    const size_t before = library.playlists().size();
+    bool threw = false;
+    try {
+        library.importM3u(root / "vuota.m3u");
+    } catch (const std::runtime_error&) {
+        threw = true;
+    }
+    check(threw && library.playlists().size() == before, "un M3U senza brani che si trovano non crea niente");
+    fs::remove(file);
+    fs::remove(root / "vuota.m3u");
 }
 
 // Il percorso in UTF-8, come lo passa l'app all'API C.
@@ -408,6 +522,7 @@ int main(int argc, char** argv)
     testCApi(root, base / "capi.db");
     testResolve(root, withArchive);
     testAccents(base, data, withArchive);
+    testM3u(root, base / "m3u.db", withArchive);
 
     std::printf(failures == 0 ? "ok\n" : "FALLITO\n");
     return failures == 0 ? 0 : 1;

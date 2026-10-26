@@ -2,6 +2,7 @@
 // build/screenshots, per controllarle a occhio: non è un confronto con
 // immagini di riferimento.
 
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:megaplayer/app.dart';
@@ -25,6 +26,7 @@ void main() {
     List<String> taps = const [],
     Size size = const Size(1440, 900),
     bool dialog = false,
+    bool dragging = false,
   }) async {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
@@ -39,6 +41,12 @@ void main() {
     }
     // Finestre di dialogo: fino alla fine dell'animazione.
     if (dialog) await tester.pump(const Duration(milliseconds: 400));
+    // File trascinati sopra la finestra, come li annuncia il runner.
+    if (dragging) {
+      await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+          'megaplayer/drop', const StandardMethodCodec().encodeMethodCall(const MethodCall('enter')), (_) {});
+      await tester.pump();
+    }
     await expectLater(find.byType(MegaplayerApp), matchesGoldenFile('../build/screenshots/$name.png'));
   }
 
@@ -127,6 +135,10 @@ void main() {
     await shoot(tester, controller, 'moderna-playlist', taps: ['Preferiti']);
   });
 
+  testWidgets('skin moderna, file trascinati', (tester) async {
+    await shoot(tester, withLibrary(FakeLibraryStore()), 'moderna-trascinamento', dragging: true);
+  });
+
   testWidgets('skin moderna, finestra stretta', (tester) async {
     await shoot(tester, withLibrary(FakeLibraryStore()), 'moderna-stretta', size: const Size(1000, 700));
   });
@@ -152,6 +164,10 @@ void main() {
 
   testWidgets('skin retrò, coda con le linguette', (tester) async {
     await shoot(tester, withLibrary(FakeLibraryStore())..setSkin(Skin.retro), 'retro-coda');
+  });
+
+  testWidgets('skin retrò, file trascinati', (tester) async {
+    await shoot(tester, withLibrary(FakeLibraryStore())..setSkin(Skin.retro), 'retro-trascinamento', dragging: true);
   });
 
   testWidgets('skin retrò, libreria', (tester) async {

@@ -39,6 +39,11 @@ list(FILTER MP_ZXTUNE_SOURCES EXCLUDE REGEX
     "/sound/impl/resampler\\.cpp$|/aym/ym_vtx\\.cpp$|/aym/ymvtx\\.cpp$|/aym/ayemul\\.cpp$")
 add_library(zxtune STATIC ${MP_ZXTUNE_SOURCES})
 target_compile_definitions(zxtune PRIVATE MEGAPLAYER)
+# Gli errori di ZXTune dicono il sorgente rispetto a questa cartella, e ogni
+# sorgente deve starci dentro (un controllo a tempo di compilazione): il suo
+# make la definisce, e senza i percorsi di Windows ("D:/...") non passano.
+set(MP_ZXTUNE_SOURCES_ROOT "SOURCES_ROOT=\"${CMAKE_SOURCE_DIR}\"")
+target_compile_definitions(zxtune PRIVATE "${MP_ZXTUNE_SOURCES_ROOT}")
 target_include_directories(zxtune SYSTEM PRIVATE
     "${MP_ZXTUNE_DIR}/include" "${zx}" "${MP_ZXTUNE_DIR}" "${MP_ZXTUNE_DIR}/3rdparty/fmt/include")
 set_target_properties(zxtune PROPERTIES CXX_STANDARD 20 CXX_VISIBILITY_PRESET hidden)

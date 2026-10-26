@@ -293,7 +293,8 @@ if(MP_WITH_ZXTUNE)
         target_sources(megaplayer_core PRIVATE src/decoders/ZxtuneDecoder.cpp)
         set_source_files_properties(src/decoders/ZxtuneDecoder.cpp PROPERTIES
             INCLUDE_DIRECTORIES "${MP_ZXTUNE_DIR}/include;${MP_ZXTUNE_DIR}/src;${MP_ZXTUNE_DIR};${MP_ZXTUNE_DIR}/3rdparty/fmt/include"
-            COMPILE_OPTIONS "-funsigned-char")
+            COMPILE_OPTIONS "-funsigned-char"
+            COMPILE_DEFINITIONS "${MP_ZXTUNE_SOURCES_ROOT}")
         target_compile_definitions(megaplayer_core PRIVATE MP_WITH_ZXTUNE)
         target_link_libraries(megaplayer_core PUBLIC zxtune)
     endif()

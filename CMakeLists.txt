@@ -27,6 +27,8 @@ option(MP_WITH_SID "Backend libsidplayfp (Commodore 64)" ON)
 option(MP_WITH_ATARI "Backend AtariAudio (Atari ST: SNDH e YM)" ON)
 option(MP_WITH_MDX "Backend mdxmini (Sharp X68000: MDX)" ON)
 option(MP_WITH_FMPLAYER "Backend 98fmplayer (NEC PC-98: PMD e FMP)" ON)
+option(MP_WITH_S98 "Backend S98 (log dei chip di PC-88, PC-98 e X68000; vuole 98fmplayer)" ON)
+option(MP_WITH_ZXTUNE "Backend ZXTune (tracker AY dello ZX Spectrum e del CPC)" ON)
 option(MP_WITH_PSF "Backend Highly Experimental (PlayStation: PSF con OpenBIOS; PlayStation 2: PSF2)" ON)
 option(MP_WITH_SSF "Backend Highly Theoretical (Saturn: SSF, Dreamcast: DSF)" ON)
 option(MP_WITH_QSF "Backend Highly Quixotic (QSound di Capcom: QSF)" ON)
@@ -280,6 +282,34 @@ if(MP_WITH_FMPLAYER)
         target_link_libraries(megaplayer_core PUBLIC fmplayer)
         set(MP_FMPLAYER_ENABLED ON)
     endif()
+endif()
+
+set(MP_ZXTUNE_ENABLED OFF)
+if(MP_WITH_ZXTUNE)
+    include(cmake/ZXTune.cmake)
+    if(MP_ZXTUNE_ENABLED)
+        # Solo questo file vede gli header di ZXTune (fra cui un error.h che
+        # coprirebbe quello di sistema) e il suo char senza segno.
+        target_sources(megaplayer_core PRIVATE src/decoders/ZxtuneDecoder.cpp)
+        set_source_files_properties(src/decoders/ZxtuneDecoder.cpp PROPERTIES
+            INCLUDE_DIRECTORIES "${MP_ZXTUNE_DIR}/include;${MP_ZXTUNE_DIR}/src;${MP_ZXTUNE_DIR};${MP_ZXTUNE_DIR}/3rdparty/fmt/include"
+            COMPILE_OPTIONS "-funsigned-char")
+        target_compile_definitions(megaplayer_core PRIVATE MP_WITH_ZXTUNE)
+        target_link_libraries(megaplayer_core PUBLIC zxtune)
+    endif()
+endif()
+
+# Il lettore S98 è nostro: suona i log sui chip che ci sono già, lo YM2608 di
+# 98fmplayer, lo YM2151 di mdxmini e lo YM2612 di game-music-emu (dai suoi
+# sorgenti).
+set(MP_S98_ENABLED OFF)
+if(MP_WITH_S98 AND MP_FMPLAYER_ENABLED)
+    target_sources(megaplayer_core PRIVATE src/decoders/S98Decoder.cpp)
+    target_compile_definitions(megaplayer_core PRIVATE MP_WITH_S98)
+    if(MP_GME_ENABLED)
+        target_include_directories(megaplayer_core SYSTEM PRIVATE "${MP_THIRD_PARTY}/src/game-music-emu/gme")
+    endif()
+    set(MP_S98_ENABLED ON)
 endif()
 
 # --- La famiglia PSF: psflib (file, librerie _lib e tag), il codice comune
@@ -984,7 +1014,7 @@ endif()
 # I brani dei computer giapponesi generati da tests/make_test_japanese.py:
 # un MDX col titolo in Shift-JIS, una nota FM per 2,75 secondi; un PMD con
 # una nota SSG in loop, due giri e la dissolvenza.
-if(Python3_FOUND AND (MP_MDX_ENABLED OR MP_FMPLAYER_ENABLED))
+if(Python3_FOUND AND (MP_MDX_ENABLED OR MP_FMPLAYER_ENABLED OR MP_S98_ENABLED))
     set(MP_JAPANESE_TEST_DIR "${CMAKE_BINARY_DIR}/japanese-test")
     add_test(NAME make_test_japanese
         COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/make_test_japanese.py" "${MP_JAPANESE_TEST_DIR}")
@@ -1001,6 +1031,26 @@ if(Python3_FOUND AND (MP_MDX_ENABLED OR MP_FMPLAYER_ENABLED))
         set_tests_properties(cli_render_pmd PROPERTIES FIXTURES_REQUIRED test_japanese
             PASS_REGULAR_EXPRESSION "Backend: +fmplayer.*Formato: +PMD.*Durata: +0:14.*Scritti 0:14")
     endif()
+    if(MP_S98_ENABLED)
+        add_test(NAME cli_render_s98
+            COMMAND megaplayer render -o "${CMAKE_BINARY_DIR}/test-s98.wav" "${MP_JAPANESE_TEST_DIR}/test.s98")
+        set_tests_properties(cli_render_s98 PROPERTIES FIXTURES_REQUIRED test_japanese
+            PASS_REGULAR_EXPRESSION "Backend: +s98.*Formato: +S98 v3.*Titolo: +Prova S98 テスト.*Autore: +Megaplayer.*Durata: +0:13.*Scritti 0:13")
+    endif()
+endif()
+
+# Un dump PSG dell'AY generato da tests/make_test_zx.py: un secondo di onda
+# quadra sul canale A e mezzo di silenzio, senza loop. I moduli dei tracker
+# non ci sono: sono di altri, e si provano a mano (vedi README).
+if(Python3_FOUND AND MP_ZXTUNE_ENABLED)
+    set(MP_ZX_TEST_DIR "${CMAKE_BINARY_DIR}/zx-test")
+    add_test(NAME make_test_zx
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/make_test_zx.py" "${MP_ZX_TEST_DIR}")
+    set_tests_properties(make_test_zx PROPERTIES FIXTURES_SETUP test_zx)
+    add_test(NAME cli_render_psg
+        COMMAND megaplayer render -o "${CMAKE_BINARY_DIR}/test-psg.wav" "${MP_ZX_TEST_DIR}/test.psg")
+    set_tests_properties(cli_render_psg PROPERTIES FIXTURES_REQUIRED test_zx
+        PASS_REGULAR_EXPRESSION "Backend: +zxtune.*Formato: +PSG.*Durata: +0:03.*Scritti 0:03")
 endif()
 
 # Gli stream generati da tests/make_test_streams.py: un GENH in PS-ADPCM col
@@ -1157,6 +1207,14 @@ endif()
 if(MP_FMPLAYER_ENABLED AND Python3_FOUND)
     list(APPEND MP_CHANNELS_TEST_ARGS "fmplayer=${MP_JAPANESE_TEST_DIR}/test.m")
     list(APPEND MP_CHANNELS_FIXTURES test_japanese)
+endif()
+if(MP_S98_ENABLED AND Python3_FOUND)
+    list(APPEND MP_CHANNELS_TEST_ARGS "s98=${MP_JAPANESE_TEST_DIR}/test.s98")
+    list(APPEND MP_CHANNELS_FIXTURES test_japanese)
+endif()
+if(MP_ZXTUNE_ENABLED AND Python3_FOUND)
+    list(APPEND MP_CHANNELS_TEST_ARGS "zxtune=${MP_ZX_TEST_DIR}/test.psg")
+    list(APPEND MP_CHANNELS_FIXTURES test_zx)
 endif()
 if(MP_ADLMIDI_ENABLED)
     list(APPEND MP_CHANNELS_TEST_ARGS "adlmidi=${CMAKE_BINARY_DIR}/test.mid")

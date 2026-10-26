@@ -8,7 +8,7 @@
 # Highly Experimental con psflib e OpenBIOS per la PlayStation, Highly
 # Theoretical per Saturn e Dreamcast, Highly Quixotic per il QSound di Capcom,
 # vio2sf per il DS, viogsf per il GBA, lazyusf2 per l'N64, mdxmini per
-# l'X68000, 98fmplayer per il PC-98, vgmstream per l'audio in streaming dei giochi e FFmpeg, che CMake
+# l'X68000, 98fmplayer per il PC-98, ZXTune per lo ZX Spectrum, vgmstream per l'audio in streaming dei giochi e FFmpeg, che CMake
 # compila col suo configure, per M4A, Opus, AIFF e i codec degli stream)
 # e applica a UADE le patch per farlo girare nel processo del player e per
 # zittirne le voci, a libsidplayfp quella per zittirle subito e a gearmulator
@@ -69,6 +69,9 @@ LAZYUSF2_COMMIT=421f00bcaa1988b8e1825e91780129f24fbd1aa0
 MDXMINI_COMMIT=003531a471c1955f4ed4357d0e2a6cba809c34a0
 # 98fmplayer (Takamichi Horikawa): i driver PMD e FMP del PC-98 e lo YM2608.
 FMPLAYER_COMMIT=4fa914e4b2b994cb3ccf92d571a20a7cdf1fe36a
+# ZXTune (Vitamin): i tracker AY dello ZX Spectrum e del CPC. Dal mirror su
+# GitHub, solo la parte che serve (il repository intero supera i 600 MB).
+ZXTUNE_COMMIT=260bc1df87107806f8d0dae2b03bef078c6def56
 # OpenBIOS di PCSX-Redux (MIT), la BIOS della PlayStation riscritta da zero
 # che Highly Experimental usa al posto di quella di Sony: compilata da
 # Libreboot nella release 20241206rev11, dal commit 6ec53480 di PCSX-Redux.
@@ -211,6 +214,19 @@ clone_commit lazyusf2            https://gitlab.com/kode54/lazyusf2.git         
 clone_commit mdxmini             https://github.com/mistydemeo/mdxmini.git         "$MDXMINI_COMMIT"
 clone_commit fmplayer            https://github.com/takamichih/fmplayer.git        "$FMPLAYER_COMMIT"
 
+# ZXTune senza i player esterni, i test, gli strumenti e le librerie di terzi
+# (tranne fmtlib): un checkout sparso, che scarica solo questi file.
+if [[ ! -d "$SRC/zxtune/.git" ]]; then
+	echo "==> clono zxtune (${ZXTUNE_COMMIT:0:10}, solo i sorgenti che servono)"
+	rm -rf "$SRC/zxtune"
+	git init -q "$SRC/zxtune"
+	git -C "$SRC/zxtune" sparse-checkout set --no-cone /include/ /src/ '!/src/module/players/external/' \
+		'!/src/*/test/' '!/src/*/*/test/' /3rdparty/fmt/include/ /3rdparty/fmt/src/ /3rdparty/fmt/LICENSE.rst \
+		/LICENSE.md
+	git -C "$SRC/zxtune" fetch -q --depth 1 --filter=blob:none https://github.com/vitamin-caig/zxtune.git "$ZXTUNE_COMMIT"
+	git -C "$SRC/zxtune" -c advice.detachedHead=false checkout -q FETCH_HEAD
+fi
+
 # gearmulator a un commit preciso, con i soli sottomoduli che il suo CMake
 # vuole per costruire 88lib: niente JUCE né le estensioni CLAP.
 if [[ ! -d "$SRC/gearmulator/source" ]]; then
@@ -264,7 +280,8 @@ done
 # zittita continua ad avanzare, in silenzio. vio2sf: BOOL ha la stessa misura
 # nella libreria e nel C++ che la usa, anche con MinGW. viogsf e lazyusf2:
 # compilano fuori da x86 e con i compilatori recenti. mdxmini: le tracce
-# zittite e il PDX già trovato da chi lo chiama.
+# zittite e il PDX già trovato da chi lo chiama. ZXTune: senza i formati che
+# vorrebbero LHA e lo Z80 (YM, VTX, AY), che suonano già altri backend.
 for NC_PATCH in "highly_experimental:$ROOT/patches/highly-experimental-openbios.patch" \
 	"highly_experimental:$ROOT/patches/highly-experimental-ps2.patch" \
 	"highly_theoretical:$ROOT/patches/highly-theoretical.patch" \
@@ -272,7 +289,8 @@ for NC_PATCH in "highly_experimental:$ROOT/patches/highly-experimental-openbios.
 	"vio2sf:$ROOT/patches/vio2sf.patch" \
 	"viogsf:$ROOT/patches/viogsf.patch" \
 	"lazyusf2:$ROOT/patches/lazyusf2.patch" \
-	"mdxmini:$ROOT/patches/mdxmini.patch"; do
+	"mdxmini:$ROOT/patches/mdxmini.patch" \
+	"zxtune:$ROOT/patches/zxtune.patch"; do
 	dir="$SRC/${NC_PATCH%%:*}" patch="${NC_PATCH#*:}"
 	if ! git -C "$dir" apply --reverse --check "$patch" 2>/dev/null; then
 		echo "==> applico $(basename "$patch")"

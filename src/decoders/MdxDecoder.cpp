@@ -30,9 +30,6 @@ constexpr int kLoops = 2;
 constexpr double kMaxSeconds = 30 * 60;
 constexpr int kFmTracks = 8;
 
-// mdx_open scrive delle variabili globali di mdxmini (le stesse a ogni
-// brano) e prepara le tabelle dell'YM2151: un brano per volta.
-std::mutex gOpenMutex;
 
 // Quello che mdxmini legge dall'inizio del file senza controllare i limiti:
 // il titolo fino a CR LF EOF, il nome del PDX fino allo zero, poi l'offset
@@ -107,7 +104,7 @@ public:
         std::call_once(rate, [] { mdx_set_rate(kNativeRate); });
         std::string mdxPath = path;
         std::string pdxPath = pdx;
-        const std::lock_guard lock(gOpenMutex);
+        const std::lock_guard lock(mdx::chipMutex());
         if (mdx_open(&mini_, mdxPath.data(), pdxPath.empty() ? nullptr : pdxPath.data()) != 0)
             throw DecoderError("mdxmini non apre il file");
         mdx_set_max_loop(&mini_, kLoops);
@@ -115,7 +112,7 @@ public:
 
     ~Song()
     {
-        const std::lock_guard lock(gOpenMutex);
+        const std::lock_guard lock(mdx::chipMutex());
         mdx_close(&mini_);
     }
 
@@ -278,6 +275,14 @@ private:
 };
 
 } // namespace
+
+// mdx_open scrive anche delle variabili globali di mdxmini (le stesse a ogni
+// brano).
+std::mutex& mdx::chipMutex()
+{
+    static std::mutex mutex;
+    return mutex;
+}
 
 std::string_view MdxDecoderFactory::description() const
 {

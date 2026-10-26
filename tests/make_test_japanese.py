@@ -13,7 +13,13 @@ In DIR scrive:
   a 55467 Hz, 16,15 ms per tick), suona in loop un La della quarta ottava
   per 96 tick a volume 15 e 48 tick di pausa; le altre parti finiscono
   subito. Un giro dura 144 tick, 2,33 secondi: con due giri e la
-  dissolvenza il brano dura 14,65 secondi.
+  dissolvenza il brano dura 14,65 secondi;
+- test.s98: un log S98 versione 3 con due chip, uno YM2608 e uno YM2151, e i
+  tag in Shift-JIS (titolo "Prova S98 テスト", autore "Megaplayer"). Con tick
+  da 10 ms, per un secondo lo YM2608 suona un'onda quadra sull'SSG A e lo
+  YM2151 un seno sul canale 1, poi mezzo secondo di silenzio; il loop
+  riparte dall'inizio, quindi con due giri e la dissolvenza il brano dura 13
+  secondi.
 
 Serve ai test (CMakeLists.txt), così nel repository non ci sono brani con
 copyright.
@@ -79,6 +85,27 @@ def pmd():
     return b"\x00" + header + bytes([0x80]) + part
 
 
+def s98():
+    opna = [(0x07, 0x3E), (0x00, 0xFE), (0x01, 0x00), (0x08, 0x0F)]  # SSG A
+    opm = [(0x20, 0xC7), (0x28, 0x4A), (0x30, 0x00), (0x38, 0x00)]    # canale 1, algoritmo 7
+    for slot in range(4):
+        base = slot * 8
+        opm += [(0x40 + base, 0x01), (0x60 + base, 0x00 if slot == 0 else 0x7F),
+                (0x80 + base, 0x1F), (0xA0 + base, 0x00), (0xC0 + base, 0x00), (0xE0 + base, 0x0F)]
+    opm.append((0x08, 0x78))  # key-on, tutti gli operatori
+    dump = b"".join(bytes([0x00, r, v]) for r, v in opna) + b"".join(bytes([0x02, r, v]) for r, v in opm)
+    dump += bytes([0xFE, 98])                    # 100 tick
+    dump += bytes([0x00, 0x08, 0x00, 0x02, 0x08, 0x00])
+    dump += bytes([0xFE, 48])                    # 50 tick
+    dump += bytes([0xFD])
+    tags = b"[S98]" + "title=Prova S98 テスト\nartist=Megaplayer\n".encode("cp932") + b"\x00"
+    data_at = 0x40
+    tags_at = data_at + len(dump)
+    header = b"S983" + struct.pack("<IIIIIII", 10, 1000, 0, tags_at, data_at, data_at, 2)
+    devices = struct.pack("<IIII", 4, 7987200, 0, 0) + struct.pack("<IIII", 5, 4000000, 0, 0)
+    return header + devices + dump + tags
+
+
 def main():
     out = sys.argv[1]
     os.makedirs(out, exist_ok=True)
@@ -86,6 +113,8 @@ def main():
         f.write(mdx())
     with open(os.path.join(out, "test.m"), "wb") as f:
         f.write(pmd())
+    with open(os.path.join(out, "test.s98"), "wb") as f:
+        f.write(s98())
 
 
 if __name__ == "__main__":

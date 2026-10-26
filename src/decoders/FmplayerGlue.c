@@ -221,18 +221,24 @@ void mp_fm_restart_timer(mp_fm_song *song) {
   song->timer.timerb_cnt = (uint16_t)(song->timer.timerb << 4);
 }
 
-void mp_fm_set_mute(mp_fm_song *song, unsigned muted) {
-  static const unsigned chip_channels[] = {
+enum { CHIP_CHANNELS = 11 };
+
+/* I bit dei canali di megaplayer in quelli di libopna. */
+static unsigned chip_mask(unsigned muted) {
+  static const unsigned chip_channels[CHIP_CHANNELS] = {
     LIBOPNA_CHAN_FM_1, LIBOPNA_CHAN_FM_2, LIBOPNA_CHAN_FM_3, LIBOPNA_CHAN_FM_4,
     LIBOPNA_CHAN_FM_5, LIBOPNA_CHAN_FM_6, LIBOPNA_CHAN_SSG_1, LIBOPNA_CHAN_SSG_2,
     LIBOPNA_CHAN_SSG_3, LIBOPNA_CHAN_DRUM_ALL, LIBOPNA_CHAN_ADPCM,
   };
-  enum { CHIP_CHANNELS = sizeof(chip_channels) / sizeof(chip_channels[0]) };
-  unsigned chip = 0;
+  unsigned mask = 0;
   for (unsigned i = 0; i < CHIP_CHANNELS; i++) {
-    if (muted & (1u << i)) chip |= chip_channels[i];
+    if (muted & (1u << i)) mask |= chip_channels[i];
   }
-  opna_set_mask(&song->chip, chip);
+  return mask;
+}
+
+void mp_fm_set_mute(mp_fm_song *song, unsigned muted) {
+  opna_set_mask(&song->chip, chip_mask(muted));
   ppz8_set_mask(&song->pcm, (muted >> CHIP_CHANNELS) & 0xff);
 }
 
@@ -242,4 +248,35 @@ const char *mp_fm_comment(mp_fm_song *song, int line) {
 
 bool mp_fm_comment_is_pmd(const mp_fm_song *song) {
   return song->work.comment_mode_pmd;
+}
+
+struct mp_opna_chip {
+  struct opna chip;
+  uint8_t adpcm_ram[ADPCM_RAM];
+};
+
+mp_opna_chip *mp_opna_create(const uint8_t *drum_rom) {
+  mp_opna_chip *chip = calloc(1, sizeof(*chip));
+  if (!chip) return NULL;
+  opna_reset(&chip->chip);
+  if (drum_rom) opna_drum_set_rom(&chip->chip.drum, (void *)drum_rom);
+  opna_adpcm_set_ram_256k(&chip->chip.adpcm, chip->adpcm_ram);
+  return chip;
+}
+
+void mp_opna_free(mp_opna_chip *chip) {
+  free(chip);
+}
+
+void mp_opna_write(mp_opna_chip *chip, unsigned reg, unsigned value) {
+  opna_writereg(&chip->chip, reg & 0x1ff, value & 0xff);
+}
+
+void mp_opna_mix(mp_opna_chip *chip, int16_t *buffer, unsigned frames) {
+  memset(buffer, 0, frames * 2 * sizeof(int16_t));
+  opna_mix(&chip->chip, buffer, frames);
+}
+
+void mp_opna_set_mute(mp_opna_chip *chip, unsigned muted) {
+  opna_set_mask(&chip->chip, chip_mask(muted));
 }

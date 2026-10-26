@@ -2,6 +2,8 @@
 
 #include "core/Decoder.h"
 
+#include <mutex>
+
 namespace mp {
 
 // La musica dello Sharp X68000 (MDX, per il driver MXDRV), con mdxmini: otto
@@ -15,5 +17,13 @@ public:
     int probe(const SourceFile& file) override;
     std::unique_ptr<Decoder> open(const SourceFile& file, const OutputSpec& spec) override;
 };
+
+namespace mdx {
+
+// L'YM2151 di mdxmini prepara tabelle globali a ogni chip nuovo, e lo usa
+// anche il lettore S98: un chip per volta.
+std::mutex& chipMutex();
+
+} // namespace mdx
 
 } // namespace mp

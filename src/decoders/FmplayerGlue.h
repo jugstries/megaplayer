@@ -59,6 +59,17 @@ void mp_fm_set_mute(mp_fm_song *song, unsigned muted);
 const char *mp_fm_comment(mp_fm_song *song, int line);
 bool mp_fm_comment_is_pmd(const mp_fm_song *song);
 
+/* Lo YM2608 da solo, senza driver, per i log S98: le scritture ai registri
+ * (0x100 in più per la seconda porta) e il suono a MP_FM_RATE per un chip a
+ * 7,9872 MHz (a un'altra frequenza, la stessa proporzione). */
+typedef struct mp_opna_chip mp_opna_chip;
+mp_opna_chip *mp_opna_create(const uint8_t *drum_rom);
+void mp_opna_free(mp_opna_chip *chip);
+void mp_opna_write(mp_opna_chip *chip, unsigned reg, unsigned value);
+void mp_opna_mix(mp_opna_chip *chip, int16_t *buffer, unsigned frames);
+/* I canali zittiti, come in mp_fm_set_mute senza il PPZ8. */
+void mp_opna_set_mute(mp_opna_chip *chip, unsigned muted);
+
 #ifdef __cplusplus
 }
 #endif

@@ -24,6 +24,8 @@ Flutter (per ora macOS) con due skin: moderna e retrò.
 | `xa`      | (di megaplayer)       | l'audio in streaming dei CD della PlayStation: XA ADPCM, in RIFF/CDXA o in settori grezzi, un sottobrano per canale |
 | `mdx`     | mdxmini (commit di ottobre 2022) | Sharp X68000: MDX, sull'YM2151, con i campioni del PDX accanto al brano (anche PCM8) |
 | `fmplayer` | 98fmplayer (commit di luglio 2024) | NEC PC-98: PMD (M, M2, MZ) e FMP (OPI, OVI, OZI) sullo YM2608, con i campioni PPC, PVI e PZI accanto al brano. La batteria vuole la ROM dello YM2608 dell'utente |
+| `s98`     | (di megaplayer), sui chip di 98fmplayer, mdxmini e game-music-emu | i log S98 dei computer giapponesi: YM2608, YM2203, YM2149 e AY-3-8910 (con lo YM2608 di 98fmplayer), YM2151 (con quello di mdxmini) e YM2612 (col Nuked di game-music-emu); gli altri chip tacciono |
+| `zxtune`  | ZXTune (commit del 5 ottobre 2026), solo la parte AY | ZX Spectrum e Amstrad CPC: i tracker del chip AY (Pro Tracker 1-3 e Vortex, Sound Tracker e Sound Tracker Pro, ASC Sound Master, SQ-Tracker, Global e Fast Tracker, Pro Sound Creator e Maker), i moduli TurboSound a due chip e i dump PSG |
 | `vgmstream` | vgmstream r2117     | l'audio in streaming dei giochi: centinaia di formati delle console (GENH, VAG, SVAG, ADS/SS2, NPSF, DSP, ADX, BRSTM, HCA, ...), anche i `.int` della PS2 senza intestazione. I codec che vgmstream ha dentro, più quelli che gli dà FFmpeg (ATRAC3 e ATRAC3plus, XMA, WMA, AAC, Opus): niente MP3, Vorbis e ATRAC9 |
 | `88emu`   | 88emu di gearmulator (commit del 10 ottobre 2026) | gli stessi MIDI sui moduli Roland: Sound Canvas (SC-55, SC-55mkII, SC-88, SC-88VL, SC-88 Pro, SC-8850, ...) e MT-32/CM-32L, emulati facendo girare il loro firmware. Servono le ROM dell'utente |
 | `fluidsynth` | FluidSynth 2.6.1, GeneralUser GS 2.0.3 | gli stessi MIDI su un SoundFont General MIDI e GS a campioni, per chi non ha le ROM: di serie GeneralUser GS, che viaggia con le app |
@@ -118,8 +120,26 @@ chiamate, e i brani dell'N64 sono uno stato salvato del gioco già avviato. I
 SNSF del Super Nintendo restano fuori: l'emulatore che li suona, Snes9x, ha una
 licenza non commerciale.
 
-Dei computer giapponesi suonano l'X68000 (MDX, con mdxmini) e il PC-98 (PMD e
-FMP, con 98fmplayer). Per il PC-98 la scelta è 98fmplayer e non PMDWin, più
+Dello ZX Spectrum e del CPC, oltre ai file AY di game-music-emu e agli YM di
+AtariAudio, suonano i moduli dei tracker per il chip AY, con la parte di
+ZXTune che li riguarda ([cmake/ZXTune.cmake](cmake/ZXTune.cmake)): i
+formati, i player e l'emulatore dell'AY-3-8910, senza i player esterni, gli
+archivi e i dispositivi audio. `build-deps.sh` ne scarica con un checkout
+sparso solo quei sorgenti (12 MB invece degli oltre 600 del repository).
+[patches/zxtune.patch](patches/zxtune.patch) lascia fuori YM, VTX e i file AY
+con codice Z80 (che vorrebbero LHA e lo Z80, e suonano già altrove), fa
+tacere del tutto un canale zittito (ZXTune ne toglie solo il tono, e il
+volume continuerebbe a sentirsi) e tiene il mute dopo un seek; il resto sono
+correzioni per compilarlo con GCC e con la libc++ di Emscripten. I moduli
+fanno due giri e sfumano; i dump PSG, che non hanno loop, suonano una volta.
+
+Dei computer giapponesi suonano l'X68000 (MDX, con mdxmini), il PC-98 (PMD e
+FMP, con 98fmplayer) e i log S98 di PC-88, PC-98 e X68000, con un lettore
+nostro che rifà le scritture ai registri su quegli stessi chip: libvgm, che
+li suona tutti, non ha una licenza. Ogni chip genera alla sua frequenza (lo
+YM2608 di 98fmplayer, che va a un campione ogni 144 cicli, fa anche lo YM2203
+a frequenza doppia e i PSG a frequenza quadrupla) e passa dal suo
+ricampionatore. Per il PC-98 la scelta è 98fmplayer e non PMDWin, più
 fedele: PMDWin usa fmgen, la cui licenza chiede che chi lo distribuisce lo
 faccia gratis, un vincolo che la GPL non ammette. 98fmplayer ha ricostruito i
 due driver e lo YM2608 da sé, con licenza BSD. La batteria dello YM2608 sta in
@@ -189,7 +209,7 @@ libzakalwe, bencode-tools, ancient, miniaudio, game-music-emu, libsidplayfp,
 libresidfp, libADLMIDI, AdPlug, libbinio, AtariAudio, vgmstream, FFmpeg e SQLite in `third_party/src` (di
 libsidplayfp, libresidfp, FFmpeg e SQLite gli archivi di rilascio, con la verifica
 dello SHA-256), gearmulator, Highly Experimental, Theoretical e Quixotic,
-psflib, vio2sf, viogsf, lazyusf2, mdxmini e 98fmplayer a un commit fissato
+psflib, vio2sf, viogsf, lazyusf2, mdxmini, 98fmplayer e ZXTune a un commit fissato
 (di gearmulator i soli sottomoduli che servono a 88emu), FluidSynth, il
 SoundFont GeneralUser GS e OpenBIOS (dai mirror di Libreboot; entrambi con lo
 SHA-256), e applica le patch di `patches/`: due a UADE (l'emulatore nel
@@ -197,8 +217,8 @@ processo del player, vedi sotto, e le voci di Paula da zittire), una a
 libsidplayfp (il mute di una voce subito), due a gearmulator (MinGW), una
 per ciascuno dei nuclei di Neill Corlett (OpenBIOS, il mute dei canali, C68K
 fuori da x86), una seconda a Highly Experimental (la PS2) e una per vio2sf,
-viogsf e lazyusf2 (MinGW, ARM e i compilatori recenti) e una a mdxmini (le
-tracce zittite e il PDX già trovato). Tutto il resto lo fa CMake: compila
+viogsf e lazyusf2 (MinGW, ARM e i compilatori recenti), una a mdxmini (le
+tracce zittite e il PDX già trovato) e una a ZXTune (vedi sopra). Tutto il resto lo fa CMake: compila
 UADE senza il suo script di configurazione (che funziona solo su UNIX, vedi
 [cmake/UadeInProcess.cmake](cmake/UadeInProcess.cmake)) e copia replayer e
 configurazione in `build/uade-data`. La CLI e i test li cercano lì; le app li
@@ -753,7 +773,8 @@ OpenBIOS MIT, i moduli IOP di ps2sdk Academic Free License 2.0 (dati che
 girano nell'IOP emulato, non codice del player), zlib con la sua licenza;
 vgmstream ha una licenza permissiva in stile ISC (con parti di altri autori
 sotto licenze simili); FFmpeg, nella configurazione senza parti GPL, è
-LGPL-2.1 o successiva; mdxmini GPL-2.0 o successiva (con l'YM2151 di Jarek
+LGPL-2.1 o successiva; ZXTune LGPL-3.0, con fmtlib (MIT); mdxmini GPL-2.0 o
+successiva (con l'YM2151 di Jarek
 Burczynski, che in MAME è BSD-3-Clause); 98fmplayer BSD-2-Clause; gearmulator
 (88emu) GPL-3.0, con parti derivate da Nuked-SC55 e Nuked-MT32 sotto GPL-2.0
 o successiva; FluidSynth LGPL-2.1 o successiva; LAME LGPL-2.0 o successiva; il SoundFont GeneralUser GS

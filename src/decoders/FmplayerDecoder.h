@@ -2,7 +2,9 @@
 
 #include "core/Decoder.h"
 
+#include <cstdint>
 #include <string>
+#include <vector>
 
 namespace mp {
 
@@ -25,6 +27,10 @@ namespace fmplayer {
 // Una cartella in più dove cercare ym2608_adpcm_rom.bin (con le
 // sottocartelle): quelle delle ROM dei moduli Roland.
 void addRomDirectory(const std::string& path);
+
+// La ROM della batteria dello YM2608 (8 KB), se c'è; serve anche al lettore
+// S98.
+const std::vector<uint8_t>* drumRom();
 
 } // namespace fmplayer
 

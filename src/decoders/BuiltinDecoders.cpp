@@ -49,6 +49,12 @@
 #ifdef MP_WITH_FMPLAYER
 #include "FmplayerDecoder.h"
 #endif
+#ifdef MP_WITH_S98
+#include "S98Decoder.h"
+#endif
+#ifdef MP_WITH_ZXTUNE
+#include "ZxtuneDecoder.h"
+#endif
 #ifdef MP_WITH_GME
 #include "GmeDecoder.h"
 #endif
@@ -107,6 +113,12 @@ void registerBuiltinDecoders(DecoderRegistry& registry)
 #endif
 #ifdef MP_WITH_FMPLAYER
     registry.add(std::make_unique<FmplayerDecoderFactory>());
+#endif
+#ifdef MP_WITH_S98
+    registry.add(std::make_unique<S98DecoderFactory>());
+#endif
+#ifdef MP_WITH_ZXTUNE
+    registry.add(std::make_unique<ZxtuneDecoderFactory>());
 #endif
 #ifdef MP_WITH_88EMU
     registry.add(std::make_unique<Emu88DecoderFactory>());

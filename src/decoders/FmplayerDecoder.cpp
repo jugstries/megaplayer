@@ -67,7 +67,9 @@ std::vector<fs::path> gRomDirectories;
 std::optional<std::vector<uint8_t>> gDrumRom;
 bool gDrumRomSearched = false;
 
-const std::vector<uint8_t>* drumRom()
+} // namespace
+
+const std::vector<uint8_t>* fmplayer::drumRom()
 {
     const std::lock_guard lock(gRomMutex);
     if (!gDrumRomSearched) {
@@ -89,6 +91,10 @@ const std::vector<uint8_t>* drumRom()
     }
     return gDrumRom ? &*gDrumRom : nullptr;
 }
+
+namespace {
+
+using fmplayer::drumRom;
 
 // I campioni accanto al brano: "NOME" più l'estensione, o il nome com'è se
 // ne ha già una, con maiuscole e minuscole come capita.

@@ -277,7 +277,8 @@ done
 # usano 5 bit come l'R3000 e gli indirizzi dello SPU2 ne hanno 20, senza
 # letture fuori dalla sua RAM. Highly Theoretical: i canali si possono
 # zittire, e compila fuori da x86 e con C68K. Highly Quixotic: una voce
-# zittita continua ad avanzare, in silenzio. vio2sf: BOOL ha la stessa misura
+# zittita continua ad avanzare, in silenzio, e i campioni non si leggono
+# oltre la fine della loro ROM. vio2sf: BOOL ha la stessa misura
 # nella libreria e nel C++ che la usa, anche con MinGW. viogsf e lazyusf2:
 # compilano fuori da x86 e con i compilatori recenti. mdxmini: le tracce
 # zittite e il PDX già trovato da chi lo chiama. ZXTune: senza i formati che

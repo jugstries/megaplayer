@@ -1,8 +1,21 @@
 diff --git a/Core/qsound_ctr.c b/Core/qsound_ctr.c
-index c18cba3..9e096f1 100644
+index c18cba3..2982937 100644
 --- a/Core/qsound_ctr.c
 +++ b/Core/qsound_ctr.c
-@@ -630,11 +630,9 @@ INLINE INT16 pcm_update(struct qsound_chip *chip, int voice_no, INT32 *echo_out)
+@@ -458,6 +458,12 @@ INLINE INT16 get_sample(struct qsound_chip *chip, UINT16 bank,UINT16 address)
+ 	bank &= 0x7FFF;
+ 	rom_addr = (bank << 16) | (address << 0);
+ 	
++	// The ROM repeats up to the next power of two, like libvgm's; past its
++	// end there is silence, not whatever follows it in memory.
++	rom_addr &= chip->romMask;
++	if (rom_addr >= chip->romSize)
++		return 0;
++
+ 	sample_data = chip->romData[rom_addr];
+ 	
+ 	return (INT16)(sample_data << 8);
+@@ -630,11 +636,9 @@ INLINE INT16 pcm_update(struct qsound_chip *chip, int voice_no, INT32 *echo_out)
  	INT32 new_phase;
  	INT16 output;
  	

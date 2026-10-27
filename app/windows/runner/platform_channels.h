@@ -30,4 +30,17 @@ std::unique_ptr<Channel> CreateDropChannel(flutter::BinaryMessenger* messenger,
                                            HWND window);
 void RevokeDropTarget(HWND window);
 
+// "megaplayer/tray": il miniplayer nell'area di notifica, con l'icona della
+// skin e un menu con il brano, play e pausa, precedente e successivo, il
+// volume, la finestra e l'uscita. L'app manda lo stato con "update"; i
+// comandi tornano come "togglePause", "previous", "next" e "setVolume". La
+// finestra passa i suoi messaggi a HandleTrayMessage; finché l'icona c'è,
+// chiudere la finestra la nasconde (TrayIconShown) e la musica continua.
+// Prima di distruggere la finestra va chiamato RemoveTrayIcon.
+std::unique_ptr<Channel> CreateTrayChannel(flutter::BinaryMessenger* messenger,
+                                           HWND window);
+bool HandleTrayMessage(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
+bool TrayIconShown();
+void RemoveTrayIcon();
+
 #endif  // RUNNER_PLATFORM_CHANNELS_H_

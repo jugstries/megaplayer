@@ -1,9 +1,9 @@
 part of 'retro_skin.dart';
 
-// Le impostazioni nella skin retrò, come un pannello di controllo del Mac: i
-// MIDI, sui moduli Roland con la cartella delle ROM dell'utente e il Sound
-// Canvas da usare, e senza le ROM su un SoundFont o sui chip FM, scelti con
-// i bottoni radio.
+// Le impostazioni nella skin retrò, come un pannello di controllo del Mac:
+// il miniplayer nel menù di sistema, con una casella, e i MIDI, sui moduli
+// Roland con la cartella delle ROM dell'utente e il Sound Canvas da usare, e
+// senza le ROM su un SoundFont o sui chip FM, scelti con i bottoni radio.
 
 class _SettingsDialog extends StatelessWidget {
   const _SettingsDialog({required this.controller});
@@ -15,6 +15,7 @@ class _SettingsDialog extends StatelessWidget {
     return ListenableBuilder(
       listenable: controller,
       builder: (context, _) {
+        final midi = controller.rolandSupported || controller.soundFontSupported;
         return _DialogFrame(
           title: 'Impostazioni',
           width: 540,
@@ -23,12 +24,10 @@ class _SettingsDialog extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                if (controller.miniPlayerSupported) ..._miniPlayer(controller),
+                if (controller.miniPlayerSupported && midi) ..._divider,
                 if (controller.rolandSupported) ..._roland(controller),
-                if (controller.rolandSupported && controller.soundFontSupported) ...[
-                  const SizedBox(height: 14),
-                  Container(height: 2, color: _ink),
-                  const SizedBox(height: 14),
-                ],
+                if (controller.rolandSupported && controller.soundFontSupported) ..._divider,
                 if (controller.soundFontSupported) ..._soundFont(controller),
               ],
             ),
@@ -37,6 +36,26 @@ class _SettingsDialog extends StatelessWidget {
       },
     );
   }
+
+  static final _divider = [
+    const SizedBox(height: 14),
+    Container(height: 2, color: _ink),
+    const SizedBox(height: 14),
+  ];
+
+  List<Widget> _miniPlayer(PlayerController controller) => [
+    Text('Miniplayer', style: _pixel(17, weight: 700)),
+    const SizedBox(height: 6),
+    _CheckRow(
+      label: miniPlayerOption(),
+      checked: controller.miniPlayer,
+      onTap: () => controller.setMiniPlayer(!controller.miniPlayer),
+    ),
+    Padding(
+      padding: const EdgeInsets.only(left: 26),
+      child: Text(miniPlayerDetail, style: _pixel(14, color: _midGray, height: 1.3)),
+    ),
+  ];
 
   List<Widget> _roland(PlayerController controller) {
     final soundCanvases = controller.soundCanvases;

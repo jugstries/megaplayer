@@ -9,6 +9,7 @@ import 'core/ffi_library.dart';
 import 'core/library_store.dart';
 import 'core/models.dart';
 import 'player/dock_icon.dart';
+import 'player/mini_player.dart';
 import 'player/player_controller.dart';
 import 'update/updater.dart';
 import 'update/updates.dart';
@@ -32,10 +33,16 @@ void main() {
             controller.dispose();
             exit(0);
           });
-    controller = PlayerController(FfiPlayerCore.open(), store: store, updates: updates)
+    controller = PlayerController(
+      FfiPlayerCore.open(),
+      store: store,
+      updates: updates,
+      miniPlayerSupported: MiniPlayer.supported,
+    )
       ..restore()
       ..start();
     followSkinInDock(controller);
+    if (MiniPlayer.supported) MiniPlayer(controller);
     runApp(MegaplayerApp(controller: controller));
     controller.openInitialFiles();
     // Qualche secondo dopo l'avvio, per non rallentarlo.

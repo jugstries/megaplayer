@@ -599,7 +599,9 @@ floppy per la retrò. L'icona dell'app è la moderna; con la skin retrò l'app
 cambia l'icona nel Dock (o nella barra delle applicazioni) finché resta
 aperta. Le disegna [app/tool/make_icons.py](app/tool/make_icons.py) (serve
 `resvg`), che le scrive in `app/macos/Runner/Assets.xcassets` e, come `.ico`,
-in `app/windows/runner/resources`.
+in `app/windows/runner/resources`; lì c'è anche l'icona del miniplayer nella
+barra dei menu, la manopola in un colore solo (un'immagine template, che
+macOS colora secondo la barra).
 
 Serve Flutter (≥ 3.47) con Xcode, dopo `scripts/build-deps.sh`:
 
@@ -646,6 +648,21 @@ Nelle impostazioni (l'icona accanto ad «Apri file…» nella moderna, il menu
 Roland e il Sound Canvas per i MIDI, e con che cosa suonano i MIDI senza le
 ROM: GeneralUser GS, un altro SoundFont o i chip FM. L'app se li ricorda.
 
+Sempre dalle impostazioni si accende il miniplayer (spento all'inizio): su
+macOS un'icona nella barra dei menu che apre un pannello con titolo e autore
+del brano, precedente, play e pausa, successivo, il volume, «Apri
+megaplayer» ed «Esci»; su Windows l'icona della skin nell'area di notifica,
+con il brano sotto il mouse e un menu con gli stessi comandi (il volume a
+scatti, da muto al 100%). Finché il miniplayer c'è, chiudere la finestra la
+nasconde e la musica continua; la finestra torna dal miniplayer (o dal Dock),
+e si esce con «Esci» (su macOS anche con Cmd-Q). Il miniplayer lo disegnano
+i runner nativi
+([app/macos/Runner/MiniPlayer.swift](app/macos/Runner/MiniPlayer.swift),
+[app/windows/runner/platform_channels.cpp](app/windows/runner/platform_channels.cpp));
+l'app manda sul canale `megaplayer/tray` lo stato quando cambia, con i testi
+delle voci, e ne riceve i comandi
+([app/lib/player/mini_player.dart](app/lib/player/mini_player.dart)).
+
 In tutte e due le skin, sotto i comandi di riproduzione c'è la fila dei
 canali del brano: un clic sul numero zittisce il canale, la S lo mette in
 solo (con quelli in solo si sentono solo loro), «Tutti» li riaccende.
@@ -653,8 +670,10 @@ solo (con quelli in solo si sentono solo loro), «Tutti» li riaccende.
 Test: `flutter test` in `app/`. `test/skin_screenshots_test.dart` disegna le
 skin con un core e un database finti e salva le immagini in
 `app/build/screenshots`; `test/modern_skin_test.dart` e
-`test/retro_skin_test.dart` usano libreria, coda, playlist, canali e
-aggiornamenti con clic e menu; `test/updater_test.dart` prova firma,
+`test/retro_skin_test.dart` usano libreria, coda, playlist, canali,
+impostazioni e aggiornamenti con clic e menu; `test/mini_player_test.dart`
+prova lo stato che va al miniplayer e i comandi che ne tornano;
+`test/updater_test.dart` prova firma,
 download e controlli degli aggiornamenti contro un sito finto in locale;
 `test/ffi_core_test.dart` prova i binding con la
 libreria vera se `MEGAPLAYER_CORE` indica `libmegaplayer.dylib` (la parte

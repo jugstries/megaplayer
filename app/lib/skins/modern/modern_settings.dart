@@ -1,8 +1,8 @@
 part of 'modern_skin.dart';
 
-// Le impostazioni nella skin moderna: i MIDI, sui moduli Roland con la
-// cartella delle ROM dell'utente e il Sound Canvas da usare, e senza le ROM
-// su un SoundFont o sui chip FM.
+// Le impostazioni nella skin moderna: il miniplayer nel menù di sistema, e
+// i MIDI, sui moduli Roland con la cartella delle ROM dell'utente e il Sound
+// Canvas da usare, e senza le ROM su un SoundFont o sui chip FM.
 
 class _SettingsButton extends StatelessWidget {
   const _SettingsButton({required this.controller});
@@ -43,6 +43,7 @@ class _SettingsDialog extends StatelessWidget {
       listenable: controller,
       builder: (context, _) {
         final soundCanvases = controller.soundCanvases;
+        final midi = controller.rolandSupported || controller.soundFontSupported;
         return _DialogFrame(
           title: 'Impostazioni',
           width: 520,
@@ -51,6 +52,8 @@ class _SettingsDialog extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                if (controller.miniPlayerSupported) ..._miniPlayer(controller),
+                if (controller.miniPlayerSupported && midi) const SizedBox(height: 24),
                 if (controller.rolandSupported) ..._roland(controller, soundCanvases),
                 if (controller.rolandSupported && controller.soundFontSupported) const SizedBox(height: 24),
                 if (controller.soundFontSupported) ..._soundFont(controller),
@@ -61,6 +64,20 @@ class _SettingsDialog extends StatelessWidget {
       },
     );
   }
+
+  List<Widget> _miniPlayer(PlayerController controller) => [
+    Text('MINIPLAYER', style: _label()),
+    const SizedBox(height: 8),
+    _CheckOption(
+      label: miniPlayerOption(),
+      checked: controller.miniPlayer,
+      onTap: () => controller.setMiniPlayer(!controller.miniPlayer),
+    ),
+    Padding(
+      padding: const EdgeInsets.only(left: 34),
+      child: Text(miniPlayerDetail, style: _sora(12, color: _faint, height: 1.4)),
+    ),
+  ];
 
   List<Widget> _roland(PlayerController controller, List<RolandDevice> soundCanvases) => [
     Text('MIDI SUI MODULI ROLAND', style: _label()),

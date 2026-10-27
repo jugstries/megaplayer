@@ -8,6 +8,7 @@ import '../../core/models.dart';
 import '../../player/file_drop.dart';
 import '../../player/library_browser.dart';
 import '../../player/megasound.dart';
+import '../../player/mini_player.dart';
 import '../../player/player_controller.dart';
 import '../../update/updates.dart';
 import '../knob_control.dart';
@@ -278,7 +279,7 @@ class _MenuBar extends StatelessWidget {
           _MenuItem(label: 'Skin moderna', onTap: () => controller.setSkin(Skin.modern)),
           if (controller.currentTrack != null)
             _MenuItem(label: 'Esporta…', onTap: () => _showExport(context, controller)),
-          if (controller.rolandSupported || controller.soundFontSupported)
+          if (controller.rolandSupported || controller.soundFontSupported || controller.miniPlayerSupported)
             _MenuItem(
               label: 'Impostazioni…',
               onTap: () => showDialog<void>(context: context, builder: (_) => _SettingsDialog(controller: controller)),

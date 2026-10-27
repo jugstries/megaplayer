@@ -33,6 +33,7 @@ class FlutterWindow : public Win32Window {
   std::unique_ptr<Channel> files_channel_;
   std::unique_ptr<Channel> icon_channel_;
   std::unique_ptr<Channel> drop_channel_;
+  std::unique_ptr<Channel> tray_channel_;
 };
 
 #endif  // RUNNER_FLUTTER_WINDOW_H_

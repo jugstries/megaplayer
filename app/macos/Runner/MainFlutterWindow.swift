@@ -6,6 +6,8 @@ class MainFlutterWindow: NSWindow {
   // Canale "megaplayer/drop": i file trascinati dal Finder sulla finestra,
   // con "enter" ed "exit" mentre passano e "drop" con i percorsi.
   private var dropChannel: FlutterMethodChannel?
+  // Il miniplayer nella barra dei menu (MiniPlayer.swift).
+  private(set) var miniPlayer: MiniPlayer?
 
   override func awakeFromNib() {
     let flutterViewController = FlutterViewController()
@@ -17,6 +19,8 @@ class MainFlutterWindow: NSWindow {
     RegisterGeneratedPlugins(registry: flutterViewController)
     FilesChannel.register(with: flutterViewController.engine.binaryMessenger, window: self)
     IconChannel.register(with: flutterViewController.engine.binaryMessenger)
+    miniPlayer = MiniPlayer(messenger: flutterViewController.engine.binaryMessenger, window: self)
+    delegate = self
     dropChannel = FlutterMethodChannel(
       name: "megaplayer/drop", binaryMessenger: flutterViewController.engine.binaryMessenger)
     registerForDraggedTypes([.fileURL])
@@ -46,6 +50,16 @@ class MainFlutterWindow: NSWindow {
     let urls = info.draggingPasteboard.readObjects(
       forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]
     return urls?.map { $0.path } ?? []
+  }
+}
+
+// Con il miniplayer nella barra dei menu, chiudere la finestra la nasconde:
+// la musica continua, e la finestra torna dal miniplayer o dal Dock.
+extension MainFlutterWindow: NSWindowDelegate {
+  func windowShouldClose(_ sender: NSWindow) -> Bool {
+    guard miniPlayer?.isShown == true else { return true }
+    orderOut(nil)
+    return false
   }
 }
 

@@ -335,6 +335,41 @@ void main() {
     expect(store.settings['midi.soundfont'], 'included');
   });
 
+  testWidgets('impostazioni: il miniplayer si accende e si spegne, e resta salvato', (tester) async {
+    const label = 'Miniplayer nella barra dei menu';
+    controller = PlayerController(core, store: store, miniPlayerSupported: true)..restore();
+    tester.view.physicalSize = const Size(1440, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(MegaplayerApp(controller: controller));
+    await tester.tap(find.byTooltip('Impostazioni'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('MINIPLAYER'), findsOneWidget);
+    expect(find.textContaining('la musica continua'), findsOneWidget);
+
+    await tester.tap(find.text(label));
+    await tester.pump();
+    expect(controller.miniPlayer, isTrue);
+    expect(store.settings['app.miniplayer'], 'on');
+    await tester.tap(find.text(label));
+    await tester.pump();
+    expect(controller.miniPlayer, isFalse);
+    expect(store.settings['app.miniplayer'], 'off');
+  }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
+
+  testWidgets('impostazioni: senza miniplayer la sezione non c\'è', (tester) async {
+    tester.view.physicalSize = const Size(1440, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(MegaplayerApp(controller: controller));
+    await tester.tap(find.byTooltip('Impostazioni'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('MINIPLAYER'), findsNothing);
+    expect(find.text('MIDI SENZA LE ROM'), findsOneWidget);
+  });
+
   testWidgets('esportazione: formato, MegaSound, finestra Salva e avanzamento', (tester) async {
     
     Object? asked;

@@ -9,6 +9,9 @@ Dock stanno in fila con le altre.
 Il bundle porta la moderna (AppIcon); la retrò è un'immagine a parte
 (RetroIcon) che l'app mette nel Dock quando si passa alla skin retrò.
 
+Per il miniplayer nella barra dei menu c'è StatusIcon: la manopola con
+l'onda in un colore solo, un'immagine template che macOS colora da sé.
+
 Su Windows le stesse icone riempiono il quadrato, senza il margine e l'ombra
 di macOS: app_icon.ico e retro_icon.ico in windows/runner/resources, con
 dentro i PNG dai 16 ai 256 pixel.
@@ -200,6 +203,32 @@ def modern_svg(windows=False):
     return frame(defs, "\n".join(parts), windows)
 
 
+STATUS_SIZE = 18  # punti, come le icone della barra dei menu
+
+
+def status_svg():
+    """La manopola della moderna in nero su trasparente, per la barra dei
+    menu: l'arco fino al valore, il pallino e l'onda dentro."""
+    c = STATUS_SIZE / 2
+    radius, width = 7.6, 1.7
+    start, span, value = 135, 270, 0.82
+    end = start + span * value
+    dot_x, dot_y = polar(c, c, radius, end)
+    points = []
+    left, right = c - 3.9, c + 3.9
+    for i in range(121):
+        t = i / 120
+        envelope = math.sin(math.pi * t) ** 1.2
+        y = c - 2.9 * envelope * math.sin(2 * math.pi * 1.5 * t)
+        points.append(f"{left + (right - left) * t:.2f} {y:.2f}")
+    return f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {STATUS_SIZE} {STATUS_SIZE}">
+<path d="{arc(c, c, radius, start, end)}" fill="none" stroke="#000" stroke-width="{width}" stroke-linecap="round"/>
+<circle cx="{dot_x:.2f}" cy="{dot_y:.2f}" r="1.75" fill="#000"/>
+<path d="M{" L".join(points)}" fill="none" stroke="#000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
+"""
+
+
 # La mascotte della finestra "Ciao!" (lib/skins/retro/retro_skin.dart).
 MASCOT = [
     "##############..",
@@ -268,8 +297,11 @@ def write_windows_icon(svg, ico, work):
     write_ico(ico, pngs)
 
 
-def write_json(path, images):
-    path.write_text(json.dumps({"images": images, "info": {"author": "xcode", "version": 1}}, indent=2) + "\n")
+def write_json(path, images, template=False):
+    contents = {"images": images, "info": {"author": "xcode", "version": 1}}
+    if template:
+        contents["properties"] = {"template-rendering-intent": "template"}
+    path.write_text(json.dumps(contents, indent=2) + "\n")
 
 
 def main():
@@ -281,11 +313,14 @@ def main():
         work = args.preview or pathlib.Path(tmp)
         work.mkdir(parents=True, exist_ok=True)
         modern, retro = work / "modern.svg", work / "retro.svg"
+        status = work / "status.svg"
         modern.write_text(modern_svg())
         retro.write_text(retro_svg())
+        status.write_text(status_svg())
         if args.preview:
             render(modern, work / "modern.png", SIZE)
             render(retro, work / "retro.png", SIZE)
+            render(status, work / "status.png", STATUS_SIZE * 8)
             return
 
         icon_set = ASSETS / "AppIcon.appiconset"
@@ -300,6 +335,15 @@ def main():
             {"idiom": "mac", "filename": "retro_icon_512.png", "scale": "1x"},
             {"idiom": "mac", "filename": "retro_icon_1024.png", "scale": "2x"},
         ])
+
+        image_set = ASSETS / "StatusIcon.imageset"
+        image_set.mkdir(exist_ok=True)
+        render(status, image_set / "status_icon_18.png", STATUS_SIZE)
+        render(status, image_set / "status_icon_36.png", STATUS_SIZE * 2)
+        write_json(image_set / "Contents.json", [
+            {"idiom": "mac", "filename": "status_icon_18.png", "scale": "1x"},
+            {"idiom": "mac", "filename": "status_icon_36.png", "scale": "2x"},
+        ], template=True)
 
         modern_windows, retro_windows = work / "modern-windows.svg", work / "retro-windows.svg"
         modern_windows.write_text(modern_svg(windows=True))

@@ -4,9 +4,13 @@
 #include <ole2.h>
 #include <shellapi.h>
 #include <shobjidl.h>
+#include <windowsx.h>
 #include <wrl/client.h>
 
+#include <algorithm>
 #include <cctype>
+#include <cmath>
+#include <map>
 #include <string>
 #include <variant>
 #include <vector>
@@ -219,6 +223,44 @@ std::string MapArgument(const MethodCall<EncodableValue>& call,
   return text ? *text : std::string();
 }
 
+// Un numero degli argomenti, se sono una mappa; [fallback] se manca.
+double NumberArgument(const MethodCall<EncodableValue>& call, const char* key,
+                      double fallback) {
+  const auto* map = MapArguments(call);
+  if (!map) {
+    return fallback;
+  }
+  const auto found = map->find(EncodableValue(key));
+  const double* number =
+      found == map->end() ? nullptr : std::get_if<double>(&found->second);
+  return number ? *number : fallback;
+}
+
+// Una mappa di testi degli argomenti, se sono una mappa; vuota se manca.
+std::map<std::string, std::string> TextMapArgument(
+    const MethodCall<EncodableValue>& call, const char* key) {
+  std::map<std::string, std::string> texts;
+  const auto* map = MapArguments(call);
+  if (!map) {
+    return texts;
+  }
+  const auto found = map->find(EncodableValue(key));
+  const auto* inner = found == map->end()
+                          ? nullptr
+                          : std::get_if<flutter::EncodableMap>(&found->second);
+  if (!inner) {
+    return texts;
+  }
+  for (const auto& [name, value] : *inner) {
+    const auto* text_key = std::get_if<std::string>(&name);
+    const auto* text = std::get_if<std::string>(&value);
+    if (text_key && text) {
+      texts[*text_key] = *text;
+    }
+  }
+  return texts;
+}
+
 std::unique_ptr<Channel> NewChannel(flutter::BinaryMessenger* messenger,
                                     const char* name) {
   return std::make_unique<Channel>(
@@ -310,6 +352,179 @@ class FileDropTarget : public IDropTarget {
   bool accepting_ = false;
 };
 
+// Il miniplayer nell'area di notifica: l'icona, una sola, e lo stato che ha
+// mandato l'app per ultimo.
+constexpr UINT kTrayMessage = WM_APP + 1;
+constexpr UINT kTrayIconId = 1;
+
+// Le voci del menu; quelle del volume vanno da kTrayVolume (muto) a
+// kTrayVolume + 4 (100%), a scatti del 25%.
+enum TrayCommand : UINT {
+  kTrayPlay = 1,
+  kTrayPrevious,
+  kTrayNext,
+  kTrayOpen,
+  kTrayQuit,
+  kTrayVolume = 100,
+};
+
+struct Tray {
+  Channel* channel = nullptr;
+  HWND window = nullptr;
+  UINT taskbar_created = 0;
+  bool shown = false;
+  std::string title;
+  std::string subtitle;
+  std::string skin;
+  bool playing = false;
+  bool can_play = false;
+  bool can_previous = false;
+  bool can_next = false;
+  double volume = 0.8;
+  std::map<std::string, std::string> labels;
+
+  std::wstring Label(const char* key) const {
+    const auto found = labels.find(key);
+    return found == labels.end() ? std::wstring()
+                                 : Utf16FromUtf8(found->second);
+  }
+
+  // Il titolo, o che non suona niente.
+  std::wstring Heading() const {
+    return title.empty() ? Label("idle") : Utf16FromUtf8(title);
+  }
+};
+
+Tray tray;
+
+NOTIFYICONDATAW TrayIconData() {
+  NOTIFYICONDATAW data = {};
+  data.cbSize = sizeof(data);
+  data.hWnd = tray.window;
+  data.uID = kTrayIconId;
+  return data;
+}
+
+// Aggiunge l'icona, o la aggiorna se c'è già: quella della skin, alla misura
+// piccola del monitor della finestra, e sotto il mouse il brano.
+void ShowTrayIcon() {
+  NOTIFYICONDATAW data = TrayIconData();
+  data.uFlags = NIF_ICON | NIF_TIP | NIF_MESSAGE | NIF_SHOWTIP;
+  data.uCallbackMessage = kTrayMessage;
+  const UINT dpi = ::GetDpiForWindow(tray.window);
+  data.hIcon = static_cast<HICON>(::LoadImage(
+      ::GetModuleHandle(nullptr),
+      MAKEINTRESOURCE(tray.skin == "retro" ? IDI_RETRO_ICON : IDI_APP_ICON),
+      IMAGE_ICON, ::GetSystemMetricsForDpi(SM_CXSMICON, dpi),
+      ::GetSystemMetricsForDpi(SM_CYSMICON, dpi), LR_SHARED));
+  std::wstring tip = tray.Heading();
+  if (!tray.subtitle.empty()) {
+    tip += L" \u2014 " + Utf16FromUtf8(tray.subtitle);
+  }
+  tip = tip.substr(0, std::size(data.szTip) - 1);
+  std::copy(tip.begin(), tip.end(), data.szTip);
+  if (tray.shown) {
+    ::Shell_NotifyIconW(NIM_MODIFY, &data);
+    return;
+  }
+  tray.shown = ::Shell_NotifyIconW(NIM_ADD, &data);
+  if (tray.shown) {
+    data.uVersion = NOTIFYICON_VERSION_4;
+    ::Shell_NotifyIconW(NIM_SETVERSION, &data);
+  }
+}
+
+void ShowMainWindow() {
+  ::ShowWindow(tray.window, ::IsIconic(tray.window) ? SW_RESTORE : SW_SHOW);
+  ::SetForegroundWindow(tray.window);
+}
+
+// Nei menu "&" sottolinea la lettera dopo: nei titoli va raddoppiata.
+std::wstring MenuText(std::wstring text) {
+  for (size_t at = text.find(L'&'); at != std::wstring::npos;
+       at = text.find(L'&', at + 2)) {
+    text.insert(at, 1, L'&');
+  }
+  return text;
+}
+
+void RunTrayCommand(UINT command) {
+  if (command >= kTrayVolume && command <= kTrayVolume + 4) {
+    tray.channel->InvokeMethod(
+        "setVolume", std::make_unique<EncodableValue>(
+                         (command - kTrayVolume) * 0.25));
+    return;
+  }
+  switch (command) {
+    case kTrayPlay:
+      tray.channel->InvokeMethod("togglePause", nullptr);
+      break;
+    case kTrayPrevious:
+      tray.channel->InvokeMethod("previous", nullptr);
+      break;
+    case kTrayNext:
+      tray.channel->InvokeMethod("next", nullptr);
+      break;
+    case kTrayOpen:
+      ShowMainWindow();
+      break;
+    case kTrayQuit:
+      // Senza l'icona la finestra si chiude davvero, e l'app esce.
+      RemoveTrayIcon();
+      ::PostMessage(tray.window, WM_CLOSE, 0, 0);
+      break;
+  }
+}
+
+// Il menu dell'icona, nel punto [at]: il brano, che non si sceglie, i
+// comandi, il volume a scatti con il segno su quello più vicino, la
+// finestra (la voce in neretto) e l'uscita.
+void ShowTrayMenu(POINT at) {
+  HMENU menu = ::CreatePopupMenu();
+  ::AppendMenuW(menu, MF_STRING | MF_DISABLED, 0,
+                MenuText(tray.Heading()).c_str());
+  if (!tray.subtitle.empty()) {
+    ::AppendMenuW(menu, MF_STRING | MF_DISABLED, 0,
+                  MenuText(Utf16FromUtf8(tray.subtitle)).c_str());
+  }
+  ::AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+  const auto add = [menu](UINT id, const std::wstring& label, bool enabled) {
+    ::AppendMenuW(menu, MF_STRING | (enabled ? MF_ENABLED : MF_GRAYED), id,
+                  label.c_str());
+  };
+  add(kTrayPlay, tray.Label(tray.playing ? "pause" : "play"), tray.can_play);
+  add(kTrayPrevious, tray.Label("previous"), tray.can_previous);
+  add(kTrayNext, tray.Label("next"), tray.can_next);
+  HMENU volume = ::CreatePopupMenu();
+  for (UINT step = 0; step <= 4; ++step) {
+    const std::wstring label =
+        step == 0 ? tray.Label("mute") : std::to_wstring(step * 25) + L"%";
+    ::AppendMenuW(volume, MF_STRING, kTrayVolume + step, label.c_str());
+  }
+  const UINT nearest = static_cast<UINT>(
+      std::clamp(std::lround(tray.volume * 4), 0L, 4L));
+  ::CheckMenuRadioItem(volume, kTrayVolume, kTrayVolume + 4,
+                       kTrayVolume + nearest, MF_BYCOMMAND);
+  ::AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(volume),
+                tray.Label("volume").c_str());
+  ::AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+  add(kTrayOpen, tray.Label("open"), true);
+  add(kTrayQuit, tray.Label("quit"), true);
+  ::SetMenuDefaultItem(menu, kTrayOpen, FALSE);
+
+  // Senza la finestra in primo piano il menu non si chiude cliccando fuori.
+  ::SetForegroundWindow(tray.window);
+  const UINT align = ::GetSystemMetrics(SM_MENUDROPALIGNMENT) ? TPM_RIGHTALIGN
+                                                              : TPM_LEFTALIGN;
+  const UINT command = static_cast<UINT>(::TrackPopupMenuEx(
+      menu, align | TPM_BOTTOMALIGN | TPM_RIGHTBUTTON | TPM_RETURNCMD |
+                TPM_NONOTIFY,
+      at.x, at.y, tray.window, nullptr));
+  ::PostMessage(tray.window, WM_NULL, 0, 0);
+  ::DestroyMenu(menu);  // anche il sottomenu del volume
+  RunTrayCommand(command);
+}
+
 }  // namespace
 
 std::unique_ptr<Channel> CreateFilesChannel(flutter::BinaryMessenger* messenger,
@@ -397,4 +612,74 @@ void RevokeDropTarget(HWND window) {
   if (SUCCEEDED(::RevokeDragDrop(window))) {
     ::OleUninitialize();
   }
+}
+
+std::unique_ptr<Channel> CreateTrayChannel(flutter::BinaryMessenger* messenger,
+                                           HWND window) {
+  auto channel = NewChannel(messenger, "megaplayer/tray");
+  tray.channel = channel.get();
+  tray.window = window;
+  // Se Esplora risorse riparte, le icone vanno rimesse.
+  tray.taskbar_created = ::RegisterWindowMessageW(L"TaskbarCreated");
+  channel->SetMethodCallHandler(
+      [](const MethodCall<EncodableValue>& call,
+         std::unique_ptr<MethodResult<EncodableValue>> result) {
+        if (call.method_name() != "update") {
+          result->NotImplemented();
+          return;
+        }
+        if (!FlagArgument(call, "visible")) {
+          RemoveTrayIcon();
+          result->Success();
+          return;
+        }
+        tray.title = MapArgument(call, "title");
+        tray.subtitle = MapArgument(call, "subtitle");
+        tray.skin = MapArgument(call, "skin");
+        tray.playing = FlagArgument(call, "playing");
+        tray.can_play = FlagArgument(call, "canPlay");
+        tray.can_previous = FlagArgument(call, "canPrevious");
+        tray.can_next = FlagArgument(call, "canNext");
+        tray.volume = NumberArgument(call, "volume", tray.volume);
+        tray.labels = TextMapArgument(call, "labels");
+        ShowTrayIcon();
+        result->Success();
+      });
+  return channel;
+}
+
+bool HandleTrayMessage(HWND window, UINT message, WPARAM wparam,
+                       LPARAM lparam) {
+  if (window != tray.window) {
+    return false;
+  }
+  if (message == tray.taskbar_created && tray.taskbar_created != 0) {
+    if (tray.shown) {
+      tray.shown = false;
+      ShowTrayIcon();
+    }
+    return false;
+  }
+  if (message != kTrayMessage) {
+    return false;
+  }
+  // Con NOTIFYICON_VERSION_4 l'evento è in lparam e il punto in wparam.
+  switch (LOWORD(lparam)) {
+    case NIN_SELECT:
+    case NIN_KEYSELECT:
+    case WM_CONTEXTMENU:
+      ShowTrayMenu({GET_X_LPARAM(wparam), GET_Y_LPARAM(wparam)});
+      break;
+  }
+  return true;
+}
+
+bool TrayIconShown() { return tray.shown; }
+
+void RemoveTrayIcon() {
+  if (tray.shown) {
+    NOTIFYICONDATAW data = TrayIconData();
+    ::Shell_NotifyIconW(NIM_DELETE, &data);
+  }
+  tray.shown = false;
 }

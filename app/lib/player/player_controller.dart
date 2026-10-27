@@ -37,7 +37,7 @@ enum SoundFontChoice { included, custom, fm }
 /// avvio all'altro e c'è la libreria; senza, l'app funziona lo stesso e non
 /// ricorda niente. Con [updates] l'app si aggiorna da sola.
 class PlayerController extends ChangeNotifier {
-  PlayerController(this.core, {this.store, this.updates})
+  PlayerController(this.core, {this.store, this.updates, this.miniPlayerSupported = false})
       : backends = core.backends(),
         rolandDevices = core.rolandDevices(),
         includedSoundFont = core.soundFont(),
@@ -98,6 +98,11 @@ class PlayerController extends ChangeNotifier {
   SoundFontChoice soundFontChoice = SoundFontChoice.included;
   String customSoundFont = '';
 
+  /// Se c'è il miniplayer nel menù di sistema (lib/player/mini_player.dart),
+  /// e se l'utente lo vuole.
+  final bool miniPlayerSupported;
+  bool miniPlayer = false;
+
   static const _files = MethodChannel('megaplayer/files');
   static const scopeFrames = 1024;
 
@@ -109,6 +114,7 @@ class PlayerController extends ChangeNotifier {
   static const _rolandKey = 'midi.roland';
   static const _soundFontChoiceKey = 'midi.soundfont';
   static const _customSoundFontKey = 'midi.soundfont.path';
+  static const _miniPlayerKey = 'app.miniplayer';
 
   Timer? _timer;
   int? _queueId;
@@ -139,6 +145,7 @@ class PlayerController extends ChangeNotifier {
       rolandDevice = store.setting(_rolandKey);
       soundFontChoice = SoundFontChoice.values.asNameMap()[store.setting(_soundFontChoiceKey)] ?? soundFontChoice;
       customSoundFont = store.setting(_customSoundFontKey);
+      miniPlayer = store.setting(_miniPlayerKey) == 'on';
     });
     // Prima della libreria, che riconosce i MIDI con i moduli che ci sono.
     if (romFolder.isNotEmpty) core.addRolandRomDirectory(romFolder);
@@ -765,6 +772,16 @@ class PlayerController extends ChangeNotifier {
   }
 
   void _applySoundFont() => core.setSoundFont(activeSoundFont);
+
+  // --- Il miniplayer ---
+
+  /// Con il miniplayer acceso, chiudere la finestra la nasconde e la musica
+  /// continua: lo fa il runner.
+  void setMiniPlayer(bool value) {
+    miniPlayer = value;
+    _withStore((store) => store.setSetting(_miniPlayerKey, value ? 'on' : 'off'));
+    notifyListeners();
+  }
 
   // --- Salvataggio ---
 

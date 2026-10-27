@@ -312,6 +312,30 @@ void main() {
     expect(store.settings['midi.soundfont'], 'included');
   });
 
+  testWidgets('impostazioni: il miniplayer si accende e si spegne, e resta salvato', (tester) async {
+    const label = 'Miniplayer nell\'area di notifica';
+    controller = PlayerController(core, store: store, miniPlayerSupported: true)..restore();
+    expect(controller.skin, Skin.retro);
+    tester.view.physicalSize = const Size(1440, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(MegaplayerApp(controller: controller));
+    await tester.tap(find.text('Impostazioni…'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('Miniplayer'), findsOneWidget);
+    expect(find.textContaining('la musica continua'), findsOneWidget);
+
+    await tester.tap(find.text(label));
+    await tester.pump();
+    expect(controller.miniPlayer, isTrue);
+    expect(store.settings['app.miniplayer'], 'on');
+    await tester.tap(find.text(label));
+    await tester.pump();
+    expect(controller.miniPlayer, isFalse);
+    expect(store.settings['app.miniplayer'], 'off');
+  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
+
   testWidgets('esportazione: formato, MegaSound, finestra Salva e avanzamento', (tester) async {
     controller.setSkin(Skin.retro);
     Object? asked;

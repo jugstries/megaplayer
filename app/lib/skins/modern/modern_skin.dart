@@ -7,6 +7,7 @@ import '../../core/models.dart';
 import '../../player/file_drop.dart';
 import '../../player/library_browser.dart';
 import '../../player/megasound.dart';
+import '../../player/mini_player.dart';
 import '../../player/player_controller.dart';
 import '../../update/updates.dart';
 import '../knob_control.dart';
@@ -254,7 +255,7 @@ class _Header extends StatelessWidget {
           label: 'Apri file…',
           onPressed: () => _openFiles(context, controller),
         ),
-        if (controller.rolandSupported || controller.soundFontSupported) ...[
+        if (controller.rolandSupported || controller.soundFontSupported || controller.miniPlayerSupported) ...[
           const SizedBox(width: 12),
           _SettingsButton(controller: controller),
         ],
